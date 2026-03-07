@@ -291,32 +291,10 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // --- Discover real screen dimensions. ---
-    // Show a bare window first so the Wayland compositor creates a surface;
-    // app::screen_size() can return (0, 0) before any surface exists.
-    // After show() + fullscreen() + a short wait, screen_size() is always valid.
-    // We PREFER screen_size() over win.w()/win.h() because on some compositors
-    // fullscreen sets the window larger than the visible screen area, which would
-    // push the bottom keyboard row off-screen.  screen_size() always returns the
-    // actual visible dimensions.
-    let mut win = Window::new(0, 0, 100, 100, "Smart Keyboard");
-    win.set_color(Color::from_rgb(40, 40, 43));
-    win.end();
-    win.show();
-    win.fullscreen(true);
-    // Give the WM / compositor up to 100 ms to settle.
-    let _ = app::wait_for(0.1);
+    // --- Screen geometry: all widget sizes are derived proportionally ---
     let (sw_f, sh_f) = app::screen_size();
-    // screen_size() is primary; fall back to win dimensions only if it reports zero.
-    let sw = if sw_f > 1.0 { sw_f as i32 }
-             else if win.w() > 100 { win.w() }
-             else { 1920 };
-    let sh = if sh_f > 1.0 { sh_f as i32 }
-             else if win.h() > 100 { win.h() }
-             else { 1080 };
-
-    // Add all child widgets now that the real dimensions are known.
-    win.begin();
+    let sw = if sw_f > 1.0 { sw_f as i32 } else { 1920 };
+    let sh = if sh_f > 1.0 { sh_f as i32 } else { 1080 };
 
     let pad  = 10i32;
     let gap  =  3i32;
@@ -370,6 +348,10 @@ fn main() {
     let mod_btns: Rc<RefCell<Vec<ModBtn>>> = Rc::new(RefCell::new(Vec::new()));
     let buf  = TextBuffer::default();
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
+
+    // --- Window (fullscreen; handler intercepts events before children) ---
+    let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
+    win.set_color(Color::from_rgb(40, 40, 43));
 
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad, pad, avail_w, display_h, "");
@@ -597,7 +579,11 @@ fn main() {
     }
 
     win.end();
-    win.redraw();
+    // fullscreen(true) before show() so the window is full-screen from the
+    // very first frame; calling it after show() can cause a late WM resize
+    // that makes the window taller than the visible screen area.
+    win.fullscreen(true);
+    win.show();
 
     a.run().unwrap();
 }
