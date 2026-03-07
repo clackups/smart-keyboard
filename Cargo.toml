@@ -1,0 +1,11 @@
+[package]
+name = "smart-keyboard"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "smart-keyboard"
+path = "src/main.rs"
+
+[dependencies]
+fltk = { version = "1.5.22", features = ["use-wayland"] }
