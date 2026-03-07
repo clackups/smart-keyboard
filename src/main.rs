@@ -112,10 +112,12 @@ impl ModState {
 // Color constants
 // =============================================================================
 
-fn col_key_normal() -> Color { Color::from_rgb(218, 218, 222) }
-fn col_key_mod()    -> Color { Color::from_rgb(100, 100, 110) }
-fn col_mod_active() -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
-fn col_nav_sel()    -> Color { Color::from_rgb(255, 200,   0) } // amber
+fn col_key_normal()   -> Color { Color::from_rgb(218, 218, 222) }
+fn col_key_mod()      -> Color { Color::from_rgb(100, 100, 110) }
+fn col_mod_active()   -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
+fn col_nav_sel()      -> Color { Color::from_rgb(255, 200,   0) } // amber
+fn col_lang_active()  -> Color { Color::from_rgb( 70, 130, 180) } // active language
+fn col_lang_inactive() -> Color { Color::from_rgb(80,  80,  80) } // inactive language
 
 // =============================================================================
 // Modifier button descriptor
