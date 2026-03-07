@@ -130,79 +130,135 @@ struct ModBtn {
 }
 
 // =============================================================================
+// Navigation selection
+// =============================================================================
+
+/// Identifies which button currently holds the amber navigation highlight.
+#[derive(Clone, Copy, PartialEq)]
+enum NavSel {
+    /// A language-toggle button; index into `lang_btns`.
+    Lang(usize),
+    /// A keyboard key: `all_btns[row][col]`.
+    Key(usize, usize),
+}
+
+// =============================================================================
 // Navigation
 // =============================================================================
 
+/// Find the index in `items` (iterator of `(x, width)`) whose range best covers `cx`.
+fn closest_to_cx(items: impl Iterator<Item = (i32, i32)>, cx: i32) -> usize {
+    items
+        .enumerate()
+        .min_by_key(|(_, (bx, bw))| {
+            if cx >= *bx && cx < bx + bw { 0i32 }
+            else if cx < *bx             { bx - cx }
+            else                         { cx - (bx + bw) }
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(0)
+}
+
+/// Find the index in a keyboard row whose x-range best covers pixel centre `cx`.
+fn closest_col(row: &[(Button, Action, u16, Color)], cx: i32) -> usize {
+    closest_to_cx(row.iter().map(|b| (b.0.x(), b.0.w())), cx)
+}
+
+/// Find the index in the lang-button strip whose x-range best covers pixel centre `cx`.
+fn closest_lang(lang_btns: &[Button], cx: i32) -> usize {
+    closest_to_cx(lang_btns.iter().map(|b| (b.x(), b.w())), cx)
+}
+
 /// Move the keyboard-navigation cursor and update highlight colours.
 ///
-/// `dr` / `dc` are row / column deltas.
-/// Navigation clamps at the edges (no wrap-around).
-/// For vertical moves the target column is chosen by pixel-centre alignment
-/// so wide keys (Space, Shifts) map naturally across rows.
+/// Navigation clamps at all edges (no wrap-around).
+/// The cursor can move between the language-button strip and the keyboard grid;
+/// vertical transitions are pixel-centre aligned so wide keys map naturally.
 fn nav_move(
-    all_btns:  &mut Vec<Vec<(Button, Action, u16, Color)>>,
-    sel:       &mut (usize, usize),
-    mod_state: &Rc<RefCell<ModState>>,
-    dr:        i32,
-    dc:        i32,
+    all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
+    lang_btns:  &mut Vec<Button>,
+    layout_idx: usize,
+    sel:        &mut NavSel,
+    mod_state:  &Rc<RefCell<ModState>>,
+    dr:         i32,
+    dc:         i32,
 ) {
-    let (row, col) = *sel;
-
-    // Compute the new position first so we can bail out early at edges
-    // without touching any button colours (avoids a visual flicker).
-    let rows    = all_btns.len();
-    let new_row = (row as i32 + dr).clamp(0, rows as i32 - 1) as usize;
-    let row_len = all_btns[new_row].len();
-    let new_col = if dr != 0 {
-        if new_row == row {
-            // Clamped at the vertical edge: stay in the same column.
-            col
-        } else {
-            // Vertical move: find the button in the new row whose pixel x-range
-            // contains the current button's centre-x.  This correctly aligns
-            // wide keys (Space, Shifts) across rows with different key widths.
-            // If no button contains it, pick the nearest one.
-            let cur_cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
-            all_btns[new_row]
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, b)| {
-                    let bx = b.0.x();
-                    let bw = b.0.w();
-                    if cur_cx >= bx && cur_cx < bx + bw { 0i32 }
-                    else if cur_cx < bx                 { bx - cur_cx }
-                    else                                { cur_cx - (bx + bw) }
-                })
-                .map(|(i, _)| i)
-                .unwrap_or(0)
+    let new_sel: NavSel = match *sel {
+        NavSel::Lang(li) => {
+            if dr < 0 {
+                // Already at the top edge.
+                NavSel::Lang(li)
+            } else if dr > 0 {
+                // Down into the first keyboard row, pixel-aligned.
+                let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
+                NavSel::Key(0, closest_col(&all_btns[0], cx))
+            } else {
+                // Left / right within the lang strip, clamped.
+                let lc = lang_btns.len();
+                NavSel::Lang((li as i32 + dc).clamp(0, lc as i32 - 1) as usize)
+            }
         }
-    } else {
-        (col as i32 + dc).clamp(0, row_len as i32 - 1) as usize // clamp within row
+        NavSel::Key(row, col) => {
+            if dr < 0 && row == 0 {
+                // Up from the top keyboard row → lang strip, pixel-aligned.
+                let cx = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
+                NavSel::Lang(closest_lang(lang_btns, cx))
+            } else if dr != 0 {
+                let rows    = all_btns.len();
+                let new_row = (row as i32 + dr).clamp(0, rows as i32 - 1) as usize;
+                if new_row == row {
+                    // Clamped at the bottom edge.
+                    NavSel::Key(row, col)
+                } else {
+                    let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                    NavSel::Key(new_row, closest_col(&all_btns[new_row], cx))
+                }
+            } else {
+                // Left / right within the current keyboard row, clamped.
+                let rl      = all_btns[row].len();
+                let new_col = (col as i32 + dc).clamp(0, rl as i32 - 1) as usize;
+                NavSel::Key(row, new_col)
+            }
+        }
     };
 
-    // Nothing to do: already at the edge.
-    if new_row == row && new_col == col {
+    // Nothing to do when already at the edge.
+    if new_sel == *sel {
         return;
     }
 
-    // Restore the correct colour of the previously highlighted key,
-    // accounting for active modifier state.
-    let old_action  = all_btns[row][col].1;
-    let old_base    = all_btns[row][col].3;
-    let restore_col = if is_modifier(old_action)
-        && mod_state.borrow().is_active(old_action)
-    {
-        col_mod_active()
-    } else {
-        old_base
-    };
-    all_btns[row][col].0.set_color(restore_col);
+    // Restore the old selection's colour.
+    match *sel {
+        NavSel::Lang(li) => {
+            let c = if li == layout_idx { Color::from_rgb(70, 130, 180) }
+                    else                { Color::from_rgb(80, 80, 80) };
+            lang_btns[li].set_color(c);
+        }
+        NavSel::Key(row, col) => {
+            let old_action = all_btns[row][col].1;
+            let old_base   = all_btns[row][col].3;
+            let c = if is_modifier(old_action) && mod_state.borrow().is_active(old_action) {
+                col_mod_active()
+            } else {
+                old_base
+            };
+            all_btns[row][col].0.set_color(c);
+        }
+    }
 
-    all_btns[new_row][new_col].0.set_color(col_nav_sel());
-    // Move FLTK keyboard focus to the highlighted button so the physical
-    // spacebar (routed by FLTK to the focused widget) fires the correct key.
-    let _ = all_btns[new_row][new_col].0.take_focus();
-    *sel = (new_row, new_col);
+    // Highlight the new selection in amber and give it keyboard focus.
+    match new_sel {
+        NavSel::Lang(li) => {
+            lang_btns[li].set_color(col_nav_sel());
+            let _ = lang_btns[li].take_focus();
+        }
+        NavSel::Key(row, col) => {
+            all_btns[row][col].0.set_color(col_nav_sel());
+            let _ = all_btns[row][col].0.take_focus();
+        }
+    }
+
+    *sel = new_sel;
     app::redraw();
 }
 
@@ -224,9 +280,20 @@ fn execute_action(
     mod_state: &Rc<RefCell<ModState>>,
     mod_btns:  &[ModBtn],
 ) {
+    // For Regular keys, honour Caps/Shift to produce uppercase output.
+    // Computed here so `key_str` can borrow it; None for non-Regular actions
+    // (avoids any allocation for modifier/control keys).
+    let regular_text: Option<String> = if let Action::Regular(slot) = action {
+        let base    = LAYOUTS[layout_i].keys[slot].insert;
+        let shifted = { let ms = mod_state.borrow(); ms.caps || ms.lshift || ms.rshift };
+        Some(if shifted { base.to_uppercase() } else { base.to_string() })
+    } else {
+        None
+    };
+
     let key_str: &str = match action {
-        Action::Regular(slot) => LAYOUTS[layout_i].keys[slot].insert,
-        other                 => special_hook_str(other),
+        Action::Regular(_) => regular_text.as_deref().unwrap_or(""),
+        other              => special_hook_str(other),
     };
 
     hook.on_key_press(scancode, key_str);
@@ -243,8 +310,8 @@ fn execute_action(
     } else {
         // Regular key: insert text into the buffer.
         match action {
-            Action::Regular(slot) => {
-                buf.append(LAYOUTS[layout_i].keys[slot].insert);
+            Action::Regular(_) => {
+                buf.append(regular_text.as_deref().unwrap_or(""));
             }
             Action::Backspace => {
                 let text = buf.text();
@@ -291,10 +358,23 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // --- Screen geometry: all widget sizes are derived proportionally ---
-    let (sw_f, sh_f) = app::screen_size();
-    let sw = if sw_f > 1.0 { sw_f as i32 } else { 1920 };
-    let sh = if sh_f > 1.0 { sh_f as i32 } else { 1080 };
+    // Fullscreen the window first so we can read the real screen dimensions
+    // directly from win.w()/win.h() without relying on app::screen_size(),
+    // which can return (0, 0) on some Wayland compositors before a surface exists.
+    let mut win = Window::new(0, 0, 1, 1, "Smart Keyboard");
+    win.set_color(Color::from_rgb(40, 40, 43));
+    win.end();
+    win.fullscreen(true);
+    win.show();
+    // Pump the event loop until the WM delivers the actual fullscreen dimensions.
+    while win.w() <= 1 {
+        if !app::wait() { break; }
+    }
+    let sw = win.w();
+    let sh = win.h();
+
+    // Now add all child widgets using the real screen dimensions.
+    win.begin();
 
     let pad  = 10i32;
     let gap  =  3i32;
@@ -349,10 +429,6 @@ fn main() {
     let buf  = TextBuffer::default();
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
 
-    // --- Window (fullscreen; handler intercepts events before children) ---
-    let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
-    win.set_color(Color::from_rgb(40, 40, 43));
-
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad, pad, avail_w, display_h, "");
     disp.set_buffer(buf.clone());
@@ -371,6 +447,14 @@ fn main() {
     let lang_btns:   Rc<RefCell<Vec<Button>>>          = Rc::new(RefCell::new(Vec::new()));
     let switch_btns: Rc<RefCell<Vec<(Button, usize)>>> = Rc::new(RefCell::new(Vec::new()));
 
+    // Declared here (before the lang-button loop) so that lang-button click
+    // callbacks can share them with keyboard-key callbacks.
+    // all_btns[row][col] = (Button, Action, scancode, base_color)
+    let all_btns: Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    // Navigation cursor: starts on the first keyboard key.
+    let sel: Rc<RefCell<NavSel>> = Rc::new(RefCell::new(NavSel::Key(0, 0)));
+
     for (li, def) in LAYOUTS.iter().enumerate() {
         let btn_x = pad + li as i32 * (lang_w + gap);
         let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, def.name);
@@ -381,7 +465,11 @@ fn main() {
         let layout_idx_c  = layout_idx.clone();
         let lang_btns_c   = lang_btns.clone();
         let switch_btns_c = switch_btns.clone();
+        let all_btns_c    = all_btns.clone();
+        let sel_c         = sel.clone();
+        let mod_state_c   = mod_state.clone();
         btn.set_callback(move |_| {
+            // Execute the language switch.
             *layout_idx_c.borrow_mut() = li;
             for (j, lb) in lang_btns_c.borrow_mut().iter_mut().enumerate() {
                 lb.set_color(if j == li { active_col } else { inactive_col });
@@ -390,19 +478,33 @@ fn main() {
             for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
                 kb.set_label(def.keys[*slot].label);
             }
+            // Move the amber highlight to this lang button.
+            // Copy sel (it is Copy) so the borrow is released before we mutate below.
+            let old_sel = *sel_c.borrow();
+            if let NavSel::Key(old_r, old_c) = old_sel {
+                let mut ab = all_btns_c.borrow_mut();
+                let old_action = ab[old_r][old_c].1;
+                let old_base   = ab[old_r][old_c].3;
+                let restore = if is_modifier(old_action)
+                    && mod_state_c.borrow().is_active(old_action)
+                {
+                    col_mod_active()
+                } else {
+                    old_base
+                };
+                ab[old_r][old_c].0.set_color(restore);
+            }
+            // (If old_sel was Lang(_), the colour loop above already restored it.)
+            lang_btns_c.borrow_mut()[li].set_color(col_nav_sel());
+            let _ = lang_btns_c.borrow_mut()[li].take_focus();
+            *sel_c.borrow_mut() = NavSel::Lang(li);
             app::redraw();
         });
         lang_btns.borrow_mut().push(btn);
     }
 
     // --- Keyboard key grid ---
-    // all_btns[row][col] = (Button, Action, scancode, base_color)
-    let all_btns: Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>> =
-        Rc::new(RefCell::new(Vec::new()));
-
-    // Navigation selection state: shared with button click callbacks and the
-    // window key-event handler so all three can read and update it.
-    let sel: Rc<RefCell<(usize, usize)>> = Rc::new(RefCell::new((0, 0)));
+    // (all_btns and sel were declared before the lang-button loop above)
 
     for (row_i, row) in KEYS.iter().enumerate() {
         let row_y = kbd_y + row_i as i32 * (key_h + gap);
@@ -456,6 +558,7 @@ fn main() {
                 let mod_state_c  = mod_state.clone();
                 let mod_btns_c   = mod_btns.clone();
                 let all_btns_c   = all_btns.clone();
+                let lang_btns_c  = lang_btns.clone();
                 let sel_c        = sel.clone();
                 let mut buf_c    = buf.clone();
                 let mut disp_c   = disp.clone();
@@ -473,21 +576,33 @@ fn main() {
                     // Move the amber highlight to the clicked button.
                     let mut ab = all_btns_c.borrow_mut();
                     let mut s  = sel_c.borrow_mut();
-                    let (old_r, old_c) = *s;
-                    let old_action  = ab[old_r][old_c].1;
-                    let old_base    = ab[old_r][old_c].3;
-                    let restore_col = if is_modifier(old_action)
-                        && mod_state_c.borrow().is_active(old_action)
-                    {
-                        col_mod_active()
-                    } else {
-                        old_base
-                    };
-                    ab[old_r][old_c].0.set_color(restore_col);
+                    // Restore the previously highlighted button's colour.
+                    match *s {
+                        NavSel::Key(old_r, old_c) => {
+                            let old_action = ab[old_r][old_c].1;
+                            let old_base   = ab[old_r][old_c].3;
+                            let restore = if is_modifier(old_action)
+                                && mod_state_c.borrow().is_active(old_action)
+                            {
+                                col_mod_active()
+                            } else {
+                                old_base
+                            };
+                            ab[old_r][old_c].0.set_color(restore);
+                        }
+                        NavSel::Lang(li) => {
+                            let restore = if li == *layout_idx_c.borrow() {
+                                Color::from_rgb(70, 130, 180)
+                            } else {
+                                Color::from_rgb(80, 80, 80)
+                            };
+                            lang_btns_c.borrow_mut()[li].set_color(restore);
+                        }
+                    }
                     ab[row_i][col_i].0.set_color(col_nav_sel());
                     let _ = ab[row_i][col_i].0.take_focus();
-                    *s = (row_i, col_i);
-                    app::redraw(); // repaint the new amber highlight
+                    *s = NavSel::Key(row_i, col_i);
+                    app::redraw();
                 });
             }
 
@@ -518,6 +633,8 @@ fn main() {
         let _ = ab[0][0].0.take_focus();
     }
 
+    win.end();
+
     // --- Navigation: physical arrow keys + spacebar ---
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
     // the event to any child widget, so we can intercept arrow keys and spacebar
@@ -525,6 +642,7 @@ fn main() {
     {
         let sel_c        = sel.clone();
         let all_btns_c   = all_btns.clone();
+        let lang_btns_c  = lang_btns.clone();
         let layout_idx_c = layout_idx.clone();
         let mod_state_c  = mod_state.clone();
         let mod_btns_c   = mod_btns.clone();
@@ -551,26 +669,40 @@ fn main() {
                     _          => ( 0,  1), // Right
                 };
                 let mut ab = all_btns_c.borrow_mut();
+                let mut lb = lang_btns_c.borrow_mut();
                 let mut s  = sel_c.borrow_mut();
-                nav_move(&mut ab, &mut s, &mod_state_c, dr, dc);
+                nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc);
                 return true;
             }
 
-            // Physical spacebar fires the currently highlighted on-screen key.
-            // Use the key code (not event_text) for reliable detection on all backends.
+            // Physical spacebar fires the currently highlighted on-screen button.
             if k == Key::from_char(' ') {
-                let (row, col) = *sel_c.borrow();
-                let (action, scancode) = {
-                    let ab = all_btns_c.borrow();
-                    (ab[row][col].1, ab[row][col].2)
-                };
-                execute_action(
-                    action, scancode,
-                    *layout_idx_c.borrow(),
-                    &mut buf_c, &mut disp_c, &hook_c,
-                    &mod_state_c,
-                    &mod_btns_c.borrow(),
-                );
+                // Copy NavSel (it is Copy) so the borrow is released before any
+                // callback that may itself borrow sel_c (e.g. the lang callback).
+                let cur_sel = *sel_c.borrow();
+                match cur_sel {
+                    NavSel::Lang(li) => {
+                        // Fire the language-switch button.  Its callback updates
+                        // layout_idx, key labels, and the amber highlight.
+                        lang_btns_c.borrow_mut()[li].do_callback();
+                    }
+                    NavSel::Key(row, col) => {
+                        let (action, scancode) = {
+                            let ab = all_btns_c.borrow();
+                            (ab[row][col].1, ab[row][col].2)
+                        };
+                        execute_action(
+                            action, scancode,
+                            *layout_idx_c.borrow(),
+                            &mut buf_c, &mut disp_c, &hook_c,
+                            &mod_state_c,
+                            &mod_btns_c.borrow(),
+                        );
+                        // Re-apply amber in case execute_action changed the colour
+                        // (e.g. when the selected button is a modifier key).
+                        all_btns_c.borrow_mut()[row][col].0.set_color(col_nav_sel());
+                    }
+                }
                 return true;
             }
 
@@ -578,12 +710,7 @@ fn main() {
         });
     }
 
-    win.end();
-    // fullscreen(true) before show() so the window is full-screen from the
-    // very first frame; calling it after show() can cause a late WM resize
-    // that makes the window taller than the visible screen area.
-    win.fullscreen(true);
-    win.show();
+    win.redraw();
 
     a.run().unwrap();
 }
