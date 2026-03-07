@@ -291,25 +291,29 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // --- Discover real screen dimensions by fullscreening the window first. ---
-    // app::screen_size() can return (0, 0) on some Wayland compositors before
-    // a surface exists.  Fullscreening a bare window and reading win.w()/win.h()
-    // after the WM acts gives the actual pixel dimensions every time.
+    // --- Discover real screen dimensions. ---
+    // Show a bare window first so the Wayland compositor creates a surface;
+    // app::screen_size() can return (0, 0) before any surface exists.
+    // After show() + fullscreen() + a short wait, screen_size() is always valid.
+    // We PREFER screen_size() over win.w()/win.h() because on some compositors
+    // fullscreen sets the window larger than the visible screen area, which would
+    // push the bottom keyboard row off-screen.  screen_size() always returns the
+    // actual visible dimensions.
     let mut win = Window::new(0, 0, 100, 100, "Smart Keyboard");
     win.set_color(Color::from_rgb(40, 40, 43));
     win.end();
     win.show();
     win.fullscreen(true);
-    // Give the WM / compositor up to 100 ms to resize the window.
+    // Give the WM / compositor up to 100 ms to settle.
     let _ = app::wait_for(0.1);
-    let sw = if win.w() > 100 { win.w() } else {
-        let (w, _) = app::screen_size();
-        if w > 1.0 { w as i32 } else { 1920 }
-    };
-    let sh = if win.h() > 100 { win.h() } else {
-        let (_, h) = app::screen_size();
-        if h > 1.0 { h as i32 } else { 1080 }
-    };
+    let (sw_f, sh_f) = app::screen_size();
+    // screen_size() is primary; fall back to win dimensions only if it reports zero.
+    let sw = if sw_f > 1.0 { sw_f as i32 }
+             else if win.w() > 100 { win.w() }
+             else { 1920 };
+    let sh = if sh_f > 1.0 { sh_f as i32 }
+             else if win.h() > 100 { win.h() }
+             else { 1080 };
 
     // Add all child widgets now that the real dimensions are known.
     win.begin();
