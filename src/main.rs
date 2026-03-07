@@ -358,23 +358,21 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // Fullscreen the window first so we can read the real screen dimensions
-    // directly from win.w()/win.h() without relying on app::screen_size(),
-    // which can return (0, 0) on some Wayland compositors before a surface exists.
+    // Create the window and call fullscreen() before end()/show().
+    // On X11, fullscreen() calls resize() synchronously so win.w()/win.h()
+    // immediately reflect the actual screen dimensions.
+    // On Wayland the compositor may not deliver the size until later, so we
+    // fall back to app::screen_size() (which is available after App::default()).
     let mut win = Window::new(0, 0, 1, 1, "Smart Keyboard");
     win.set_color(Color::from_rgb(40, 40, 43));
-    win.end();
     win.fullscreen(true);
-    win.show();
-    // Pump the event loop until the WM delivers the actual fullscreen dimensions.
-    while win.w() <= 1 {
-        if !app::wait() { break; }
-    }
-    let sw = win.w();
-    let sh = win.h();
-
-    // Now add all child widgets using the real screen dimensions.
-    win.begin();
+    let (sw_f, sh_f) = app::screen_size();
+    let sw = if win.w() > 1 { win.w() }
+             else if sw_f > 1.0 { sw_f as i32 }
+             else { 1920 }; // fallback: common full-HD width
+    let sh = if win.h() > 1 { win.h() }
+             else if sh_f > 1.0 { sh_f as i32 }
+             else { 1080 }; // fallback: common full-HD height
 
     let pad  = 10i32;
     let gap  =  3i32;
@@ -633,8 +631,6 @@ fn main() {
         let _ = ab[0][0].0.take_focus();
     }
 
-    win.end();
-
     // --- Navigation: physical arrow keys + spacebar ---
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
     // the event to any child widget, so we can intercept arrow keys and spacebar
@@ -710,7 +706,8 @@ fn main() {
         });
     }
 
-    win.redraw();
+    win.end();
+    win.show();
 
     a.run().unwrap();
 }
