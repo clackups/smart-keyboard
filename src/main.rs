@@ -159,6 +159,9 @@ fn nav_move(
     };
 
     all_btns[new_row][new_col].0.set_color(col_nav_sel());
+    // Move FLTK keyboard focus to the highlighted button so the physical
+    // spacebar (routed by FLTK to the focused widget) fires the correct key.
+    let _ = all_btns[new_row][new_col].0.take_focus();
     *sel = (new_row, new_col);
     app::redraw();
 }
@@ -260,7 +263,7 @@ fn main() {
     let lang_btn_h = ((sh as f32 * 0.05) as i32).max(28);
 
     let kbd_y = pad + display_h + gap + lang_btn_h + gap;
-    let kbd_h = sh - kbd_y - pad;
+    let kbd_h = sh - kbd_y - 2 * pad; // bottom margin = 2*pad for a clearly visible gap
     let key_h = ((kbd_h - 4 * gap) / 5).max(10);
 
     // Reference row: 13 Std + Bksp (fills) + 13 gaps = avail_w
@@ -445,7 +448,11 @@ fn main() {
     }
 
     // --- Initial navigation highlight at (row=0, col=0) ---
-    all_btns.borrow_mut()[0][0].0.set_color(col_nav_sel());
+    {
+        let mut ab = all_btns.borrow_mut();
+        ab[0][0].0.set_color(col_nav_sel());
+        let _ = ab[0][0].0.take_focus();
+    }
 
     // --- Navigation: physical arrow keys + spacebar ---
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
@@ -487,7 +494,8 @@ fn main() {
             }
 
             // Physical spacebar fires the currently highlighted on-screen key.
-            if app::event_text() == " " {
+            // Use the key code (not event_text) for reliable detection on all backends.
+            if k == Key::from_char(' ') {
                 let (row, col) = *sel_c.borrow();
                 let (action, scancode) = {
                     let ab = all_btns_c.borrow();
