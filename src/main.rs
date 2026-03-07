@@ -112,12 +112,10 @@ impl ModState {
 // Color constants
 // =============================================================================
 
-fn col_key_normal()   -> Color { Color::from_rgb(218, 218, 222) }
-fn col_key_mod()      -> Color { Color::from_rgb(100, 100, 110) }
-fn col_mod_active()   -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
-fn col_nav_sel()      -> Color { Color::from_rgb(255, 200,   0) } // amber
-fn col_lang_active()  -> Color { Color::from_rgb( 70, 130, 180) } // active language
-fn col_lang_inactive() -> Color { Color::from_rgb(80,  80,  80) } // inactive language
+fn col_key_normal()  -> Color { Color::from_rgb(218, 218, 222) }
+fn col_key_mod()     -> Color { Color::from_rgb(100, 100, 110) }
+fn col_mod_active()  -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
+fn col_nav_sel()     -> Color { Color::from_rgb(255, 200,   0) } // amber
 
 // =============================================================================
 // Modifier button descriptor
@@ -138,27 +136,67 @@ struct ModBtn {
 /// Move the keyboard-navigation cursor and update highlight colours.
 ///
 /// `dr` / `dc` are row / column deltas.
-/// Rows wrap around; columns clamp when changing rows, wrap within the same row.
+/// Navigation clamps at the edges (no wrap-around).
+/// For vertical moves the target column is chosen by pixel-centre alignment
+/// so wide keys (Space, Shifts) map naturally across rows.
 fn nav_move(
-    all_btns: &mut Vec<Vec<(Button, Action, u16, Color)>>,
-    sel:      &mut (usize, usize),
-    dr:       i32,
-    dc:       i32,
+    all_btns:  &mut Vec<Vec<(Button, Action, u16, Color)>>,
+    sel:       &mut (usize, usize),
+    mod_state: &Rc<RefCell<ModState>>,
+    dr:        i32,
+    dc:        i32,
 ) {
     let (row, col) = *sel;
 
-    // Restore the base colour of the previously highlighted key.
-    let base = all_btns[row][col].3;
-    all_btns[row][col].0.set_color(base);
-
+    // Compute the new position first so we can bail out early at edges
+    // without touching any button colours (avoids a visual flicker).
     let rows    = all_btns.len();
-    let new_row = ((row as i32 + dr).rem_euclid(rows as i32)) as usize;
+    let new_row = (row as i32 + dr).clamp(0, rows as i32 - 1) as usize;
     let row_len = all_btns[new_row].len();
     let new_col = if dr != 0 {
-        col.min(row_len - 1)                                  // clamp across rows
+        if new_row == row {
+            // Clamped at the vertical edge: stay in the same column.
+            col
+        } else {
+            // Vertical move: find the button in the new row whose pixel x-range
+            // contains the current button's centre-x.  This correctly aligns
+            // wide keys (Space, Shifts) across rows with different key widths.
+            // If no button contains it, pick the nearest one.
+            let cur_cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+            all_btns[new_row]
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, b)| {
+                    let bx = b.0.x();
+                    let bw = b.0.w();
+                    if cur_cx >= bx && cur_cx < bx + bw { 0i32 }
+                    else if cur_cx < bx                 { bx - cur_cx }
+                    else                                { cur_cx - (bx + bw) }
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        }
     } else {
-        ((col as i32 + dc).rem_euclid(row_len as i32)) as usize // wrap within row
+        (col as i32 + dc).clamp(0, row_len as i32 - 1) as usize // clamp within row
     };
+
+    // Nothing to do: already at the edge.
+    if new_row == row && new_col == col {
+        return;
+    }
+
+    // Restore the correct colour of the previously highlighted key,
+    // accounting for active modifier state.
+    let old_action  = all_btns[row][col].1;
+    let old_base    = all_btns[row][col].3;
+    let restore_col = if is_modifier(old_action)
+        && mod_state.borrow().is_active(old_action)
+    {
+        col_mod_active()
+    } else {
+        old_base
+    };
+    all_btns[row][col].0.set_color(restore_col);
 
     all_btns[new_row][new_col].0.set_color(col_nav_sel());
     // Move FLTK keyboard focus to the highlighted button so the physical
@@ -253,10 +291,28 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // --- Screen geometry: all widget sizes are derived proportionally ---
-    let (sw, sh) = app::screen_size();
-    let sw = if sw > 1.0 { sw as i32 } else { 1920 };
-    let sh = if sh > 1.0 { sh as i32 } else { 1080 };
+    // --- Discover real screen dimensions by fullscreening the window first. ---
+    // app::screen_size() can return (0, 0) on some Wayland compositors before
+    // a surface exists.  Fullscreening a bare window and reading win.w()/win.h()
+    // after the WM acts gives the actual pixel dimensions every time.
+    let mut win = Window::new(0, 0, 100, 100, "Smart Keyboard");
+    win.set_color(Color::from_rgb(40, 40, 43));
+    win.end();
+    win.show();
+    win.fullscreen(true);
+    // Give the WM / compositor up to 100 ms to resize the window.
+    let _ = app::wait_for(0.1);
+    let sw = if win.w() > 100 { win.w() } else {
+        let (w, _) = app::screen_size();
+        if w > 1.0 { w as i32 } else { 1920 }
+    };
+    let sh = if win.h() > 100 { win.h() } else {
+        let (_, h) = app::screen_size();
+        if h > 1.0 { h as i32 } else { 1080 }
+    };
+
+    // Add all child widgets now that the real dimensions are known.
+    win.begin();
 
     let pad  = 10i32;
     let gap  =  3i32;
@@ -311,10 +367,6 @@ fn main() {
     let buf  = TextBuffer::default();
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
 
-    // --- Window (full-screen; handler runs before children) ---
-    let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
-    win.set_color(Color::from_rgb(40, 40, 43));
-
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad, pad, avail_w, display_h, "");
     disp.set_buffer(buf.clone());
@@ -362,12 +414,16 @@ fn main() {
     let all_btns: Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>> =
         Rc::new(RefCell::new(Vec::new()));
 
+    // Navigation selection state: shared with button click callbacks and the
+    // window key-event handler so all three can read and update it.
+    let sel: Rc<RefCell<(usize, usize)>> = Rc::new(RefCell::new((0, 0)));
+
     for (row_i, row) in KEYS.iter().enumerate() {
         let row_y = kbd_y + row_i as i32 * (key_h + gap);
         let mut x = pad;
         let mut btn_row: Vec<(Button, Action, u16, Color)> = Vec::new();
 
-        for phys in row.iter() {
+        for (col_i, phys) in row.iter().enumerate() {
             let w        = px(phys.kw);
             let is_mod   = is_modifier(phys.action);
             let is_win   = matches!(phys.action, Action::Win);
@@ -413,6 +469,8 @@ fn main() {
                 let layout_idx_c = layout_idx.clone();
                 let mod_state_c  = mod_state.clone();
                 let mod_btns_c   = mod_btns.clone();
+                let all_btns_c   = all_btns.clone();
+                let sel_c        = sel.clone();
                 let mut buf_c    = buf.clone();
                 let mut disp_c   = disp.clone();
                 let hook_c       = Rc::clone(&hook);
@@ -426,6 +484,24 @@ fn main() {
                         &mod_state_c,
                         &mod_btns_c.borrow(),
                     );
+                    // Move the amber highlight to the clicked button.
+                    let mut ab = all_btns_c.borrow_mut();
+                    let mut s  = sel_c.borrow_mut();
+                    let (old_r, old_c) = *s;
+                    let old_action  = ab[old_r][old_c].1;
+                    let old_base    = ab[old_r][old_c].3;
+                    let restore_col = if is_modifier(old_action)
+                        && mod_state_c.borrow().is_active(old_action)
+                    {
+                        col_mod_active()
+                    } else {
+                        old_base
+                    };
+                    ab[old_r][old_c].0.set_color(restore_col);
+                    ab[row_i][col_i].0.set_color(col_nav_sel());
+                    let _ = ab[row_i][col_i].0.take_focus();
+                    *s = (row_i, col_i);
+                    app::redraw(); // repaint the new amber highlight
                 });
             }
 
@@ -460,7 +536,6 @@ fn main() {
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
     // the event to any child widget, so we can intercept arrow keys and spacebar
     // before any focused button consumes them.
-    let sel: Rc<RefCell<(usize, usize)>> = Rc::new(RefCell::new((0, 0)));
     {
         let sel_c        = sel.clone();
         let all_btns_c   = all_btns.clone();
@@ -491,7 +566,7 @@ fn main() {
                 };
                 let mut ab = all_btns_c.borrow_mut();
                 let mut s  = sel_c.borrow_mut();
-                nav_move(&mut ab, &mut s, dr, dc);
+                nav_move(&mut ab, &mut s, &mod_state_c, dr, dc);
                 return true;
             }
 
@@ -518,8 +593,7 @@ fn main() {
     }
 
     win.end();
-    win.show();
-    win.fullscreen(true);
+    win.redraw();
 
     a.run().unwrap();
 }
