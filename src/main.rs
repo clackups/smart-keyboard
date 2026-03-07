@@ -1,13 +1,20 @@
+mod keyboards;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use fltk::{
     app,
     button::Button,
-    enums::{Color, Event, FrameType},
+    enums::{Color, Event, FrameType, Key},
     prelude::*,
     text::{TextBuffer, TextDisplay},
     window::Window,
+};
+
+use keyboards::{
+    is_modifier, is_sticky, special_hook_str, special_label,
+    Action, KW, KEYS, LAYOUTS, REGULAR_KEY_COUNT,
 };
 
 // =============================================================================
@@ -16,447 +23,262 @@ use fltk::{
 
 /// Receives key-press and key-release notifications from the on-screen keyboard.
 ///
-/// Implement this trait and pass it to the application to react to every
-/// virtual key event.  The `key` argument is the string that the key would
-/// insert (e.g. "a", "\n") or a descriptive token for non-printing keys
-/// ("Backspace", "Tab", "LShift", etc.).
+/// `scancode` is the Linux evdev key code (linux/input-event-codes.h).
+/// `key` is the inserted string (e.g. "a", "\n") or a descriptor token for
+/// non-printing keys ("Backspace", "LShift", "CapsLock", etc.).
+///
+/// Implement this trait and replace `DummyKeyHook` to react to virtual key events.
 pub trait KeyHook {
-    fn on_key_press(&self, key: &str);
-    fn on_key_release(&self, key: &str);
+    fn on_key_press(&self, scancode: u16, key: &str);
+    fn on_key_release(&self, scancode: u16, key: &str);
 }
 
-/// No-op hook used as a placeholder until a real implementation is installed.
-///
-/// Replace this with a concrete KeyHook implementation to handle events.
+/// No-op hook: logs every event to stderr.  Replace with a real implementation.
 pub struct DummyKeyHook;
 
 impl KeyHook for DummyKeyHook {
-    fn on_key_press(&self, key: &str) {
-        eprintln!("[key_press]   {:?}", key);
+    fn on_key_press(&self, scancode: u16, key: &str) {
+        eprintln!("[key_press]   scancode={} key={:?}", scancode, key);
     }
-    fn on_key_release(&self, key: &str) {
-        eprintln!("[key_release] {:?}", key);
-    }
-}
-
-// =============================================================================
-// Key-width kinds
-// =============================================================================
-
-/// Semantic width category for each physical key.
-///
-/// Pixel values are computed at runtime from the screen width so that every
-/// keyboard row fills the available area exactly.
-#[derive(Clone, Copy)]
-enum KW {
-    Std,    // 1x    -- regular letter / number / symbol key
-    Tab,    // ~1.5x -- left edge of the top-alpha row
-    BSlash, // fills the right remainder of the top-alpha row
-    Caps,   // ~1.75x -- left edge of the home row
-    Enter,  // fills the right remainder of the home row
-    Bksp,   // fills the right remainder of the number row
-    LShift, // ~2.25x -- left edge of the lower-alpha row
-    RShift, // fills the right remainder of the lower-alpha row
-    Mod,    // ~1.5x -- Ctrl / Win / Alt / AltGr / Menu keys
-    Space,  // fills the remainder of the bottom row
-}
-
-// =============================================================================
-// Physical key actions
-// =============================================================================
-
-/// What a physical key does when activated.
-///
-/// `Regular(n)` slots are substitutable: each LayoutDef provides one entry per
-/// slot, so switching layouts just re-labels and re-maps those keys.
-/// All other variants have fixed behaviour independent of the language.
-#[derive(Clone, Copy)]
-enum Action {
-    /// Index into the current LayoutDef::keys slice (0..REGULAR_KEY_COUNT).
-    Regular(usize),
-    // --- special keys with fixed behaviour regardless of layout ---
-    Backspace,
-    Tab,
-    CapsLock,
-    Enter,
-    LShift,
-    RShift,
-    Ctrl,
-    Win,
-    Alt,
-    AltGr,
-    Menu,
-    Space,
-}
-
-/// Display label for a non-Regular key (shown on the button face).
-fn special_label(action: Action) -> &'static str {
-    match action {
-        Action::Backspace  => "Bksp",
-        Action::Tab        => "Tab",
-        Action::CapsLock   => "Caps",
-        Action::Enter      => "Enter",
-        Action::LShift     => "Shift",
-        Action::RShift     => "Shift",
-        Action::Ctrl       => "Ctrl",
-        Action::Win        => "Win",
-        Action::Alt        => "Alt",
-        Action::AltGr      => "AltGr",
-        Action::Menu       => "Menu",
-        Action::Space      => "",
-        Action::Regular(_) => "",
-    }
-}
-
-/// Token passed to the key hook for a non-Regular key.
-fn special_hook_str(action: Action) -> &'static str {
-    match action {
-        Action::Backspace  => "Backspace",
-        Action::Tab        => "Tab",
-        Action::Enter      => "Enter",
-        Action::Space      => "Space",
-        Action::CapsLock   => "CapsLock",
-        Action::LShift     => "LShift",
-        Action::RShift     => "RShift",
-        Action::Ctrl       => "Ctrl",
-        Action::Win        => "Win",
-        Action::Alt        => "Alt",
-        Action::AltGr      => "AltGr",
-        Action::Menu       => "Menu",
-        Action::Regular(_) => "",
+    fn on_key_release(&self, scancode: u16, key: &str) {
+        eprintln!("[key_release] scancode={} key={:?}", scancode, key);
     }
 }
 
 // =============================================================================
-// Physical keyboard structure
+// Modifier key state
 // =============================================================================
 
-struct PhysKey {
-    kw:     KW,
-    action: Action,
+/// Tracks the toggle / sticky state for every modifier key.
+///
+/// * CapsLock: pure toggle (press once to lock, press again to unlock).
+/// * Ctrl, Shift (L/R), Alt, AltGr: sticky-toggle.
+///   First press activates them; they auto-deactivate after the next regular
+///   keypress.  A second press before any regular key deactivates them early.
+#[derive(Default)]
+struct ModState {
+    pub caps:   bool,
+    pub lshift: bool,
+    pub rshift: bool,
+    pub ctrl:   bool,
+    pub alt:    bool,
+    pub altgr:  bool,
 }
 
-/// Total number of Regular(n) slots across all rows of KEYS.
-/// Every LayoutDef must supply exactly this many LayoutKey entries.
-const REGULAR_KEY_COUNT: usize = 47;
+impl ModState {
+    /// Flip the modifier for `action`; returns the new active state.
+    fn toggle(&mut self, action: Action) -> bool {
+        let s = self.slot_mut(action);
+        *s = !*s;
+        *s
+    }
 
-/// Physical keyboard rows.  Shape and special keys are fixed; Regular(n)
-/// slots are filled by the active LayoutDef at runtime.
-///
-/// Regular slot index map:
-///   Row 0 (number row)  : slots  0-12  (` 1 2 3 4 5 6 7 8 9 0 - =)
-///   Row 1 (top alpha)   : slots 13-25  (q w e r t y u i o p [ ] \)
-///   Row 2 (home row)    : slots 26-36  (a s d f g h j k l ; ')
-///   Row 3 (lower alpha) : slots 37-46  (z x c v b n m , . /)
-static KEYS: &[&[PhysKey]] = &[
-    // --- Number row (13 Std + Bksp, 13 gaps) ---
-    &[
-        PhysKey { kw: KW::Std,  action: Action::Regular(0)  }, // `
-        PhysKey { kw: KW::Std,  action: Action::Regular(1)  }, // 1
-        PhysKey { kw: KW::Std,  action: Action::Regular(2)  }, // 2
-        PhysKey { kw: KW::Std,  action: Action::Regular(3)  }, // 3
-        PhysKey { kw: KW::Std,  action: Action::Regular(4)  }, // 4
-        PhysKey { kw: KW::Std,  action: Action::Regular(5)  }, // 5
-        PhysKey { kw: KW::Std,  action: Action::Regular(6)  }, // 6
-        PhysKey { kw: KW::Std,  action: Action::Regular(7)  }, // 7
-        PhysKey { kw: KW::Std,  action: Action::Regular(8)  }, // 8
-        PhysKey { kw: KW::Std,  action: Action::Regular(9)  }, // 9
-        PhysKey { kw: KW::Std,  action: Action::Regular(10) }, // 0
-        PhysKey { kw: KW::Std,  action: Action::Regular(11) }, // -
-        PhysKey { kw: KW::Std,  action: Action::Regular(12) }, // =
-        PhysKey { kw: KW::Bksp, action: Action::Backspace   },
-    ],
-    // --- Top alpha row (Tab + 12 Std + BSlash, 13 gaps) ---
-    &[
-        PhysKey { kw: KW::Tab,    action: Action::Tab          },
-        PhysKey { kw: KW::Std,    action: Action::Regular(13)  }, // q
-        PhysKey { kw: KW::Std,    action: Action::Regular(14)  }, // w
-        PhysKey { kw: KW::Std,    action: Action::Regular(15)  }, // e
-        PhysKey { kw: KW::Std,    action: Action::Regular(16)  }, // r
-        PhysKey { kw: KW::Std,    action: Action::Regular(17)  }, // t
-        PhysKey { kw: KW::Std,    action: Action::Regular(18)  }, // y
-        PhysKey { kw: KW::Std,    action: Action::Regular(19)  }, // u
-        PhysKey { kw: KW::Std,    action: Action::Regular(20)  }, // i
-        PhysKey { kw: KW::Std,    action: Action::Regular(21)  }, // o
-        PhysKey { kw: KW::Std,    action: Action::Regular(22)  }, // p
-        PhysKey { kw: KW::Std,    action: Action::Regular(23)  }, // [
-        PhysKey { kw: KW::Std,    action: Action::Regular(24)  }, // ]
-        PhysKey { kw: KW::BSlash, action: Action::Regular(25)  }, // backslash
-    ],
-    // --- Home row (Caps + 11 Std + Enter, 12 gaps) ---
-    &[
-        PhysKey { kw: KW::Caps,  action: Action::CapsLock     },
-        PhysKey { kw: KW::Std,   action: Action::Regular(26)  }, // a
-        PhysKey { kw: KW::Std,   action: Action::Regular(27)  }, // s
-        PhysKey { kw: KW::Std,   action: Action::Regular(28)  }, // d
-        PhysKey { kw: KW::Std,   action: Action::Regular(29)  }, // f
-        PhysKey { kw: KW::Std,   action: Action::Regular(30)  }, // g
-        PhysKey { kw: KW::Std,   action: Action::Regular(31)  }, // h
-        PhysKey { kw: KW::Std,   action: Action::Regular(32)  }, // j
-        PhysKey { kw: KW::Std,   action: Action::Regular(33)  }, // k
-        PhysKey { kw: KW::Std,   action: Action::Regular(34)  }, // l
-        PhysKey { kw: KW::Std,   action: Action::Regular(35)  }, // ;
-        PhysKey { kw: KW::Std,   action: Action::Regular(36)  }, // '
-        PhysKey { kw: KW::Enter, action: Action::Enter        },
-    ],
-    // --- Lower alpha row (LShift + 10 Std + RShift, 11 gaps) ---
-    &[
-        PhysKey { kw: KW::LShift, action: Action::LShift      },
-        PhysKey { kw: KW::Std,    action: Action::Regular(37)  }, // z
-        PhysKey { kw: KW::Std,    action: Action::Regular(38)  }, // x
-        PhysKey { kw: KW::Std,    action: Action::Regular(39)  }, // c
-        PhysKey { kw: KW::Std,    action: Action::Regular(40)  }, // v
-        PhysKey { kw: KW::Std,    action: Action::Regular(41)  }, // b
-        PhysKey { kw: KW::Std,    action: Action::Regular(42)  }, // n
-        PhysKey { kw: KW::Std,    action: Action::Regular(43)  }, // m
-        PhysKey { kw: KW::Std,    action: Action::Regular(44)  }, // ,
-        PhysKey { kw: KW::Std,    action: Action::Regular(45)  }, // .
-        PhysKey { kw: KW::Std,    action: Action::Regular(46)  }, // /
-        PhysKey { kw: KW::RShift, action: Action::RShift       },
-    ],
-    // --- Bottom row (6 Mod + Space, 6 gaps) ---
-    &[
-        PhysKey { kw: KW::Mod,   action: Action::Ctrl  },
-        PhysKey { kw: KW::Mod,   action: Action::Win   },
-        PhysKey { kw: KW::Mod,   action: Action::Alt   },
-        PhysKey { kw: KW::Space, action: Action::Space },
-        PhysKey { kw: KW::Mod,   action: Action::AltGr },
-        PhysKey { kw: KW::Mod,   action: Action::Menu  },
-        PhysKey { kw: KW::Mod,   action: Action::Ctrl  },
-    ],
-];
+    /// Deactivate all sticky modifiers (Ctrl/Shift/Alt/AltGr).
+    fn release_sticky(&mut self) {
+        self.lshift = false;
+        self.rshift = false;
+        self.ctrl   = false;
+        self.alt    = false;
+        self.altgr  = false;
+    }
+
+    fn is_active(&self, action: Action) -> bool { *self.slot(action) }
+
+    fn slot(&self, action: Action) -> &bool {
+        match action {
+            Action::CapsLock => &self.caps,
+            Action::LShift   => &self.lshift,
+            Action::RShift   => &self.rshift,
+            Action::Ctrl     => &self.ctrl,
+            Action::Alt      => &self.alt,
+            Action::AltGr    => &self.altgr,
+            _                => unreachable!(),
+        }
+    }
+    fn slot_mut(&mut self, action: Action) -> &mut bool {
+        match action {
+            Action::CapsLock => &mut self.caps,
+            Action::LShift   => &mut self.lshift,
+            Action::RShift   => &mut self.rshift,
+            Action::Ctrl     => &mut self.ctrl,
+            Action::Alt      => &mut self.alt,
+            Action::AltGr    => &mut self.altgr,
+            _                => unreachable!(),
+        }
+    }
+}
 
 // =============================================================================
-// Language layouts
+// Color constants
 // =============================================================================
 
-/// One substitutable key slot: the text shown on the button face and the
-/// string appended to the buffer when the key is pressed.
-struct LayoutKey {
-    label:  &'static str,
-    insert: &'static str,
+fn col_key_normal() -> Color { Color::from_rgb(218, 218, 222) }
+fn col_key_mod()    -> Color { Color::from_rgb(100, 100, 110) }
+fn col_mod_active() -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
+fn col_nav_sel()    -> Color { Color::from_rgb(255, 200,   0) } // amber
+
+// =============================================================================
+// Modifier button descriptor
+// =============================================================================
+
+/// A modifier-key button together with its action and base (inactive) color.
+/// Stored in a shared list so execute_action can update visual state.
+struct ModBtn {
+    btn:      Button,
+    action:   Action,
+    base_col: Color,
 }
 
-/// A named keyboard layout.
+// =============================================================================
+// Navigation
+// =============================================================================
+
+/// Move the keyboard-navigation cursor and update highlight colours.
 ///
-/// To add a new language:
-///   1. Define `static MY_LANG: LayoutDef = LayoutDef { name: "XX", keys: &[...] };`
-///      with exactly REGULAR_KEY_COUNT (47) entries in the order shown in the
-///      slot index map inside the KEYS doc-comment.
-///   2. Append `&MY_LANG` to the LAYOUTS slice below.
-///
-/// That is the only change required -- the toggle button appears automatically.
-struct LayoutDef {
-    name: &'static str,
-    keys: &'static [LayoutKey],
+/// `dr` / `dc` are row / column deltas.
+/// Rows wrap around; columns clamp when changing rows, wrap within the same row.
+fn nav_move(
+    all_btns: &mut Vec<Vec<(Button, Action, u16, Color)>>,
+    sel:      &mut (usize, usize),
+    dr:       i32,
+    dc:       i32,
+) {
+    let (row, col) = *sel;
+
+    // Restore the base colour of the previously highlighted key.
+    let base = all_btns[row][col].3;
+    all_btns[row][col].0.set_color(base);
+
+    let rows    = all_btns.len();
+    let new_row = ((row as i32 + dr).rem_euclid(rows as i32)) as usize;
+    let row_len = all_btns[new_row].len();
+    let new_col = if dr != 0 {
+        col.min(row_len - 1)                                  // clamp across rows
+    } else {
+        ((col as i32 + dc).rem_euclid(row_len as i32)) as usize // wrap within row
+    };
+
+    all_btns[new_row][new_col].0.set_color(col_nav_sel());
+    *sel = (new_row, new_col);
+    app::redraw();
 }
 
-// ---------------------------------------------------------------------------
-// US (QWERTY)
-// ---------------------------------------------------------------------------
-static US: LayoutDef = LayoutDef {
-    name: "US",
-    keys: &[
-        // --- number row (slots 0-12) ---
-        LayoutKey { label: "`",  insert: "`"  }, // 0
-        LayoutKey { label: "1",  insert: "1"  }, // 1
-        LayoutKey { label: "2",  insert: "2"  }, // 2
-        LayoutKey { label: "3",  insert: "3"  }, // 3
-        LayoutKey { label: "4",  insert: "4"  }, // 4
-        LayoutKey { label: "5",  insert: "5"  }, // 5
-        LayoutKey { label: "6",  insert: "6"  }, // 6
-        LayoutKey { label: "7",  insert: "7"  }, // 7
-        LayoutKey { label: "8",  insert: "8"  }, // 8
-        LayoutKey { label: "9",  insert: "9"  }, // 9
-        LayoutKey { label: "0",  insert: "0"  }, // 10
-        LayoutKey { label: "-",  insert: "-"  }, // 11
-        LayoutKey { label: "=",  insert: "="  }, // 12
-        // --- top alpha (slots 13-25) ---
-        LayoutKey { label: "q",  insert: "q"  }, // 13
-        LayoutKey { label: "w",  insert: "w"  }, // 14
-        LayoutKey { label: "e",  insert: "e"  }, // 15
-        LayoutKey { label: "r",  insert: "r"  }, // 16
-        LayoutKey { label: "t",  insert: "t"  }, // 17
-        LayoutKey { label: "y",  insert: "y"  }, // 18
-        LayoutKey { label: "u",  insert: "u"  }, // 19
-        LayoutKey { label: "i",  insert: "i"  }, // 20
-        LayoutKey { label: "o",  insert: "o"  }, // 21
-        LayoutKey { label: "p",  insert: "p"  }, // 22
-        LayoutKey { label: "[",  insert: "["  }, // 23
-        LayoutKey { label: "]",  insert: "]"  }, // 24
-        LayoutKey { label: "\\", insert: "\\" }, // 25
-        // --- home row (slots 26-36) ---
-        LayoutKey { label: "a",  insert: "a"  }, // 26
-        LayoutKey { label: "s",  insert: "s"  }, // 27
-        LayoutKey { label: "d",  insert: "d"  }, // 28
-        LayoutKey { label: "f",  insert: "f"  }, // 29
-        LayoutKey { label: "g",  insert: "g"  }, // 30
-        LayoutKey { label: "h",  insert: "h"  }, // 31
-        LayoutKey { label: "j",  insert: "j"  }, // 32
-        LayoutKey { label: "k",  insert: "k"  }, // 33
-        LayoutKey { label: "l",  insert: "l"  }, // 34
-        LayoutKey { label: ";",  insert: ";"  }, // 35
-        LayoutKey { label: "'",  insert: "'"  }, // 36
-        // --- lower alpha (slots 37-46) ---
-        LayoutKey { label: "z",  insert: "z"  }, // 37
-        LayoutKey { label: "x",  insert: "x"  }, // 38
-        LayoutKey { label: "c",  insert: "c"  }, // 39
-        LayoutKey { label: "v",  insert: "v"  }, // 40
-        LayoutKey { label: "b",  insert: "b"  }, // 41
-        LayoutKey { label: "n",  insert: "n"  }, // 42
-        LayoutKey { label: "m",  insert: "m"  }, // 43
-        LayoutKey { label: ",",  insert: ","  }, // 44
-        LayoutKey { label: ".",  insert: "."  }, // 45
-        LayoutKey { label: "/",  insert: "/"  }, // 46
-    ],
-};
+// =============================================================================
+// Action execution
+// =============================================================================
 
-// ---------------------------------------------------------------------------
-// Ukrainian (QWERTY-UA)
-//
-// All non-ASCII runtime values are expressed as \u{XXXX} escape sequences so
-// the source file remains strictly ASCII throughout.
-//
-// Slot-to-Ukrainian character mapping:
-//   slot 0  ` -> \u{02BC}  MODIFIER LETTER APOSTROPHE (Ukrainian apostrophe)
-//   slot 13 q -> \u{0439}  CYRILLIC SMALL LETTER SHORT I         (J)
-//   slot 14 w -> \u{0446}  CYRILLIC SMALL LETTER TSE             (Ts)
-//   slot 15 e -> \u{0443}  CYRILLIC SMALL LETTER U
-//   slot 16 r -> \u{043A}  CYRILLIC SMALL LETTER KA              (K)
-//   slot 17 t -> \u{0435}  CYRILLIC SMALL LETTER IE              (Ye)
-//   slot 18 y -> \u{043D}  CYRILLIC SMALL LETTER EN              (N)
-//   slot 19 u -> \u{0433}  CYRILLIC SMALL LETTER GHE             (G)
-//   slot 20 i -> \u{0448}  CYRILLIC SMALL LETTER SHA             (Sh)
-//   slot 21 o -> \u{0449}  CYRILLIC SMALL LETTER SHCHA           (Shch)
-//   slot 22 p -> \u{0437}  CYRILLIC SMALL LETTER ZE              (Z)
-//   slot 23 [ -> \u{0445}  CYRILLIC SMALL LETTER HA              (Kh)
-//   slot 24 ] -> \u{0457}  CYRILLIC SMALL LETTER YI              (Yi)
-//   slot 25 \ -> \  (unchanged)
-//   slot 26 a -> \u{0444}  CYRILLIC SMALL LETTER EF              (F)
-//   slot 27 s -> \u{0456}  CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
-//   slot 28 d -> \u{0432}  CYRILLIC SMALL LETTER VE              (V)
-//   slot 29 f -> \u{0430}  CYRILLIC SMALL LETTER A
-//   slot 30 g -> \u{043F}  CYRILLIC SMALL LETTER PE              (P)
-//   slot 31 h -> \u{0440}  CYRILLIC SMALL LETTER ER              (R)
-//   slot 32 j -> \u{043E}  CYRILLIC SMALL LETTER O
-//   slot 33 k -> \u{043B}  CYRILLIC SMALL LETTER EL              (L)
-//   slot 34 l -> \u{0434}  CYRILLIC SMALL LETTER DE              (D)
-//   slot 35 ; -> \u{0436}  CYRILLIC SMALL LETTER ZHE             (Zh)
-//   slot 36 ' -> \u{0454}  CYRILLIC SMALL LETTER UKRAINIAN IE    (Ye)
-//   slot 37 z -> \u{044F}  CYRILLIC SMALL LETTER YA              (Ya)
-//   slot 38 x -> \u{0447}  CYRILLIC SMALL LETTER CHE             (Ch)
-//   slot 39 c -> \u{0441}  CYRILLIC SMALL LETTER ES              (S)
-//   slot 40 v -> \u{043C}  CYRILLIC SMALL LETTER EM              (M)
-//   slot 41 b -> \u{0438}  CYRILLIC SMALL LETTER I
-//   slot 42 n -> \u{0442}  CYRILLIC SMALL LETTER TE              (T)
-//   slot 43 m -> \u{044C}  CYRILLIC SMALL LETTER SOFT SIGN
-//   slot 44 , -> \u{0431}  CYRILLIC SMALL LETTER BE              (B)
-//   slot 45 . -> \u{044E}  CYRILLIC SMALL LETTER YU              (Yu)
-//   slot 46 / -> /  (unchanged)
-// ---------------------------------------------------------------------------
-static UA: LayoutDef = LayoutDef {
-    name: "UA",
-    keys: &[
-        // --- number row (slots 0-12) ---
-        LayoutKey { label: "\u{02BC}", insert: "\u{02BC}" }, // 0  ` -> apostrophe
-        LayoutKey { label: "1",        insert: "1"        }, // 1
-        LayoutKey { label: "2",        insert: "2"        }, // 2
-        LayoutKey { label: "3",        insert: "3"        }, // 3
-        LayoutKey { label: "4",        insert: "4"        }, // 4
-        LayoutKey { label: "5",        insert: "5"        }, // 5
-        LayoutKey { label: "6",        insert: "6"        }, // 6
-        LayoutKey { label: "7",        insert: "7"        }, // 7
-        LayoutKey { label: "8",        insert: "8"        }, // 8
-        LayoutKey { label: "9",        insert: "9"        }, // 9
-        LayoutKey { label: "0",        insert: "0"        }, // 10
-        LayoutKey { label: "-",        insert: "-"        }, // 11
-        LayoutKey { label: "=",        insert: "="        }, // 12
-        // --- top alpha (slots 13-25) ---
-        LayoutKey { label: "\u{0439}", insert: "\u{0439}" }, // 13  q -> J
-        LayoutKey { label: "\u{0446}", insert: "\u{0446}" }, // 14  w -> Ts
-        LayoutKey { label: "\u{0443}", insert: "\u{0443}" }, // 15  e -> U
-        LayoutKey { label: "\u{043A}", insert: "\u{043A}" }, // 16  r -> K
-        LayoutKey { label: "\u{0435}", insert: "\u{0435}" }, // 17  t -> Ye
-        LayoutKey { label: "\u{043D}", insert: "\u{043D}" }, // 18  y -> N
-        LayoutKey { label: "\u{0433}", insert: "\u{0433}" }, // 19  u -> G
-        LayoutKey { label: "\u{0448}", insert: "\u{0448}" }, // 20  i -> Sh
-        LayoutKey { label: "\u{0449}", insert: "\u{0449}" }, // 21  o -> Shch
-        LayoutKey { label: "\u{0437}", insert: "\u{0437}" }, // 22  p -> Z
-        LayoutKey { label: "\u{0445}", insert: "\u{0445}" }, // 23  [ -> Kh
-        LayoutKey { label: "\u{0457}", insert: "\u{0457}" }, // 24  ] -> Yi
-        LayoutKey { label: "\\",       insert: "\\"       }, // 25  \ -> \ (same)
-        // --- home row (slots 26-36) ---
-        LayoutKey { label: "\u{0444}", insert: "\u{0444}" }, // 26  a -> F
-        LayoutKey { label: "\u{0456}", insert: "\u{0456}" }, // 27  s -> I
-        LayoutKey { label: "\u{0432}", insert: "\u{0432}" }, // 28  d -> V
-        LayoutKey { label: "\u{0430}", insert: "\u{0430}" }, // 29  f -> A
-        LayoutKey { label: "\u{043F}", insert: "\u{043F}" }, // 30  g -> P
-        LayoutKey { label: "\u{0440}", insert: "\u{0440}" }, // 31  h -> R
-        LayoutKey { label: "\u{043E}", insert: "\u{043E}" }, // 32  j -> O
-        LayoutKey { label: "\u{043B}", insert: "\u{043B}" }, // 33  k -> L
-        LayoutKey { label: "\u{0434}", insert: "\u{0434}" }, // 34  l -> D
-        LayoutKey { label: "\u{0436}", insert: "\u{0436}" }, // 35  ; -> Zh
-        LayoutKey { label: "\u{0454}", insert: "\u{0454}" }, // 36  ' -> Ye
-        // --- lower alpha (slots 37-46) ---
-        LayoutKey { label: "\u{044F}", insert: "\u{044F}" }, // 37  z -> Ya
-        LayoutKey { label: "\u{0447}", insert: "\u{0447}" }, // 38  x -> Ch
-        LayoutKey { label: "\u{0441}", insert: "\u{0441}" }, // 39  c -> S
-        LayoutKey { label: "\u{043C}", insert: "\u{043C}" }, // 40  v -> M
-        LayoutKey { label: "\u{0438}", insert: "\u{0438}" }, // 41  b -> I
-        LayoutKey { label: "\u{0442}", insert: "\u{0442}" }, // 42  n -> T
-        LayoutKey { label: "\u{044C}", insert: "\u{044C}" }, // 43  m -> soft sign
-        LayoutKey { label: "\u{0431}", insert: "\u{0431}" }, // 44  , -> B
-        LayoutKey { label: "\u{044E}", insert: "\u{044E}" }, // 45  . -> Yu
-        LayoutKey { label: "/",        insert: "/"        }, // 46  / -> / (same)
-    ],
-};
-
-/// All available layouts.
+/// Perform the action of a key: notify hooks, insert text, update modifiers.
 ///
-/// To add a new language: define a new LayoutDef constant (see UA above for
-/// an example) and append a reference to it here.  The toggle button appears
-/// automatically; no other code change is required.
-static LAYOUTS: &[&LayoutDef] = &[&US, &UA];
+/// `mod_btns` is the list of modifier buttons so their visual state can be
+/// updated when a modifier is toggled or a sticky modifier auto-releases.
+fn execute_action(
+    action:    Action,
+    scancode:  u16,
+    layout_i:  usize,
+    buf:       &mut TextBuffer,
+    disp:      &mut TextDisplay,
+    hook:      &Rc<dyn KeyHook>,
+    mod_state: &Rc<RefCell<ModState>>,
+    mod_btns:  &[ModBtn],
+) {
+    let key_str: &str = match action {
+        Action::Regular(slot) => LAYOUTS[layout_i].keys[slot].insert,
+        other                 => special_hook_str(other),
+    };
+
+    hook.on_key_press(scancode, key_str);
+
+    if is_modifier(action) {
+        // Toggle the modifier and refresh the color of its button(s).
+        let now_active = mod_state.borrow_mut().toggle(action);
+        for m in mod_btns {
+            if m.action == action {
+                m.btn.clone().set_color(if now_active { col_mod_active() } else { m.base_col });
+            }
+        }
+        app::redraw();
+    } else {
+        // Regular key: insert text into the buffer.
+        match action {
+            Action::Regular(slot) => {
+                buf.append(LAYOUTS[layout_i].keys[slot].insert);
+            }
+            Action::Backspace => {
+                let text = buf.text();
+                let n    = text.chars().count();
+                if n > 0 {
+                    buf.set_text(&text.chars().take(n - 1).collect::<String>());
+                }
+            }
+            Action::Tab   => buf.append("\t"),
+            Action::Enter => buf.append("\n"),
+            Action::Space => buf.append(" "),
+            _ => {}
+        }
+        // Scroll the display to keep the newest text visible.
+        let len   = buf.length();
+        let lines = disp.count_lines(0, len, false);
+        disp.scroll(lines, 0);
+
+        // Auto-release sticky modifiers and reset their button colours.
+        {
+            let mut ms = mod_state.borrow_mut();
+            for m in mod_btns {
+                if is_sticky(m.action) && ms.is_active(m.action) {
+                    m.btn.clone().set_color(m.base_col);
+                }
+            }
+            ms.release_sticky();
+        }
+        app::redraw();
+    }
+
+    hook.on_key_release(scancode, key_str);
+}
 
 // =============================================================================
 // Main
 // =============================================================================
 
 fn main() {
+    debug_assert!(
+        LAYOUTS.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
+        "every LayoutDef must have exactly REGULAR_KEY_COUNT entries"
+    );
+
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // --- Screen geometry (full-screen, all widget sizes derived from this) ---
+    // --- Screen geometry: all widget sizes are derived proportionally ---
     let (sw, sh) = app::screen_size();
     let sw = if sw > 1.0 { sw as i32 } else { 1920 };
     let sh = if sh > 1.0 { sh as i32 } else { 1080 };
 
-    let pad       = 10i32;
-    let gap       = 3i32; // pixels between keys and between UI sections
+    let pad  = 10i32;
+    let gap  =  3i32;
 
     let display_h  = ((sh as f32 * 0.10) as i32).max(50);
     let lang_btn_h = ((sh as f32 * 0.05) as i32).max(28);
 
-    // Keyboard occupies everything below the language buttons.
     let kbd_y = pad + display_h + gap + lang_btn_h + gap;
     let kbd_h = sh - kbd_y - pad;
-    let key_h = ((kbd_h - 4 * gap) / 5).max(10); // 5 rows, 4 inter-row gaps
+    let key_h = ((kbd_h - 4 * gap) / 5).max(10);
 
-    // --- Key-width calculations ---
-    // Reference: number row = 13 Std + Bksp (fills remainder) + 13 gaps
-    //   => key_w = (avail_w - 13*gap) / 15   (13 x 1-unit + 1 x 2-unit = 15)
-    // Every other row uses the same key_w so all rows reach exactly avail_w.
+    // Reference row: 13 Std + Bksp (fills) + 13 gaps = avail_w
+    //   key_w = (avail_w - 13*gap) / 15
+    // Bottom row after Menu removal: LCtrl + LWin + LAlt + RAlt + RCtrl = 5 Mod keys.
+    const BOTTOM_MOD_COUNT: i32 = 5;
     let avail_w  = sw - 2 * pad;
     let key_w    = ((avail_w - 13 * gap) / 15).max(10);
 
-    let bksp_w   = avail_w - 13 * key_w - 13 * gap;           // row 0
+    let bksp_w   = avail_w - 13 * key_w - 13 * gap;
     let tab_w    = (key_w as f32 * 1.5).round() as i32;
-    let bslash_w = avail_w - tab_w - 12 * key_w - 13 * gap;   // row 1
+    let bslash_w = avail_w - tab_w - 12 * key_w - 13 * gap;
     let caps_w   = (key_w as f32 * 1.75).round() as i32;
-    let enter_w  = avail_w - caps_w - 11 * key_w - 12 * gap;  // row 2
+    let enter_w  = avail_w - caps_w - 11 * key_w - 12 * gap;
     let lshift_w = (key_w as f32 * 2.25).round() as i32;
-    let rshift_w = avail_w - lshift_w - 10 * key_w - 11 * gap; // row 3
+    let rshift_w = avail_w - lshift_w - 10 * key_w - 11 * gap;
     let mod_w    = (key_w as f32 * 1.5).round() as i32;
-    let space_w  = avail_w - 6 * mod_w - 6 * gap;             // row 4
+    let space_w  = avail_w - BOTTOM_MOD_COUNT * mod_w - BOTTOM_MOD_COUNT * gap;
 
     let px = |kw: KW| match kw {
         KW::Std    => key_w,
@@ -471,19 +293,20 @@ fn main() {
         KW::Space  => space_w,
     };
 
-    // --- Font sizes (proportional to widget dimensions) ---
+    // --- Font sizes ---
     let lbl_size  = (key_h / 3).max(10);
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
     let btn_size  = (lang_btn_h * 2 / 5).max(10);
 
     // --- Shared state ---
-    let layout_idx: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
-    let buf = TextBuffer::default();
-
-    // Install the dummy hook; replace DummyKeyHook with a real KeyHook impl.
+    let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
+    let mod_state:  Rc<RefCell<ModState>> = Rc::new(RefCell::new(ModState::default()));
+    // mod_btns is populated during the key loop; closures borrow it at call time.
+    let mod_btns: Rc<RefCell<Vec<ModBtn>>> = Rc::new(RefCell::new(Vec::new()));
+    let buf  = TextBuffer::default();
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
 
-    // --- Window (full-screen) ---
+    // --- Window (full-screen; handler runs before children) ---
     let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
     win.set_color(Color::from_rgb(40, 40, 43));
 
@@ -495,20 +318,15 @@ fn main() {
     disp.set_frame(FrameType::DownBox);
     disp.set_text_size(disp_size);
 
-    // --- Language toggle buttons (one per layout, generated from LAYOUTS) ---
+    // --- Language toggle buttons (one per entry in LAYOUTS) ---
     let active_col   = Color::from_rgb(70, 130, 180);
     let inactive_col = Color::from_rgb(80, 80, 80);
 
     let lang_y = pad + display_h + gap;
     let lang_w = (avail_w / 10).max(60).min(120);
 
-    // Shared handle to all language buttons so callbacks can recolour them.
-    let lang_btns: Rc<RefCell<Vec<Button>>> = Rc::new(RefCell::new(Vec::new()));
-
-    // switch_btns: (button handle, Regular slot index).
-    // Populated in the key loop below; used by language callbacks to relabel.
-    let switch_btns: Rc<RefCell<Vec<(Button, usize)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let lang_btns:   Rc<RefCell<Vec<Button>>>          = Rc::new(RefCell::new(Vec::new()));
+    let switch_btns: Rc<RefCell<Vec<(Button, usize)>>> = Rc::new(RefCell::new(Vec::new()));
 
     for (li, def) in LAYOUTS.iter().enumerate() {
         let btn_x = pad + li as i32 * (lang_w + gap);
@@ -520,39 +338,35 @@ fn main() {
         let layout_idx_c  = layout_idx.clone();
         let lang_btns_c   = lang_btns.clone();
         let switch_btns_c = switch_btns.clone();
-
         btn.set_callback(move |_| {
             *layout_idx_c.borrow_mut() = li;
-            // Recolour language buttons.
             for (j, lb) in lang_btns_c.borrow_mut().iter_mut().enumerate() {
                 lb.set_color(if j == li { active_col } else { inactive_col });
             }
-            // Relabel every substitutable key with the new layout's text.
             let def = LAYOUTS[li];
             for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
                 kb.set_label(def.keys[*slot].label);
             }
             app::redraw();
         });
-
         lang_btns.borrow_mut().push(btn);
     }
 
-    // --- Keyboard keys ---
+    // --- Keyboard key grid ---
+    // all_btns[row][col] = (Button, Action, scancode, base_color)
+    let all_btns: Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>> =
+        Rc::new(RefCell::new(Vec::new()));
+
     for (row_i, row) in KEYS.iter().enumerate() {
         let row_y = kbd_y + row_i as i32 * (key_h + gap);
         let mut x = pad;
+        let mut btn_row: Vec<(Button, Action, u16, Color)> = Vec::new();
 
         for phys in row.iter() {
-            let w = px(phys.kw);
-
-            // Modifier/meta keys get a darker background; they type nothing.
-            let is_mod = matches!(
-                phys.action,
-                Action::LShift | Action::RShift | Action::CapsLock
-                    | Action::Ctrl | Action::Win | Action::Alt
-                    | Action::AltGr | Action::Menu
-            );
+            let w        = px(phys.kw);
+            let is_mod   = is_modifier(phys.action);
+            let is_win   = matches!(phys.action, Action::Win);
+            let base_col = if is_mod || is_win { col_key_mod() } else { col_key_normal() };
 
             let init_label: &'static str = match phys.action {
                 Action::Regular(slot) => LAYOUTS[0].keys[slot].label,
@@ -561,82 +375,141 @@ fn main() {
 
             let mut btn = Button::new(x, row_y, w, key_h, init_label);
             btn.set_label_size(lbl_size);
-            if is_mod {
-                btn.set_color(Color::from_rgb(100, 100, 110));
+            btn.set_color(base_col);
+            if is_mod || is_win {
                 btn.set_label_color(Color::from_rgb(210, 210, 210));
             } else {
-                btn.set_color(Color::from_rgb(218, 218, 222));
                 btn.set_label_color(Color::from_rgb(20, 20, 20));
             }
 
-            // --- Key-press / key-release hooks ---
-            // Returning false from handle() delegates to FLTK's default button
-            // behaviour (visual press feedback + firing the set_callback below).
+            // --- Press / release hook (fires before default C++ button handling) ---
             {
                 let hook_c       = Rc::clone(&hook);
                 let layout_idx_h = layout_idx.clone();
                 let action       = phys.action;
+                let scancode     = phys.scancode;
                 btn.handle(move |_b, ev| {
-                    let key: &str = match action {
+                    let key_str: &str = match action {
                         Action::Regular(slot) => {
                             LAYOUTS[*layout_idx_h.borrow()].keys[slot].insert
                         }
                         other => special_hook_str(other),
                     };
                     match ev {
-                        Event::Push     => { hook_c.on_key_press(key);   false }
-                        Event::Released => { hook_c.on_key_release(key); false }
+                        Event::Push     => { hook_c.on_key_press(scancode, key_str);   false }
+                        Event::Released => { hook_c.on_key_release(scancode, key_str); false }
                         _               => false,
                     }
                 });
             }
 
-            // --- Character-insertion callback ---
+            // --- Click callback: text insertion + modifier toggling ---
             {
                 let layout_idx_c = layout_idx.clone();
+                let mod_state_c  = mod_state.clone();
+                let mod_btns_c   = mod_btns.clone();
                 let mut buf_c    = buf.clone();
                 let mut disp_c   = disp.clone();
+                let hook_c       = Rc::clone(&hook);
                 let action       = phys.action;
+                let scancode     = phys.scancode;
                 btn.set_callback(move |_| {
-                    match action {
-                        Action::Regular(slot) => {
-                            let ch = LAYOUTS[*layout_idx_c.borrow()].keys[slot].insert;
-                            buf_c.append(ch);
-                        }
-                        Action::Backspace => {
-                            let text = buf_c.text();
-                            let n    = text.chars().count();
-                            if n > 0 {
-                                buf_c.set_text(
-                                    &text.chars().take(n - 1).collect::<String>(),
-                                );
-                            }
-                        }
-                        Action::Tab   => buf_c.append("\t"),
-                        Action::Enter => buf_c.append("\n"),
-                        Action::Space => buf_c.append(" "),
-                        // Modifier keys do not insert characters.
-                        _ => {}
-                    }
-                    // Keep the display scrolled to the latest text.
-                    let len   = buf_c.length();
-                    let lines = disp_c.count_lines(0, len, false);
-                    disp_c.scroll(lines, 0);
+                    execute_action(
+                        action, scancode,
+                        *layout_idx_c.borrow(),
+                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mod_state_c,
+                        &mod_btns_c.borrow(),
+                    );
                 });
             }
 
-            // Track Regular keys for relabelling on layout switch.
+            // Track substitutable keys for layout switching.
             if let Action::Regular(slot) = phys.action {
                 switch_btns.borrow_mut().push((btn.clone(), slot));
             }
 
+            // Track modifier keys for toggle color updates.
+            if is_mod {
+                mod_btns.borrow_mut().push(ModBtn {
+                    btn:      btn.clone(),
+                    action:   phys.action,
+                    base_col: base_col,
+                });
+            }
+
+            btn_row.push((btn, phys.action, phys.scancode, base_col));
             x += w + gap;
         }
+        all_btns.borrow_mut().push(btn_row);
+    }
+
+    // --- Initial navigation highlight at (row=0, col=0) ---
+    all_btns.borrow_mut()[0][0].0.set_color(col_nav_sel());
+
+    // --- Navigation: physical arrow keys + spacebar ---
+    // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
+    // the event to any child widget, so we can intercept arrow keys and spacebar
+    // before any focused button consumes them.
+    let sel: Rc<RefCell<(usize, usize)>> = Rc::new(RefCell::new((0, 0)));
+    {
+        let sel_c        = sel.clone();
+        let all_btns_c   = all_btns.clone();
+        let layout_idx_c = layout_idx.clone();
+        let mod_state_c  = mod_state.clone();
+        let mod_btns_c   = mod_btns.clone();
+        let mut buf_c    = buf.clone();
+        let mut disp_c   = disp.clone();
+        let hook_c       = Rc::clone(&hook);
+
+        // false = Rust handler runs BEFORE FLTK routes the event to any child
+        // widget, so arrow keys and spacebar are intercepted here regardless of
+        // which button (if any) currently holds FLTK keyboard focus.
+        win.super_handle_first(false);
+        win.handle(move |_w, ev| {
+            if ev != Event::KeyDown {
+                return false;
+            }
+            let k = app::event_key();
+
+            // Arrow-key navigation.
+            if k == Key::Up || k == Key::Down || k == Key::Left || k == Key::Right {
+                let (dr, dc) = match k {
+                    Key::Up    => (-1,  0),
+                    Key::Down  => ( 1,  0),
+                    Key::Left  => ( 0, -1),
+                    _          => ( 0,  1), // Right
+                };
+                let mut ab = all_btns_c.borrow_mut();
+                let mut s  = sel_c.borrow_mut();
+                nav_move(&mut ab, &mut s, dr, dc);
+                return true;
+            }
+
+            // Physical spacebar fires the currently highlighted on-screen key.
+            if app::event_text() == " " {
+                let (row, col) = *sel_c.borrow();
+                let (action, scancode) = {
+                    let ab = all_btns_c.borrow();
+                    (ab[row][col].1, ab[row][col].2)
+                };
+                execute_action(
+                    action, scancode,
+                    *layout_idx_c.borrow(),
+                    &mut buf_c, &mut disp_c, &hook_c,
+                    &mod_state_c,
+                    &mod_btns_c.borrow(),
+                );
+                return true;
+            }
+
+            false
+        });
     }
 
     win.end();
     win.show();
-    win.fullscreen(true); // applied after show() to avoid decoration flash
+    win.fullscreen(true);
 
     a.run().unwrap();
 }
