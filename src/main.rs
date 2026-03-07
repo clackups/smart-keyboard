@@ -367,12 +367,8 @@ fn main() {
     win.set_color(Color::from_rgb(40, 40, 43));
     win.fullscreen(true);
     let (sw_f, sh_f) = app::screen_size();
-    let sw = if win.w() > 1 { win.w() }
-             else if sw_f > 1.0 { sw_f as i32 }
-             else { 1920 }; // fallback: common full-HD width
-    let sh = if win.h() > 1 { win.h() }
-             else if sh_f > 1.0 { sh_f as i32 }
-             else { 1080 }; // fallback: common full-HD height
+    let sw = if win.w() > 1 { win.w() } else { sw_f as i32 };
+    let sh = if win.h() > 1 { win.h() } else { sh_f as i32 };
 
     let pad  = 10i32;
     let gap  =  3i32;
