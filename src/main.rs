@@ -395,10 +395,12 @@ fn main() {
     //   14 main keys + 1 Spacer + 3 nav keys → 18*(key_w+gap) - gap = avail_w
     //   key_w = (avail_w - 17*gap) / 18
     // Bottom row: Ctrl Win Alt [Space] AltGr Ctrl Spacer ← ↓ → = 9 non-Space slots
-    //   space_w = avail_w - 9*key_w - 9*gap ≈ 9*key_w + 8*gap
+    //   Space spans exactly 9 grid columns: space_w = 9*key_w + 8*gap
+    //   (Pinning to exact grid avoids integer-division remainder bleeding into the
+    //   spacebar width; the row may be a few pixels narrower than avail_w.)
     let avail_w = sw - 2 * pad;
     let key_w   = ((avail_w - 17 * gap) / 18).max(10);
-    let space_w = avail_w - 9 * key_w - 9 * gap;
+    let space_w = 9 * key_w + 8 * gap;
 
     let px = |kw: KW| match kw {
         KW::Space            => space_w,
@@ -411,7 +413,8 @@ fn main() {
     // margin for a 5-character label in a proportional font.
     let lbl_size  = (key_w / 4).max(10);
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
-    // Language buttons are one grid column wide, so use the same size formula.
+    // Lang buttons are one grid column wide (key_w); reuse lbl_size so their
+    // text labels fit with the same margin as keyboard-key labels.
     let btn_size  = lbl_size;
 
     // --- Shared state ---
@@ -683,6 +686,11 @@ fn main() {
                 return false;
             }
             let k = app::event_key();
+
+            // Suppress Escape so FLTK does not close the window.
+            if k == Key::Escape {
+                return true;
+            }
 
             // Arrow-key navigation.
             if k == Key::Up || k == Key::Down || k == Key::Left || k == Key::Right {
