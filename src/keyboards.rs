@@ -525,8 +525,8 @@ pub static UA: LayoutDef = LayoutDef {
         LayoutKey { label: "\u{0442}", insert: "\u{0442}", shifted: ""   }, // 42  n -> T
         LayoutKey { label: "\u{044C}", insert: "\u{044C}", shifted: ""   }, // 43  m -> soft sign
         // slots 44-46: lower-row punctuation
-        LayoutKey { label: "\u{0431}", insert: "\u{0431}", shifted: "<"  }, // 44  , -> B
-        LayoutKey { label: "\u{044E}", insert: "\u{044E}", shifted: ">"  }, // 45  . -> Yu
+        LayoutKey { label: "\u{0431}", insert: "\u{0431}", shifted: ""   }, // 44  , -> B
+        LayoutKey { label: "\u{044E}", insert: "\u{044E}", shifted: ""   }, // 45  . -> Yu
         LayoutKey { label: "/",        insert: "/",        shifted: "?"  }, // 46  / -> same
     ],
 };
