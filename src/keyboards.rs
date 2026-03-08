@@ -217,10 +217,14 @@ pub static KEYS: &[&[PhysKey]] = &[
 
 /// One substitutable key slot: label shown on the button and string inserted.
 pub struct LayoutKey {
-    /// Text shown on the button face.
-    pub label:  &'static str,
-    /// String appended to the text buffer when the key is activated.
-    pub insert: &'static str,
+    /// Text shown on the button face (unshifted value).
+    pub label:   &'static str,
+    /// String inserted when the key is activated without Shift / CapsLock.
+    pub insert:  &'static str,
+    /// Shifted character shown in the top half of the button face and inserted
+    /// when Shift is held.  Empty for letter keys (they use `insert.to_uppercase()`
+    /// instead, and CapsLock also applies to them).
+    pub shifted: &'static str,
 }
 
 /// A named keyboard layout.
@@ -243,57 +247,60 @@ pub struct LayoutDef {
 pub static US: LayoutDef = LayoutDef {
     name: "US",
     keys: &[
-        // slots 0-12: number row
-        LayoutKey { label: "`",  insert: "`"  }, // 0
-        LayoutKey { label: "1",  insert: "1"  }, // 1
-        LayoutKey { label: "2",  insert: "2"  }, // 2
-        LayoutKey { label: "3",  insert: "3"  }, // 3
-        LayoutKey { label: "4",  insert: "4"  }, // 4
-        LayoutKey { label: "5",  insert: "5"  }, // 5
-        LayoutKey { label: "6",  insert: "6"  }, // 6
-        LayoutKey { label: "7",  insert: "7"  }, // 7
-        LayoutKey { label: "8",  insert: "8"  }, // 8
-        LayoutKey { label: "9",  insert: "9"  }, // 9
-        LayoutKey { label: "0",  insert: "0"  }, // 10
-        LayoutKey { label: "-",  insert: "-"  }, // 11
-        LayoutKey { label: "=",  insert: "="  }, // 12
-        // slots 13-25: top alpha row
-        LayoutKey { label: "q",  insert: "q"  }, // 13
-        LayoutKey { label: "w",  insert: "w"  }, // 14
-        LayoutKey { label: "e",  insert: "e"  }, // 15
-        LayoutKey { label: "r",  insert: "r"  }, // 16
-        LayoutKey { label: "t",  insert: "t"  }, // 17
-        LayoutKey { label: "y",  insert: "y"  }, // 18
-        LayoutKey { label: "u",  insert: "u"  }, // 19
-        LayoutKey { label: "i",  insert: "i"  }, // 20
-        LayoutKey { label: "o",  insert: "o"  }, // 21
-        LayoutKey { label: "p",  insert: "p"  }, // 22
-        LayoutKey { label: "[",  insert: "["  }, // 23
-        LayoutKey { label: "]",  insert: "]"  }, // 24
-        LayoutKey { label: "\\", insert: "\\" }, // 25
-        // slots 26-36: home row
-        LayoutKey { label: "a",  insert: "a"  }, // 26
-        LayoutKey { label: "s",  insert: "s"  }, // 27
-        LayoutKey { label: "d",  insert: "d"  }, // 28
-        LayoutKey { label: "f",  insert: "f"  }, // 29
-        LayoutKey { label: "g",  insert: "g"  }, // 30
-        LayoutKey { label: "h",  insert: "h"  }, // 31
-        LayoutKey { label: "j",  insert: "j"  }, // 32
-        LayoutKey { label: "k",  insert: "k"  }, // 33
-        LayoutKey { label: "l",  insert: "l"  }, // 34
-        LayoutKey { label: ";",  insert: ";"  }, // 35
-        LayoutKey { label: "'",  insert: "'"  }, // 36
-        // slots 37-46: lower alpha row
-        LayoutKey { label: "z",  insert: "z"  }, // 37
-        LayoutKey { label: "x",  insert: "x"  }, // 38
-        LayoutKey { label: "c",  insert: "c"  }, // 39
-        LayoutKey { label: "v",  insert: "v"  }, // 40
-        LayoutKey { label: "b",  insert: "b"  }, // 41
-        LayoutKey { label: "n",  insert: "n"  }, // 42
-        LayoutKey { label: "m",  insert: "m"  }, // 43
-        LayoutKey { label: ",",  insert: ","  }, // 44
-        LayoutKey { label: ".",  insert: "."  }, // 45
-        LayoutKey { label: "/",  insert: "/"  }, // 46
+        // slots 0-12: number row  (shifted = symbol above the digit/key)
+        LayoutKey { label: "`",  insert: "`",  shifted: "~"  }, // 0
+        LayoutKey { label: "1",  insert: "1",  shifted: "!"  }, // 1
+        LayoutKey { label: "2",  insert: "2",  shifted: "@"  }, // 2
+        LayoutKey { label: "3",  insert: "3",  shifted: "#"  }, // 3
+        LayoutKey { label: "4",  insert: "4",  shifted: "$"  }, // 4
+        LayoutKey { label: "5",  insert: "5",  shifted: "%"  }, // 5
+        LayoutKey { label: "6",  insert: "6",  shifted: "^"  }, // 6
+        LayoutKey { label: "7",  insert: "7",  shifted: "&"  }, // 7
+        LayoutKey { label: "8",  insert: "8",  shifted: "*"  }, // 8
+        LayoutKey { label: "9",  insert: "9",  shifted: "("  }, // 9
+        LayoutKey { label: "0",  insert: "0",  shifted: ")"  }, // 10
+        LayoutKey { label: "-",  insert: "-",  shifted: "_"  }, // 11
+        LayoutKey { label: "=",  insert: "=",  shifted: "+"  }, // 12
+        // slots 13-22: top alpha row (q-p) – letter keys, no shifted display
+        LayoutKey { label: "q",  insert: "q",  shifted: ""   }, // 13
+        LayoutKey { label: "w",  insert: "w",  shifted: ""   }, // 14
+        LayoutKey { label: "e",  insert: "e",  shifted: ""   }, // 15
+        LayoutKey { label: "r",  insert: "r",  shifted: ""   }, // 16
+        LayoutKey { label: "t",  insert: "t",  shifted: ""   }, // 17
+        LayoutKey { label: "y",  insert: "y",  shifted: ""   }, // 18
+        LayoutKey { label: "u",  insert: "u",  shifted: ""   }, // 19
+        LayoutKey { label: "i",  insert: "i",  shifted: ""   }, // 20
+        LayoutKey { label: "o",  insert: "o",  shifted: ""   }, // 21
+        LayoutKey { label: "p",  insert: "p",  shifted: ""   }, // 22
+        // slots 23-25: top-row punctuation
+        LayoutKey { label: "[",  insert: "[",  shifted: "{"  }, // 23
+        LayoutKey { label: "]",  insert: "]",  shifted: "}"  }, // 24
+        LayoutKey { label: "\\", insert: "\\", shifted: "|"  }, // 25
+        // slots 26-34: home alpha row (a-l) – letter keys
+        LayoutKey { label: "a",  insert: "a",  shifted: ""   }, // 26
+        LayoutKey { label: "s",  insert: "s",  shifted: ""   }, // 27
+        LayoutKey { label: "d",  insert: "d",  shifted: ""   }, // 28
+        LayoutKey { label: "f",  insert: "f",  shifted: ""   }, // 29
+        LayoutKey { label: "g",  insert: "g",  shifted: ""   }, // 30
+        LayoutKey { label: "h",  insert: "h",  shifted: ""   }, // 31
+        LayoutKey { label: "j",  insert: "j",  shifted: ""   }, // 32
+        LayoutKey { label: "k",  insert: "k",  shifted: ""   }, // 33
+        LayoutKey { label: "l",  insert: "l",  shifted: ""   }, // 34
+        // slots 35-36: home-row punctuation
+        LayoutKey { label: ";",  insert: ";",  shifted: ":"  }, // 35
+        LayoutKey { label: "'",  insert: "'",  shifted: "\"" }, // 36
+        // slots 37-43: lower alpha row (z-m) – letter keys
+        LayoutKey { label: "z",  insert: "z",  shifted: ""   }, // 37
+        LayoutKey { label: "x",  insert: "x",  shifted: ""   }, // 38
+        LayoutKey { label: "c",  insert: "c",  shifted: ""   }, // 39
+        LayoutKey { label: "v",  insert: "v",  shifted: ""   }, // 40
+        LayoutKey { label: "b",  insert: "b",  shifted: ""   }, // 41
+        LayoutKey { label: "n",  insert: "n",  shifted: ""   }, // 42
+        LayoutKey { label: "m",  insert: "m",  shifted: ""   }, // 43
+        // slots 44-46: lower-row punctuation
+        LayoutKey { label: ",",  insert: ",",  shifted: "<"  }, // 44
+        LayoutKey { label: ".",  insert: ".",  shifted: ">"  }, // 45
+        LayoutKey { label: "/",  insert: "/",  shifted: "?"  }, // 46
     ],
 };
 
@@ -344,56 +351,60 @@ pub static UA: LayoutDef = LayoutDef {
     name: "UA",
     keys: &[
         // slots 0-12: number row
-        LayoutKey { label: "\u{02BC}", insert: "\u{02BC}" }, // 0  ` -> apostrophe
-        LayoutKey { label: "1",        insert: "1"        }, // 1
-        LayoutKey { label: "2",        insert: "2"        }, // 2
-        LayoutKey { label: "3",        insert: "3"        }, // 3
-        LayoutKey { label: "4",        insert: "4"        }, // 4
-        LayoutKey { label: "5",        insert: "5"        }, // 5
-        LayoutKey { label: "6",        insert: "6"        }, // 6
-        LayoutKey { label: "7",        insert: "7"        }, // 7
-        LayoutKey { label: "8",        insert: "8"        }, // 8
-        LayoutKey { label: "9",        insert: "9"        }, // 9
-        LayoutKey { label: "0",        insert: "0"        }, // 10
-        LayoutKey { label: "-",        insert: "-"        }, // 11
-        LayoutKey { label: "=",        insert: "="        }, // 12
-        // slots 13-25: top alpha row
-        LayoutKey { label: "\u{0439}", insert: "\u{0439}" }, // 13  q -> J
-        LayoutKey { label: "\u{0446}", insert: "\u{0446}" }, // 14  w -> Ts
-        LayoutKey { label: "\u{0443}", insert: "\u{0443}" }, // 15  e -> U
-        LayoutKey { label: "\u{043A}", insert: "\u{043A}" }, // 16  r -> K
-        LayoutKey { label: "\u{0435}", insert: "\u{0435}" }, // 17  t -> Ye
-        LayoutKey { label: "\u{043D}", insert: "\u{043D}" }, // 18  y -> N
-        LayoutKey { label: "\u{0433}", insert: "\u{0433}" }, // 19  u -> G
-        LayoutKey { label: "\u{0448}", insert: "\u{0448}" }, // 20  i -> Sh
-        LayoutKey { label: "\u{0449}", insert: "\u{0449}" }, // 21  o -> Shch
-        LayoutKey { label: "\u{0437}", insert: "\u{0437}" }, // 22  p -> Z
-        LayoutKey { label: "\u{0445}", insert: "\u{0445}" }, // 23  [ -> Kh
-        LayoutKey { label: "\u{0457}", insert: "\u{0457}" }, // 24  ] -> Yi
-        LayoutKey { label: "\\",       insert: "\\"       }, // 25  \ -> same
-        // slots 26-36: home row
-        LayoutKey { label: "\u{0444}", insert: "\u{0444}" }, // 26  a -> F
-        LayoutKey { label: "\u{0456}", insert: "\u{0456}" }, // 27  s -> I
-        LayoutKey { label: "\u{0432}", insert: "\u{0432}" }, // 28  d -> V
-        LayoutKey { label: "\u{0430}", insert: "\u{0430}" }, // 29  f -> A
-        LayoutKey { label: "\u{043F}", insert: "\u{043F}" }, // 30  g -> P
-        LayoutKey { label: "\u{0440}", insert: "\u{0440}" }, // 31  h -> R
-        LayoutKey { label: "\u{043E}", insert: "\u{043E}" }, // 32  j -> O
-        LayoutKey { label: "\u{043B}", insert: "\u{043B}" }, // 33  k -> L
-        LayoutKey { label: "\u{0434}", insert: "\u{0434}" }, // 34  l -> D
-        LayoutKey { label: "\u{0436}", insert: "\u{0436}" }, // 35  ; -> Zh
-        LayoutKey { label: "\u{0454}", insert: "\u{0454}" }, // 36  ' -> Ye
-        // slots 37-46: lower alpha row
-        LayoutKey { label: "\u{044F}", insert: "\u{044F}" }, // 37  z -> Ya
-        LayoutKey { label: "\u{0447}", insert: "\u{0447}" }, // 38  x -> Ch
-        LayoutKey { label: "\u{0441}", insert: "\u{0441}" }, // 39  c -> S
-        LayoutKey { label: "\u{043C}", insert: "\u{043C}" }, // 40  v -> M
-        LayoutKey { label: "\u{0438}", insert: "\u{0438}" }, // 41  b -> I
-        LayoutKey { label: "\u{0442}", insert: "\u{0442}" }, // 42  n -> T
-        LayoutKey { label: "\u{044C}", insert: "\u{044C}" }, // 43  m -> soft sign
-        LayoutKey { label: "\u{0431}", insert: "\u{0431}" }, // 44  , -> B
-        LayoutKey { label: "\u{044E}", insert: "\u{044E}" }, // 45  . -> Yu
-        LayoutKey { label: "/",        insert: "/"        }, // 46  / -> same
+        // The grave key carries the Ukrainian apostrophe; its physical Shift value is ~.
+        LayoutKey { label: "\u{02BC}", insert: "\u{02BC}", shifted: "~"  }, // 0  ` -> apostrophe
+        LayoutKey { label: "1",        insert: "1",        shifted: "!"  }, // 1
+        LayoutKey { label: "2",        insert: "2",        shifted: "@"  }, // 2
+        LayoutKey { label: "3",        insert: "3",        shifted: "#"  }, // 3
+        LayoutKey { label: "4",        insert: "4",        shifted: "$"  }, // 4
+        LayoutKey { label: "5",        insert: "5",        shifted: "%"  }, // 5
+        LayoutKey { label: "6",        insert: "6",        shifted: "^"  }, // 6
+        LayoutKey { label: "7",        insert: "7",        shifted: "&"  }, // 7
+        LayoutKey { label: "8",        insert: "8",        shifted: "*"  }, // 8
+        LayoutKey { label: "9",        insert: "9",        shifted: "("  }, // 9
+        LayoutKey { label: "0",        insert: "0",        shifted: ")"  }, // 10
+        LayoutKey { label: "-",        insert: "-",        shifted: "_"  }, // 11
+        LayoutKey { label: "=",        insert: "=",        shifted: "+"  }, // 12
+        // slots 13-22: top alpha row (Cyrillic letters) – no shifted display
+        LayoutKey { label: "\u{0439}", insert: "\u{0439}", shifted: ""   }, // 13  q -> J
+        LayoutKey { label: "\u{0446}", insert: "\u{0446}", shifted: ""   }, // 14  w -> Ts
+        LayoutKey { label: "\u{0443}", insert: "\u{0443}", shifted: ""   }, // 15  e -> U
+        LayoutKey { label: "\u{043A}", insert: "\u{043A}", shifted: ""   }, // 16  r -> K
+        LayoutKey { label: "\u{0435}", insert: "\u{0435}", shifted: ""   }, // 17  t -> Ye
+        LayoutKey { label: "\u{043D}", insert: "\u{043D}", shifted: ""   }, // 18  y -> N
+        LayoutKey { label: "\u{0433}", insert: "\u{0433}", shifted: ""   }, // 19  u -> G
+        LayoutKey { label: "\u{0448}", insert: "\u{0448}", shifted: ""   }, // 20  i -> Sh
+        LayoutKey { label: "\u{0449}", insert: "\u{0449}", shifted: ""   }, // 21  o -> Shch
+        LayoutKey { label: "\u{0437}", insert: "\u{0437}", shifted: ""   }, // 22  p -> Z
+        // slots 23-25: top-row punctuation (same physical Shift symbols as US)
+        LayoutKey { label: "\u{0445}", insert: "\u{0445}", shifted: "{"  }, // 23  [ -> Kh
+        LayoutKey { label: "\u{0457}", insert: "\u{0457}", shifted: "}"  }, // 24  ] -> Yi
+        LayoutKey { label: "\\",       insert: "\\",       shifted: "|"  }, // 25  \ -> same
+        // slots 26-34: home alpha row (Cyrillic letters) – no shifted display
+        LayoutKey { label: "\u{0444}", insert: "\u{0444}", shifted: ""   }, // 26  a -> F
+        LayoutKey { label: "\u{0456}", insert: "\u{0456}", shifted: ""   }, // 27  s -> I
+        LayoutKey { label: "\u{0432}", insert: "\u{0432}", shifted: ""   }, // 28  d -> V
+        LayoutKey { label: "\u{0430}", insert: "\u{0430}", shifted: ""   }, // 29  f -> A
+        LayoutKey { label: "\u{043F}", insert: "\u{043F}", shifted: ""   }, // 30  g -> P
+        LayoutKey { label: "\u{0440}", insert: "\u{0440}", shifted: ""   }, // 31  h -> R
+        LayoutKey { label: "\u{043E}", insert: "\u{043E}", shifted: ""   }, // 32  j -> O
+        LayoutKey { label: "\u{043B}", insert: "\u{043B}", shifted: ""   }, // 33  k -> L
+        LayoutKey { label: "\u{0434}", insert: "\u{0434}", shifted: ""   }, // 34  l -> D
+        // slots 35-36: home-row punctuation
+        LayoutKey { label: "\u{0436}", insert: "\u{0436}", shifted: ":"  }, // 35  ; -> Zh
+        LayoutKey { label: "\u{0454}", insert: "\u{0454}", shifted: "\"" }, // 36  ' -> Ye
+        // slots 37-43: lower alpha row (Cyrillic letters) – no shifted display
+        LayoutKey { label: "\u{044F}", insert: "\u{044F}", shifted: ""   }, // 37  z -> Ya
+        LayoutKey { label: "\u{0447}", insert: "\u{0447}", shifted: ""   }, // 38  x -> Ch
+        LayoutKey { label: "\u{0441}", insert: "\u{0441}", shifted: ""   }, // 39  c -> S
+        LayoutKey { label: "\u{043C}", insert: "\u{043C}", shifted: ""   }, // 40  v -> M
+        LayoutKey { label: "\u{0438}", insert: "\u{0438}", shifted: ""   }, // 41  b -> I
+        LayoutKey { label: "\u{0442}", insert: "\u{0442}", shifted: ""   }, // 42  n -> T
+        LayoutKey { label: "\u{044C}", insert: "\u{044C}", shifted: ""   }, // 43  m -> soft sign
+        // slots 44-46: lower-row punctuation
+        LayoutKey { label: "\u{0431}", insert: "\u{0431}", shifted: "<"  }, // 44  , -> B
+        LayoutKey { label: "\u{044E}", insert: "\u{044E}", shifted: ">"  }, // 45  . -> Yu
+        LayoutKey { label: "/",        insert: "/",        shifted: "?"  }, // 46  / -> same
     ],
 };
 

@@ -280,13 +280,20 @@ fn execute_action(
     mod_state: &Rc<RefCell<ModState>>,
     mod_btns:  &[ModBtn],
 ) {
-    // For Regular keys, honour Caps/Shift to produce uppercase output.
-    // Computed here so `key_str` can borrow it; None for non-Regular actions
-    // (avoids any allocation for modifier/control keys).
+    // For Regular keys, compute the text to insert respecting Shift / CapsLock.
+    // Symbol/number keys (shifted != "") use the shifted character on LShift/RShift;
+    // CapsLock does NOT affect them (standard keyboard behaviour).
+    // Letter keys (shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
     let regular_text: Option<String> = if let Action::Regular(slot) = action {
-        let base    = LAYOUTS[layout_i].keys[slot].insert;
-        let shifted = { let ms = mod_state.borrow(); ms.caps || ms.lshift || ms.rshift };
-        Some(if shifted { base.to_uppercase() } else { base.to_string() })
+        let key = &LAYOUTS[layout_i].keys[slot];
+        let ms  = mod_state.borrow();
+        Some(if !key.shifted.is_empty() && (ms.lshift || ms.rshift) {
+            key.shifted.to_string()
+        } else if key.shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
+            key.insert.to_uppercase()
+        } else {
+            key.insert.to_string()
+        })
     } else {
         None
     };
@@ -472,7 +479,13 @@ fn main() {
             }
             let def = LAYOUTS[li];
             for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
-                kb.set_label(def.keys[*slot].label);
+                let key = &def.keys[*slot];
+                if key.shifted.is_empty() {
+                    kb.set_label(key.label);
+                } else {
+                    let lbl = format!("{}\n{}", key.shifted, key.label);
+                    kb.set_label(&lbl);
+                }
             }
             // Move the amber highlight to this lang button.
             // Copy sel (it is Copy) so the borrow is released before we mutate below.
@@ -513,12 +526,20 @@ fn main() {
             let is_win   = matches!(phys.action, Action::Win);
             let base_col = if is_mod || is_win { col_key_mod() } else { col_key_normal() };
 
-            let init_label: &'static str = match phys.action {
-                Action::Regular(slot) => LAYOUTS[0].keys[slot].label,
-                other                 => special_label(other),
+            let init_label: String = match phys.action {
+                Action::Regular(slot) => {
+                    let key = &LAYOUTS[0].keys[slot];
+                    if key.shifted.is_empty() {
+                        key.label.to_string()
+                    } else {
+                        format!("{}\n{}", key.shifted, key.label)
+                    }
+                }
+                other => special_label(other).to_string(),
             };
 
-            let mut btn = Button::new(x, row_y, w, key_h, init_label);
+            let mut btn = Button::new(x, row_y, w, key_h, None);
+            btn.set_label(&init_label);
             btn.set_label_size(lbl_size);
             btn.set_color(base_col);
             if is_mod || is_win {
