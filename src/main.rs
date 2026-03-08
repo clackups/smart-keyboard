@@ -411,7 +411,8 @@ fn main() {
     // margin for a 5-character label in a proportional font.
     let lbl_size  = (key_w / 4).max(10);
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
-    let btn_size  = (lang_btn_h * 2 / 5).max(10);
+    // Language buttons are one grid column wide, so use the same size formula.
+    let btn_size  = lbl_size;
 
     // --- Shared state ---
     let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
@@ -434,7 +435,10 @@ fn main() {
     let inactive_col = Color::from_rgb(80, 80, 80);
 
     let lang_y = pad + display_h + gap;
-    let lang_w = (avail_w / 10).max(60).min(120);
+    // Language buttons snap to the keyboard grid: each button is exactly one
+    // grid column wide (key_w) and placed at pad + li*(key_w+gap), aligning
+    // with grid columns 0, 1, 2 …
+    let lang_w = key_w;
 
     let lang_btns:   Rc<RefCell<Vec<Button>>>          = Rc::new(RefCell::new(Vec::new()));
     let switch_btns: Rc<RefCell<Vec<(Button, usize)>>> = Rc::new(RefCell::new(Vec::new()));
