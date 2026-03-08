@@ -407,16 +407,17 @@ fn main() {
     win.set_border(false); // remove title bar / window decorations
     win.fullscreen(true);
 
-    let pad  = 10i32;
+    let pad  = 8i32;
     let gap  =  3i32;
 
     let display_h  = ((sh as f32 * 0.10) as i32).max(50);
     let lang_btn_h = ((sh as f32 * 0.05) as i32).max(28);
 
-    let kbd_y = pad + display_h + gap + lang_btn_h + gap;
-    let kbd_h = sh - kbd_y - 2 * pad; // bottom margin = 2*pad
+    let kbd_y_upper = pad + display_h + gap + lang_btn_h + gap;
+    let kbd_h = sh - kbd_y_upper - pad;
     // 6 rows (F-keys + 5 QWERTY rows), 5 inter-row gaps
     let key_h = ((kbd_h - 5 * gap) / 6).max(10);
+    let kbd_y = kbd_y_upper + (sh - kbd_y_upper - 6 * key_h - 5 * gap)/2;
 
     // Ortholinear: every key is key_w wide.
     // The widest rows (number row and QWERTY row) are 18 slots wide:
@@ -429,6 +430,7 @@ fn main() {
     let avail_w = sw - 2 * pad;
     let key_w   = ((avail_w - 17 * gap) / 18).max(10);
     let space_w = 9 * key_w + 8 * gap;
+    let pad_left = pad + (avail_w - 18 * key_w - 17 * gap)/2;
 
     let px = |kw: KW| match kw {
         KW::Space            => space_w,
@@ -454,7 +456,7 @@ fn main() {
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
 
     // --- Text display (read-only) ---
-    let mut disp = TextDisplay::new(pad, pad, avail_w, display_h, "");
+    let mut disp = TextDisplay::new(pad_left, pad, avail_w, display_h, "");
     disp.set_buffer(buf.clone());
     disp.set_color(Color::from_rgb(28, 28, 28));
     disp.set_text_color(Color::from_rgb(180, 255, 180));
@@ -483,7 +485,7 @@ fn main() {
     let sel: Rc<RefCell<NavSel>> = Rc::new(RefCell::new(NavSel::Key(0, 0)));
 
     for (li, def) in LAYOUTS.iter().enumerate() {
-        let btn_x = pad + li as i32 * (lang_w + gap);
+        let btn_x = pad_left + li as i32 * (lang_w + gap);
         let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, def.name);
         btn.set_color(if li == 0 { active_col } else { inactive_col });
         btn.set_label_color(Color::White);
@@ -541,7 +543,7 @@ fn main() {
 
     for (row_i, row) in KEYS.iter().enumerate() {
         let row_y = kbd_y + row_i as i32 * (key_h + gap);
-        let mut x = pad;
+        let mut x = pad_left;
         let mut btn_row: Vec<(Button, Action, u16, Color)> = Vec::new();
 
         // btn_col tracks the index within btn_row (skips Spacer slots).
