@@ -475,19 +475,20 @@ pub static UA: LayoutDef = LayoutDef {
     keys: &[
         // slots 0-12: number row
         // The grave key carries the Ukrainian apostrophe; its physical Shift value is ~.
-        LayoutKey { label: "\u{02BC}", insert: "\u{02BC}", shifted: "~"  }, // 0  ` -> apostrophe
-        LayoutKey { label: "1",        insert: "1",        shifted: "!"  }, // 1
-        LayoutKey { label: "2",        insert: "2",        shifted: "@@"  }, // 2
-        LayoutKey { label: "3",        insert: "3",        shifted: "#"  }, // 3
-        LayoutKey { label: "4",        insert: "4",        shifted: "$"  }, // 4
-        LayoutKey { label: "5",        insert: "5",        shifted: "%"  }, // 5
-        LayoutKey { label: "6",        insert: "6",        shifted: "^"  }, // 6
-        LayoutKey { label: "7",        insert: "7",        shifted: "&&"  }, // 7
-        LayoutKey { label: "8",        insert: "8",        shifted: "*"  }, // 8
-        LayoutKey { label: "9",        insert: "9",        shifted: "("  }, // 9
-        LayoutKey { label: "0",        insert: "0",        shifted: ")"  }, // 10
-        LayoutKey { label: "-",        insert: "-",        shifted: "_"  }, // 11
-        LayoutKey { label: "=",        insert: "=",        shifted: "+"  }, // 12
+        // Number-row shifted symbols follow the KBDUR standard (differ from US layout).
+        LayoutKey { label: "\u{02BC}", insert: "\u{02BC}", shifted: "~"            }, // 0  ` -> apostrophe
+        LayoutKey { label: "1",        insert: "1",        shifted: "!"            }, // 1
+        LayoutKey { label: "2",        insert: "2",        shifted: "\""           }, // 2  Shift+2 -> "
+        LayoutKey { label: "3",        insert: "3",        shifted: "\u{2116}"     }, // 3  Shift+3 -> №
+        LayoutKey { label: "4",        insert: "4",        shifted: ";"            }, // 4  Shift+4 -> ;
+        LayoutKey { label: "5",        insert: "5",        shifted: "%"            }, // 5
+        LayoutKey { label: "6",        insert: "6",        shifted: ":"            }, // 6  Shift+6 -> :
+        LayoutKey { label: "7",        insert: "7",        shifted: "?"            }, // 7  Shift+7 -> ?
+        LayoutKey { label: "8",        insert: "8",        shifted: "*"            }, // 8
+        LayoutKey { label: "9",        insert: "9",        shifted: "("            }, // 9
+        LayoutKey { label: "0",        insert: "0",        shifted: ")"            }, // 10
+        LayoutKey { label: "-",        insert: "-",        shifted: "_"            }, // 11
+        LayoutKey { label: "=",        insert: "=",        shifted: "+"            }, // 12
         // slots 13-22: top alpha row (Cyrillic letters) – no shifted display
         LayoutKey { label: "\u{0439}", insert: "\u{0439}", shifted: ""   }, // 13  q -> J
         LayoutKey { label: "\u{0446}", insert: "\u{0446}", shifted: ""   }, // 14  w -> Ts
@@ -499,9 +500,11 @@ pub static UA: LayoutDef = LayoutDef {
         LayoutKey { label: "\u{0448}", insert: "\u{0448}", shifted: ""   }, // 20  i -> Sh
         LayoutKey { label: "\u{0449}", insert: "\u{0449}", shifted: ""   }, // 21  o -> Shch
         LayoutKey { label: "\u{0437}", insert: "\u{0437}", shifted: ""   }, // 22  p -> Z
-        // slots 23-25: top-row punctuation (same physical Shift symbols as US)
-        LayoutKey { label: "\u{0445}", insert: "\u{0445}", shifted: "{"  }, // 23  [ -> Kh
-        LayoutKey { label: "\u{0457}", insert: "\u{0457}", shifted: "}"  }, // 24  ] -> Yi
+        // slots 23-25: top-row bracket/backslash keys.
+        // [ and ] now hold Cyrillic letters; Shift produces their uppercase, no secondary symbol.
+        // \ is unchanged from US (Shift+\ = |).
+        LayoutKey { label: "\u{0445}", insert: "\u{0445}", shifted: ""   }, // 23  [ -> Kh
+        LayoutKey { label: "\u{0457}", insert: "\u{0457}", shifted: ""   }, // 24  ] -> Yi
         LayoutKey { label: "\\",       insert: "\\",       shifted: "|"  }, // 25  \ -> same
         // slots 26-34: home alpha row (Cyrillic letters) – no shifted display
         LayoutKey { label: "\u{0444}", insert: "\u{0444}", shifted: ""   }, // 26  a -> F
@@ -513,9 +516,10 @@ pub static UA: LayoutDef = LayoutDef {
         LayoutKey { label: "\u{043E}", insert: "\u{043E}", shifted: ""   }, // 32  j -> O
         LayoutKey { label: "\u{043B}", insert: "\u{043B}", shifted: ""   }, // 33  k -> L
         LayoutKey { label: "\u{0434}", insert: "\u{0434}", shifted: ""   }, // 34  l -> D
-        // slots 35-36: home-row punctuation
-        LayoutKey { label: "\u{0436}", insert: "\u{0436}", shifted: ":"  }, // 35  ; -> Zh
-        LayoutKey { label: "\u{0454}", insert: "\u{0454}", shifted: "\"" }, // 36  ' -> Ye
+        // slots 35-36: home-row keys that now hold Cyrillic letters.
+        // Shift produces their uppercase; there is no secondary punctuation symbol.
+        LayoutKey { label: "\u{0436}", insert: "\u{0436}", shifted: ""   }, // 35  ; -> Zh
+        LayoutKey { label: "\u{0454}", insert: "\u{0454}", shifted: ""   }, // 36  ' -> Ye
         // slots 37-43: lower alpha row (Cyrillic letters) – no shifted display
         LayoutKey { label: "\u{044F}", insert: "\u{044F}", shifted: ""   }, // 37  z -> Ya
         LayoutKey { label: "\u{0447}", insert: "\u{0447}", shifted: ""   }, // 38  x -> Ch
