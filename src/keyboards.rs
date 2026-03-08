@@ -477,12 +477,12 @@ pub static UA: LayoutDef = LayoutDef {
         // The grave key carries the Ukrainian apostrophe; its physical Shift value is ~.
         LayoutKey { label: "\u{02BC}", insert: "\u{02BC}", shifted: "~"  }, // 0  ` -> apostrophe
         LayoutKey { label: "1",        insert: "1",        shifted: "!"  }, // 1
-        LayoutKey { label: "2",        insert: "2",        shifted: "@"  }, // 2
+        LayoutKey { label: "2",        insert: "2",        shifted: "@@"  }, // 2
         LayoutKey { label: "3",        insert: "3",        shifted: "#"  }, // 3
         LayoutKey { label: "4",        insert: "4",        shifted: "$"  }, // 4
         LayoutKey { label: "5",        insert: "5",        shifted: "%"  }, // 5
         LayoutKey { label: "6",        insert: "6",        shifted: "^"  }, // 6
-        LayoutKey { label: "7",        insert: "7",        shifted: "&"  }, // 7
+        LayoutKey { label: "7",        insert: "7",        shifted: "&&"  }, // 7
         LayoutKey { label: "8",        insert: "8",        shifted: "*"  }, // 8
         LayoutKey { label: "9",        insert: "9",        shifted: "("  }, // 9
         LayoutKey { label: "0",        insert: "0",        shifted: ")"  }, // 10

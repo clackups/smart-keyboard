@@ -47,9 +47,6 @@ sudo pacman -S \
 cargo build --release
 ```
 
-The `.cargo/config.toml` in this repository sets `CFLTK_WAYLAND_ONLY=1`,
-which compiles FLTK in pure-Wayland mode (no X11 dependency).
-
 ## Running
 
 ```sh
