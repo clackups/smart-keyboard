@@ -407,8 +407,8 @@ fn main() {
     win.set_border(false); // remove title bar / window decorations
     win.fullscreen(true);
 
-    let pad  = 8i32;
-    let gap  =  3i32;
+    let pad  = 3i32;
+    let gap  =  1i32;
 
     let display_h  = ((sh as f32 * 0.10) as i32).max(50);
     let lang_btn_h = ((sh as f32 * 0.05) as i32).max(28);
@@ -421,16 +421,16 @@ fn main() {
 
     // Ortholinear: every key is key_w wide.
     // The widest rows (number row and QWERTY row) are 18 slots wide:
-    //   14 main keys + 1 Spacer + 3 nav keys → 18*(key_w+gap) - gap = avail_w
-    //   key_w = (avail_w - 17*gap) / 18
+    //   14 main keys + 1 Spacer + 3 nav keys → 17*(key_w+gap) - gap = avail_w
+    //   key_w = (avail_w - 17*gap) / 17
     // Bottom row: Ctrl Win Alt [Space] AltGr Ctrl Spacer ← ↓ → = 9 non-Space slots
-    //   Space spans exactly 9 grid columns: space_w = 9*key_w + 8*gap
+    //   Space spans exactly 6 grid columns: space_w = 6*key_w + 5*gap
     //   (Pinning to exact grid avoids integer-division remainder bleeding into the
     //   spacebar width; the row may be a few pixels narrower than avail_w.)
     let avail_w = sw - 2 * pad;
-    let key_w   = ((avail_w - 17 * gap) / 18).max(10);
-    let space_w = 9 * key_w + 8 * gap;
-    let pad_left = pad + (avail_w - 18 * key_w - 17 * gap)/2;
+    let key_w   = ((avail_w - 16 * gap) / 17).max(10);
+    let space_w = 6 * key_w + 5 * gap;
+    let pad_left = pad + (avail_w - 17 * key_w - 16 * gap)/2;
 
     let px = |kw: KW| match kw {
         KW::Space            => space_w,
@@ -456,7 +456,7 @@ fn main() {
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
 
     // --- Text display (read-only) ---
-    let mut disp = TextDisplay::new(pad_left, pad, avail_w, display_h, "");
+    let mut disp = TextDisplay::new(pad_left, pad, sw - 2 * pad_left, display_h, "");
     disp.set_buffer(buf.clone());
     disp.set_color(Color::from_rgb(28, 28, 28));
     disp.set_text_color(Color::from_rgb(180, 255, 180));

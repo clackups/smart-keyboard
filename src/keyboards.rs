@@ -195,32 +195,6 @@ pub const REGULAR_KEY_COUNT: usize = 47;
 //   Cols  0-13: main keyboard block
 //   Col  14:    Spacer (visual separator, no button)
 //   Cols 15-17: navigation / arrow cluster
-//
-//                 0    1    2    3    4    5    6    7    8    9   10   11   12   13  sep  15    16    17
-// Row 0 (F):    Esc   F1   F2   F3   F4   F5   F6   F7   F8   F9  F10  F11  F12  (13 keys, left-aligned)
-// Row 1 (num):   `    1    2    3    4    5    6    7    8    9    0    -    =   Bksp  ░  Ins  Home  PgUp
-// Row 2 (top): Tab    q    w    e    r    t    y    u    i    o    p    [    ]    \    ░  Del  End   PgDn
-// Row 3 (home):Caps   a    s    d    f    g    h    j    k    l    ;    '  Enter  (13 keys, left-aligned)
-// Row 4 (low): Sft    z    x    c    v    b    n    m    ,    .    /   Sft (sp)(sp)(sp)(sp) [↑]
-// Row 5 (bot): Ctrl  Win  Alt  [      Space      ] AltGr Ctrl  ░   ←    ↓    →
-//
-// ░ = Spacer (no button rendered).
-//
-// Alignment proof (↑ in row 4 aligns with ↓ in row 5):
-//   key_w = (avail_w - 17*gap) / 18  →  avail_w ≈ 18*key_w + 17*gap
-//   space_w = avail_w - 9*key_w - 9*gap ≈ 9*key_w + 8*gap
-//   Row 5: 3 left mods + Space + 2 right mods + Spacer + ← + ↓ + →
-//     x(↓) = pad + 3*(kw+g) + space_w+g + 2*(kw+g) + (kw+g) + (kw+g)
-//           = pad + 3*(kw+g) + (9*kw+8*g)+g + 5*(kw+g)
-//           = pad + 8*(kw+g) + 9*kw+9*g
-//           = pad + 8*(kw+g) + 9*(kw+g)  -- not +g? Let me re-derive cleanly:
-//     Substituting avail_w = 18*kw+17*g:
-//       space_w = 18*kw+17*g - 9*kw - 9*g = 9*kw+8*g
-//     After Alt: x = pad+3*(kw+g).  After Space: pad+3*(kw+g)+space_w+g = pad+12*(kw+g).
-//     After AltGr: pad+13*(kw+g).  After RCtrl: pad+14*(kw+g).
-//     After Spacer: pad+15*(kw+g).  ← at pad+15*(kw+g). ↓ at pad+16*(kw+g).
-//   Row 4: LShift + 10 letters + RShift = 12 keys → x = pad+12*(kw+g).
-//     4 Spacers → x(↑) = pad+12*(kw+g)+4*(kw+g) = pad+16*(kw+g)  ✓
 
 pub static KEYS: &[&[PhysKey]] = &[
     // --- Row 0: Function key row (13 keys) ---
@@ -255,7 +229,6 @@ pub static KEYS: &[&[PhysKey]] = &[
         PhysKey { kw: KW::Std,    action: Action::Regular(11), scancode:  12 }, // -
         PhysKey { kw: KW::Std,    action: Action::Regular(12), scancode:  13 }, // =
         PhysKey { kw: KW::Std,    action: Action::Backspace,   scancode:  14 }, // Bksp
-        PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // separator
         PhysKey { kw: KW::Std,    action: Action::Insert,      scancode: 110 }, // Ins
         PhysKey { kw: KW::Std,    action: Action::Home,        scancode: 102 }, // Home
         PhysKey { kw: KW::Std,    action: Action::PageUp,      scancode: 104 }, // PgUp
@@ -276,7 +249,6 @@ pub static KEYS: &[&[PhysKey]] = &[
         PhysKey { kw: KW::Std,    action: Action::Regular(23),  scancode:  26 }, // [
         PhysKey { kw: KW::Std,    action: Action::Regular(24),  scancode:  27 }, // ]
         PhysKey { kw: KW::Std,    action: Action::Regular(25),  scancode:  43 }, // backslash
-        PhysKey { kw: KW::Spacer, action: Action::Noop,         scancode:   0 }, // separator
         PhysKey { kw: KW::Std,    action: Action::Delete,       scancode: 111 }, // Del
         PhysKey { kw: KW::Std,    action: Action::End,          scancode: 107 }, // End
         PhysKey { kw: KW::Std,    action: Action::PageDown,     scancode: 109 }, // PgDn
@@ -297,8 +269,7 @@ pub static KEYS: &[&[PhysKey]] = &[
         PhysKey { kw: KW::Std,  action: Action::Regular(36), scancode:  40 }, // '
         PhysKey { kw: KW::Std,  action: Action::Enter,       scancode:  28 }, // Enter
     ],
-    // --- Row 4: Lower alpha row + 4 Spacers + arrow-up ---
-    // 4 Spacer slots push ArrowUp to x = pad+16*(key_w+gap), aligning with ↓ in row 5.
+    // --- Row 4: Lower alpha row + Spacers + arrow-up ---
     &[
         PhysKey { kw: KW::Std,    action: Action::LShift,      scancode:  42 }, // LShift
         PhysKey { kw: KW::Std,    action: Action::Regular(37), scancode:  44 }, // z
@@ -315,11 +286,9 @@ pub static KEYS: &[&[PhysKey]] = &[
         PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // gap
         PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // gap
         PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // gap
-        PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // separator
         PhysKey { kw: KW::Std,    action: Action::ArrowUp,     scancode: 103 }, // ↑
     ],
     // --- Row 5: Bottom row + separator + arrow cluster ---
-    // Space fills: space_w = avail_w - 9*key_w - 9*gap ≈ 9*key_w + 8*gap
     &[
         PhysKey { kw: KW::Std,    action: Action::Ctrl,       scancode:  29 }, // LCtrl
         PhysKey { kw: KW::Std,    action: Action::Win,        scancode: 125 }, // LMeta/Win
@@ -327,6 +296,8 @@ pub static KEYS: &[&[PhysKey]] = &[
         PhysKey { kw: KW::Space,  action: Action::Space,      scancode:  57 }, // Space
         PhysKey { kw: KW::Std,    action: Action::AltGr,      scancode: 100 }, // RAlt/AltGr
         PhysKey { kw: KW::Std,    action: Action::Ctrl,       scancode:  97 }, // RCtrl
+        PhysKey { kw: KW::Spacer, action: Action::Noop,       scancode:   0 }, // separator
+        PhysKey { kw: KW::Spacer, action: Action::Noop,       scancode:   0 }, // separator
         PhysKey { kw: KW::Spacer, action: Action::Noop,       scancode:   0 }, // separator
         PhysKey { kw: KW::Std,    action: Action::ArrowLeft,  scancode: 105 }, // ←
         PhysKey { kw: KW::Std,    action: Action::ArrowDown,  scancode: 108 }, // ↓
