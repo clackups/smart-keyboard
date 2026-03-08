@@ -434,7 +434,7 @@ pub static US: LayoutDef = LayoutDef {
 // file contains only ASCII bytes.
 //
 // Slot -> Ukrainian character:
-//   0  ` -> \u{02BC} MODIFIER LETTER APOSTROPHE (Ukrainian apostrophe)
+//   0  ` -> \u{0027} APOSTROPHE / \u{20b4} HRYVNA SYMBOL
 //  13  q -> \u{0439} CYRILLIC SMALL LETTER SHORT I       (J)
 //  14  w -> \u{0446} CYRILLIC SMALL LETTER TSE           (Ts)
 //  15  e -> \u{0443} CYRILLIC SMALL LETTER U
@@ -468,7 +468,7 @@ pub static US: LayoutDef = LayoutDef {
 //  43  m -> \u{044C} CYRILLIC SMALL LETTER SOFT SIGN
 //  44  , -> \u{0431} CYRILLIC SMALL LETTER BE            (B)
 //  45  . -> \u{044E} CYRILLIC SMALL LETTER YU            (Yu)
-//  46  / -> / (unchanged)
+//  46  / -> FULL STOP, COMMA
 // ---------------------------------------------------------------------------
 pub static UA: LayoutDef = LayoutDef {
     name: "UA",
@@ -476,7 +476,7 @@ pub static UA: LayoutDef = LayoutDef {
         // slots 0-12: number row
         // The grave key carries the Ukrainian apostrophe; its physical Shift value is ~.
         // Number-row shifted symbols follow the KBDUR standard (differ from US layout).
-        LayoutKey { label: "\u{02BC}", insert: "\u{02BC}", shifted: "~"            }, // 0  ` -> apostrophe
+        LayoutKey { label: "\u{0027}", insert: "\u{0027}", shifted: "\u{20b4}"     }, // 0  ` -> apostrophe, hryvna
         LayoutKey { label: "1",        insert: "1",        shifted: "!"            }, // 1
         LayoutKey { label: "2",        insert: "2",        shifted: "\""           }, // 2  Shift+2 -> "
         LayoutKey { label: "3",        insert: "3",        shifted: "\u{2116}"     }, // 3  Shift+3 -> №
@@ -531,7 +531,7 @@ pub static UA: LayoutDef = LayoutDef {
         // slots 44-46: lower-row punctuation
         LayoutKey { label: "\u{0431}", insert: "\u{0431}", shifted: ""   }, // 44  , -> B
         LayoutKey { label: "\u{044E}", insert: "\u{044E}", shifted: ""   }, // 45  . -> Yu
-        LayoutKey { label: "/",        insert: "/",        shifted: "?"  }, // 46  / -> same
+        LayoutKey { label: ".",        insert: ".",        shifted: ","  }, // 46  / -> FULL STOP, COMMA
     ],
 };
 
