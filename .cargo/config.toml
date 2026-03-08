@@ -1,1 +1,2 @@
-# Empty - no env overrides needed; FLTK auto-detects Wayland + X11
+[env]
+CFLTK_WAYLAND_ONLY = "1"

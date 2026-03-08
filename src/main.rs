@@ -204,14 +204,42 @@ fn nav_move(
                 let cx = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
                 NavSel::Lang(closest_lang(lang_btns, cx))
             } else if dr != 0 {
-                let rows    = all_btns.len();
-                let new_row = (row as i32 + dr).clamp(0, rows as i32 - 1) as usize;
-                if new_row == row {
-                    // Clamped at the bottom edge.
-                    NavSel::Key(row, col)
+                let rows = all_btns.len();
+                let cx   = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                // Scan rows in direction dr, skipping any row where no button
+                // is close to cx.  This makes navigation skip rows that have no
+                // keys in the nav cluster (e.g. the home row has no nav-cluster
+                // buttons, so Down from End should pass over it and land on ↑).
+                // "Close enough" = the nearest edge of the best button in that
+                // row is within one button-width of cx.
+                let mut scan     = row;
+                let mut dest_row = row; // will be updated when we find a close row
+                loop {
+                    let next = (scan as i32 + dr).clamp(0, rows as i32 - 1) as usize;
+                    if next == scan {
+                        // Hit the edge without finding a close row; stay put.
+                        break;
+                    }
+                    scan = next;
+                    let best_col = closest_col(&all_btns[scan], cx);
+                    let btn      = &all_btns[scan][best_col].0;
+                    let dist = if cx >= btn.x() && cx < btn.x() + btn.w() {
+                        0
+                    } else if cx < btn.x() {
+                        btn.x() - cx
+                    } else {
+                        cx - (btn.x() + btn.w())
+                    };
+                    if dist <= btn.w() {
+                        dest_row = scan;
+                        break;
+                    }
+                    // Too far – keep scanning.
+                }
+                if dest_row == row {
+                    NavSel::Key(row, col) // clamped at edge
                 } else {
-                    let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
-                    NavSel::Key(new_row, closest_col(&all_btns[new_row], cx))
+                    NavSel::Key(dest_row, closest_col(&all_btns[dest_row], cx))
                 }
             } else {
                 // Left / right within the current keyboard row, clamped.
