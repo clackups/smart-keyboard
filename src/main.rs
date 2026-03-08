@@ -391,22 +391,25 @@ fn main() {
     let key_h = ((kbd_h - 5 * gap) / 6).max(10);
 
     // Ortholinear: every key is key_w wide.
-    // The widest rows (number row and QWERTY row) are 17 keys each, so:
-    //   17 * key_w + 16 * gap = avail_w
-    // Bottom row: Ctrl Win Alt [Space fills] AltGr Ctrl ← ↓ →
-    //   8 non-Space keys  →  space_w = avail_w - 8*key_w - 8*gap
-    //                       = 9*key_w + 8*gap  (substituting avail_w)
+    // The widest rows (number row and QWERTY row) are 18 slots wide:
+    //   14 main keys + 1 Spacer + 3 nav keys → 18*(key_w+gap) - gap = avail_w
+    //   key_w = (avail_w - 17*gap) / 18
+    // Bottom row: Ctrl Win Alt [Space] AltGr Ctrl Spacer ← ↓ → = 9 non-Space slots
+    //   space_w = avail_w - 9*key_w - 9*gap ≈ 9*key_w + 8*gap
     let avail_w = sw - 2 * pad;
-    let key_w   = ((avail_w - 16 * gap) / 17).max(10);
-    let space_w = avail_w - 8 * key_w - 8 * gap;
+    let key_w   = ((avail_w - 17 * gap) / 18).max(10);
+    let space_w = avail_w - 9 * key_w - 9 * gap;
 
     let px = |kw: KW| match kw {
-        KW::Space          => space_w,
+        KW::Space            => space_w,
         KW::Std | KW::Spacer => key_w,
     };
 
     // --- Font sizes ---
-    let lbl_size  = (key_h / 3).max(10);
+    // Drive label size from key width so the longest labels ("AltGr", "Enter",
+    // "Shift") stay within the button boundary.  key_w/4 gives ~25% horizontal
+    // margin for a 5-character label in a proportional font.
+    let lbl_size  = (key_w / 4).max(10);
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
     let btn_size  = (lang_btn_h * 2 / 5).max(10);
 
