@@ -8,20 +8,13 @@
 // =============================================================================
 
 /// Semantic width category for each physical key.
-/// Pixel values are computed in main.rs from the screen width so every row
-/// fills the available area exactly.
+/// The layout is ortholinear: every key is the same width (Std).
+/// Pixel values are computed in main.rs from the screen width.
 #[derive(Clone, Copy)]
 pub enum KW {
-    Std,    // 1x    -- regular alphanumeric / symbol key
-    Tab,    // ~1.5x -- Tab key
-    BSlash, // fills remainder of top-alpha row (\)
-    Caps,   // ~1.75x -- Caps Lock
-    Enter,  // fills remainder of home row
-    Bksp,   // fills remainder of number row
-    LShift, // ~2.25x -- left Shift
-    RShift, // fills remainder of lower-alpha row
-    Mod,    // ~1.5x -- Ctrl / Win / Alt / AltGr
-    Space,  // fills remainder of bottom row
+    Std,    // uniform key width -- every non-space key
+    Spacer, // invisible gap, same pixel width as Std, no button rendered
+    Space,  // space bar: fills the remaining width of the bottom row
 }
 
 // =============================================================================
@@ -47,6 +40,15 @@ pub enum Action {
     Alt,
     AltGr,
     Space,
+    // --- Function keys ---
+    Esc,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    // --- Navigation cluster ---
+    Insert, Delete, Home, End, PageUp, PageDown,
+    // --- Arrow keys ---
+    ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
+    /// Spacer slot: advances x by key_w but creates no button.
+    Noop,
 }
 
 /// Button face label for a non-Regular key.
@@ -62,7 +64,30 @@ pub fn special_label(action: Action) -> &'static str {
         Action::Win        => "Win",
         Action::Alt        => "Alt",
         Action::AltGr      => "AltGr",
-        Action::Space | Action::Regular(_) => "",
+        Action::Esc        => "Esc",
+        Action::F1         => "F1",
+        Action::F2         => "F2",
+        Action::F3         => "F3",
+        Action::F4         => "F4",
+        Action::F5         => "F5",
+        Action::F6         => "F6",
+        Action::F7         => "F7",
+        Action::F8         => "F8",
+        Action::F9         => "F9",
+        Action::F10        => "F10",
+        Action::F11        => "F11",
+        Action::F12        => "F12",
+        Action::Insert     => "Ins",
+        Action::Delete     => "Del",
+        Action::Home       => "Home",
+        Action::End        => "End",
+        Action::PageUp     => "PgUp",
+        Action::PageDown   => "PgDn",
+        Action::ArrowUp    => "\u{2191}",
+        Action::ArrowDown  => "\u{2193}",
+        Action::ArrowLeft  => "\u{2190}",
+        Action::ArrowRight => "\u{2192}",
+        Action::Space | Action::Regular(_) | Action::Noop => "",
     }
 }
 
@@ -80,7 +105,30 @@ pub fn special_hook_str(action: Action) -> &'static str {
         Action::Win        => "Win",
         Action::Alt        => "Alt",
         Action::AltGr      => "AltGr",
-        Action::Regular(_) => "",
+        Action::Esc        => "Esc",
+        Action::F1         => "F1",
+        Action::F2         => "F2",
+        Action::F3         => "F3",
+        Action::F4         => "F4",
+        Action::F5         => "F5",
+        Action::F6         => "F6",
+        Action::F7         => "F7",
+        Action::F8         => "F8",
+        Action::F9         => "F9",
+        Action::F10        => "F10",
+        Action::F11        => "F11",
+        Action::F12        => "F12",
+        Action::Insert     => "Insert",
+        Action::Delete     => "Delete",
+        Action::Home       => "Home",
+        Action::End        => "End",
+        Action::PageUp     => "PageUp",
+        Action::PageDown   => "PageDown",
+        Action::ArrowUp    => "ArrowUp",
+        Action::ArrowDown  => "ArrowDown",
+        Action::ArrowLeft  => "ArrowLeft",
+        Action::ArrowRight => "ArrowRight",
+        Action::Regular(_) | Action::Noop => "",
     }
 }
 
@@ -124,6 +172,8 @@ pub struct PhysKey {
 pub const REGULAR_KEY_COUNT: usize = 47;
 
 // Linux evdev key codes (linux/input-event-codes.h):
+//   KEY_ESC=1
+//   KEY_F1..F10=59..68  KEY_F11=87  KEY_F12=88
 //   KEY_GRAVE=41  KEY_1..KEY_0=2..11  KEY_MINUS=12  KEY_EQUAL=13
 //   KEY_BACKSPACE=14  KEY_TAB=15
 //   KEY_Q..KEY_P=16..25  KEY_LEFTBRACE=26  KEY_RIGHTBRACE=27  KEY_BACKSLASH=43
@@ -132,82 +182,137 @@ pub const REGULAR_KEY_COUNT: usize = 47;
 //   KEY_LEFTSHIFT=42  KEY_Z..KEY_SLASH=44..53  KEY_RIGHTSHIFT=54
 //   KEY_LEFTCTRL=29  KEY_LEFTMETA=125  KEY_LEFTALT=56
 //   KEY_SPACE=57  KEY_RIGHTALT=100  KEY_RIGHTCTRL=97
+//   KEY_INSERT=110  KEY_DELETE=111  KEY_HOME=102  KEY_END=107
+//   KEY_PAGEUP=104  KEY_PAGEDOWN=109
+//   KEY_UP=103  KEY_DOWN=108  KEY_LEFT=105  KEY_RIGHT=106
+//
+// Ortholinear grid – 17 uniform columns, 6 rows.
+//
+// Column layout (0-indexed):
+//   Cols  0-13: main keyboard block
+//   Cols 14-16: navigation / arrow cluster
+//
+//                 0    1    2    3    4    5    6    7    8    9   10   11   12   13  |  14    15    16
+// Row 0 (F):    Esc   F1   F2   F3   F4   F5   F6   F7   F8   F9  F10  F11  F12  (13 keys, left-aligned)
+// Row 1 (num):   `    1    2    3    4    5    6    7    8    9    0    -    =   Bksp | Ins  Home  PgUp
+// Row 2 (top): Tab    q    w    e    r    t    y    u    i    o    p    [    ]    \   | Del  End   PgDn
+// Row 3 (home):Caps   a    s    d    f    g    h    j    k    l    ;    '  Enter  (13 keys, left-aligned)
+// Row 4 (low): Sft    z    x    c    v    b    n    m    ,    .    /   Sft  (sp) (sp) (sp)  [↑]
+// Row 5 (bot): Ctrl  Win  Alt [    Space   ] AltGr Ctrl   ←    ↓    →
+//
+// Row 4 has 3 Spacer slots before ↑ so that ↑ sits at x = pad+15*(key_w+gap),
+// which exactly aligns with ↓ in row 5 (proof: see main.rs comment).
 
 pub static KEYS: &[&[PhysKey]] = &[
-    // --- Number row (13 Std + Bksp) ---
+    // --- Row 0: Function key row (13 keys) ---
     &[
-        PhysKey { kw: KW::Std,  action: Action::Regular(0),  scancode: 41  }, // `
-        PhysKey { kw: KW::Std,  action: Action::Regular(1),  scancode: 2   }, // 1
-        PhysKey { kw: KW::Std,  action: Action::Regular(2),  scancode: 3   }, // 2
-        PhysKey { kw: KW::Std,  action: Action::Regular(3),  scancode: 4   }, // 3
-        PhysKey { kw: KW::Std,  action: Action::Regular(4),  scancode: 5   }, // 4
-        PhysKey { kw: KW::Std,  action: Action::Regular(5),  scancode: 6   }, // 5
-        PhysKey { kw: KW::Std,  action: Action::Regular(6),  scancode: 7   }, // 6
-        PhysKey { kw: KW::Std,  action: Action::Regular(7),  scancode: 8   }, // 7
-        PhysKey { kw: KW::Std,  action: Action::Regular(8),  scancode: 9   }, // 8
-        PhysKey { kw: KW::Std,  action: Action::Regular(9),  scancode: 10  }, // 9
-        PhysKey { kw: KW::Std,  action: Action::Regular(10), scancode: 11  }, // 0
-        PhysKey { kw: KW::Std,  action: Action::Regular(11), scancode: 12  }, // -
-        PhysKey { kw: KW::Std,  action: Action::Regular(12), scancode: 13  }, // =
-        PhysKey { kw: KW::Bksp, action: Action::Backspace,   scancode: 14  }, // Backspace
+        PhysKey { kw: KW::Std, action: Action::Esc, scancode:  1 },
+        PhysKey { kw: KW::Std, action: Action::F1,  scancode: 59 },
+        PhysKey { kw: KW::Std, action: Action::F2,  scancode: 60 },
+        PhysKey { kw: KW::Std, action: Action::F3,  scancode: 61 },
+        PhysKey { kw: KW::Std, action: Action::F4,  scancode: 62 },
+        PhysKey { kw: KW::Std, action: Action::F5,  scancode: 63 },
+        PhysKey { kw: KW::Std, action: Action::F6,  scancode: 64 },
+        PhysKey { kw: KW::Std, action: Action::F7,  scancode: 65 },
+        PhysKey { kw: KW::Std, action: Action::F8,  scancode: 66 },
+        PhysKey { kw: KW::Std, action: Action::F9,  scancode: 67 },
+        PhysKey { kw: KW::Std, action: Action::F10, scancode: 68 },
+        PhysKey { kw: KW::Std, action: Action::F11, scancode: 87 },
+        PhysKey { kw: KW::Std, action: Action::F12, scancode: 88 },
     ],
-    // --- Top alpha row (Tab + 12 Std + BSlash) ---
+    // --- Row 1: Number row + nav cluster (17 keys) ---
     &[
-        PhysKey { kw: KW::Tab,    action: Action::Tab,          scancode: 15  }, // Tab
-        PhysKey { kw: KW::Std,    action: Action::Regular(13),  scancode: 16  }, // q
-        PhysKey { kw: KW::Std,    action: Action::Regular(14),  scancode: 17  }, // w
-        PhysKey { kw: KW::Std,    action: Action::Regular(15),  scancode: 18  }, // e
-        PhysKey { kw: KW::Std,    action: Action::Regular(16),  scancode: 19  }, // r
-        PhysKey { kw: KW::Std,    action: Action::Regular(17),  scancode: 20  }, // t
-        PhysKey { kw: KW::Std,    action: Action::Regular(18),  scancode: 21  }, // y
-        PhysKey { kw: KW::Std,    action: Action::Regular(19),  scancode: 22  }, // u
-        PhysKey { kw: KW::Std,    action: Action::Regular(20),  scancode: 23  }, // i
-        PhysKey { kw: KW::Std,    action: Action::Regular(21),  scancode: 24  }, // o
-        PhysKey { kw: KW::Std,    action: Action::Regular(22),  scancode: 25  }, // p
-        PhysKey { kw: KW::Std,    action: Action::Regular(23),  scancode: 26  }, // [
-        PhysKey { kw: KW::Std,    action: Action::Regular(24),  scancode: 27  }, // ]
-        PhysKey { kw: KW::BSlash, action: Action::Regular(25),  scancode: 43  }, // backslash
+        PhysKey { kw: KW::Std,  action: Action::Regular(0),  scancode:  41 }, // `
+        PhysKey { kw: KW::Std,  action: Action::Regular(1),  scancode:   2 }, // 1
+        PhysKey { kw: KW::Std,  action: Action::Regular(2),  scancode:   3 }, // 2
+        PhysKey { kw: KW::Std,  action: Action::Regular(3),  scancode:   4 }, // 3
+        PhysKey { kw: KW::Std,  action: Action::Regular(4),  scancode:   5 }, // 4
+        PhysKey { kw: KW::Std,  action: Action::Regular(5),  scancode:   6 }, // 5
+        PhysKey { kw: KW::Std,  action: Action::Regular(6),  scancode:   7 }, // 6
+        PhysKey { kw: KW::Std,  action: Action::Regular(7),  scancode:   8 }, // 7
+        PhysKey { kw: KW::Std,  action: Action::Regular(8),  scancode:   9 }, // 8
+        PhysKey { kw: KW::Std,  action: Action::Regular(9),  scancode:  10 }, // 9
+        PhysKey { kw: KW::Std,  action: Action::Regular(10), scancode:  11 }, // 0
+        PhysKey { kw: KW::Std,  action: Action::Regular(11), scancode:  12 }, // -
+        PhysKey { kw: KW::Std,  action: Action::Regular(12), scancode:  13 }, // =
+        PhysKey { kw: KW::Std,  action: Action::Backspace,   scancode:  14 }, // Bksp
+        PhysKey { kw: KW::Std,  action: Action::Insert,      scancode: 110 }, // Ins
+        PhysKey { kw: KW::Std,  action: Action::Home,        scancode: 102 }, // Home
+        PhysKey { kw: KW::Std,  action: Action::PageUp,      scancode: 104 }, // PgUp
     ],
-    // --- Home row (Caps + 11 Std + Enter) ---
+    // --- Row 2: Top alpha row + nav cluster (17 keys) ---
     &[
-        PhysKey { kw: KW::Caps,  action: Action::CapsLock,    scancode: 58  }, // Caps
-        PhysKey { kw: KW::Std,   action: Action::Regular(26), scancode: 30  }, // a
-        PhysKey { kw: KW::Std,   action: Action::Regular(27), scancode: 31  }, // s
-        PhysKey { kw: KW::Std,   action: Action::Regular(28), scancode: 32  }, // d
-        PhysKey { kw: KW::Std,   action: Action::Regular(29), scancode: 33  }, // f
-        PhysKey { kw: KW::Std,   action: Action::Regular(30), scancode: 34  }, // g
-        PhysKey { kw: KW::Std,   action: Action::Regular(31), scancode: 35  }, // h
-        PhysKey { kw: KW::Std,   action: Action::Regular(32), scancode: 36  }, // j
-        PhysKey { kw: KW::Std,   action: Action::Regular(33), scancode: 37  }, // k
-        PhysKey { kw: KW::Std,   action: Action::Regular(34), scancode: 38  }, // l
-        PhysKey { kw: KW::Std,   action: Action::Regular(35), scancode: 39  }, // ;
-        PhysKey { kw: KW::Std,   action: Action::Regular(36), scancode: 40  }, // '
-        PhysKey { kw: KW::Enter, action: Action::Enter,        scancode: 28  }, // Enter
+        PhysKey { kw: KW::Std,  action: Action::Tab,          scancode:  15 }, // Tab
+        PhysKey { kw: KW::Std,  action: Action::Regular(13),  scancode:  16 }, // q
+        PhysKey { kw: KW::Std,  action: Action::Regular(14),  scancode:  17 }, // w
+        PhysKey { kw: KW::Std,  action: Action::Regular(15),  scancode:  18 }, // e
+        PhysKey { kw: KW::Std,  action: Action::Regular(16),  scancode:  19 }, // r
+        PhysKey { kw: KW::Std,  action: Action::Regular(17),  scancode:  20 }, // t
+        PhysKey { kw: KW::Std,  action: Action::Regular(18),  scancode:  21 }, // y
+        PhysKey { kw: KW::Std,  action: Action::Regular(19),  scancode:  22 }, // u
+        PhysKey { kw: KW::Std,  action: Action::Regular(20),  scancode:  23 }, // i
+        PhysKey { kw: KW::Std,  action: Action::Regular(21),  scancode:  24 }, // o
+        PhysKey { kw: KW::Std,  action: Action::Regular(22),  scancode:  25 }, // p
+        PhysKey { kw: KW::Std,  action: Action::Regular(23),  scancode:  26 }, // [
+        PhysKey { kw: KW::Std,  action: Action::Regular(24),  scancode:  27 }, // ]
+        PhysKey { kw: KW::Std,  action: Action::Regular(25),  scancode:  43 }, // backslash
+        PhysKey { kw: KW::Std,  action: Action::Delete,       scancode: 111 }, // Del
+        PhysKey { kw: KW::Std,  action: Action::End,          scancode: 107 }, // End
+        PhysKey { kw: KW::Std,  action: Action::PageDown,     scancode: 109 }, // PgDn
     ],
-    // --- Lower alpha row (LShift + 10 Std + RShift) ---
+    // --- Row 3: Home row (13 keys, left-aligned) ---
     &[
-        PhysKey { kw: KW::LShift, action: Action::LShift,      scancode: 42  }, // LShift
-        PhysKey { kw: KW::Std,    action: Action::Regular(37),  scancode: 44  }, // z
-        PhysKey { kw: KW::Std,    action: Action::Regular(38),  scancode: 45  }, // x
-        PhysKey { kw: KW::Std,    action: Action::Regular(39),  scancode: 46  }, // c
-        PhysKey { kw: KW::Std,    action: Action::Regular(40),  scancode: 47  }, // v
-        PhysKey { kw: KW::Std,    action: Action::Regular(41),  scancode: 48  }, // b
-        PhysKey { kw: KW::Std,    action: Action::Regular(42),  scancode: 49  }, // n
-        PhysKey { kw: KW::Std,    action: Action::Regular(43),  scancode: 50  }, // m
-        PhysKey { kw: KW::Std,    action: Action::Regular(44),  scancode: 51  }, // ,
-        PhysKey { kw: KW::Std,    action: Action::Regular(45),  scancode: 52  }, // .
-        PhysKey { kw: KW::Std,    action: Action::Regular(46),  scancode: 53  }, // /
-        PhysKey { kw: KW::RShift, action: Action::RShift,       scancode: 54  }, // RShift
+        PhysKey { kw: KW::Std,  action: Action::CapsLock,    scancode:  58 }, // Caps
+        PhysKey { kw: KW::Std,  action: Action::Regular(26), scancode:  30 }, // a
+        PhysKey { kw: KW::Std,  action: Action::Regular(27), scancode:  31 }, // s
+        PhysKey { kw: KW::Std,  action: Action::Regular(28), scancode:  32 }, // d
+        PhysKey { kw: KW::Std,  action: Action::Regular(29), scancode:  33 }, // f
+        PhysKey { kw: KW::Std,  action: Action::Regular(30), scancode:  34 }, // g
+        PhysKey { kw: KW::Std,  action: Action::Regular(31), scancode:  35 }, // h
+        PhysKey { kw: KW::Std,  action: Action::Regular(32), scancode:  36 }, // j
+        PhysKey { kw: KW::Std,  action: Action::Regular(33), scancode:  37 }, // k
+        PhysKey { kw: KW::Std,  action: Action::Regular(34), scancode:  38 }, // l
+        PhysKey { kw: KW::Std,  action: Action::Regular(35), scancode:  39 }, // ;
+        PhysKey { kw: KW::Std,  action: Action::Regular(36), scancode:  40 }, // '
+        PhysKey { kw: KW::Std,  action: Action::Enter,       scancode:  28 }, // Enter
     ],
-    // --- Bottom row (Ctrl + Win + Alt + Space + AltGr + Ctrl, 5 gaps) ---
-    // Menu key removed; Space fills the extra width automatically.
+    // --- Row 4: Lower alpha row + arrow-up (16 physical slots; 3 are Spacers) ---
+    // 3 Spacer slots push ArrowUp to virtual column 15 so it aligns with ↓ in row 5.
     &[
-        PhysKey { kw: KW::Mod,   action: Action::Ctrl,  scancode: 29  }, // LCtrl
-        PhysKey { kw: KW::Mod,   action: Action::Win,   scancode: 125 }, // LMeta/Win
-        PhysKey { kw: KW::Mod,   action: Action::Alt,   scancode: 56  }, // LAlt
-        PhysKey { kw: KW::Space, action: Action::Space, scancode: 57  }, // Space
-        PhysKey { kw: KW::Mod,   action: Action::AltGr, scancode: 100 }, // RAlt/AltGr
-        PhysKey { kw: KW::Mod,   action: Action::Ctrl,  scancode: 97  }, // RCtrl
+        PhysKey { kw: KW::Std,    action: Action::LShift,      scancode:  42 }, // LShift
+        PhysKey { kw: KW::Std,    action: Action::Regular(37), scancode:  44 }, // z
+        PhysKey { kw: KW::Std,    action: Action::Regular(38), scancode:  45 }, // x
+        PhysKey { kw: KW::Std,    action: Action::Regular(39), scancode:  46 }, // c
+        PhysKey { kw: KW::Std,    action: Action::Regular(40), scancode:  47 }, // v
+        PhysKey { kw: KW::Std,    action: Action::Regular(41), scancode:  48 }, // b
+        PhysKey { kw: KW::Std,    action: Action::Regular(42), scancode:  49 }, // n
+        PhysKey { kw: KW::Std,    action: Action::Regular(43), scancode:  50 }, // m
+        PhysKey { kw: KW::Std,    action: Action::Regular(44), scancode:  51 }, // ,
+        PhysKey { kw: KW::Std,    action: Action::Regular(45), scancode:  52 }, // .
+        PhysKey { kw: KW::Std,    action: Action::Regular(46), scancode:  53 }, // /
+        PhysKey { kw: KW::Std,    action: Action::RShift,      scancode:  54 }, // RShift
+        PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // gap col 12
+        PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // gap col 13
+        PhysKey { kw: KW::Spacer, action: Action::Noop,        scancode:   0 }, // gap col 14
+        PhysKey { kw: KW::Std,    action: Action::ArrowUp,     scancode: 103 }, // ↑  col 15
+    ],
+    // --- Row 5: Bottom row + arrow cluster (Space fills; ← ↓ → at cols 14-16) ---
+    // Proof that ← lands at virtual column 14:
+    //   key_w = (avail_w - 16*gap) / 17  →  avail_w = 17*key_w + 16*gap
+    //   space_w = avail_w - 8*key_w - 8*gap = 9*key_w + 8*gap
+    //   x(←) = pad + 5*(key_w+gap) + space_w + gap
+    //         = pad + 5*key_w+5*gap + 9*key_w+8*gap + gap
+    //         = pad + 14*(key_w+gap)  ✓
+    &[
+        PhysKey { kw: KW::Std,   action: Action::Ctrl,       scancode:  29 }, // LCtrl
+        PhysKey { kw: KW::Std,   action: Action::Win,        scancode: 125 }, // LMeta/Win
+        PhysKey { kw: KW::Std,   action: Action::Alt,        scancode:  56 }, // LAlt
+        PhysKey { kw: KW::Space, action: Action::Space,      scancode:  57 }, // Space
+        PhysKey { kw: KW::Std,   action: Action::AltGr,      scancode: 100 }, // RAlt/AltGr
+        PhysKey { kw: KW::Std,   action: Action::Ctrl,       scancode:  97 }, // RCtrl
+        PhysKey { kw: KW::Std,   action: Action::ArrowLeft,  scancode: 105 }, // ←  col 14
+        PhysKey { kw: KW::Std,   action: Action::ArrowDown,  scancode: 108 }, // ↓  col 15
+        PhysKey { kw: KW::Std,   action: Action::ArrowRight, scancode: 106 }, // →  col 16
     ],
 ];
 

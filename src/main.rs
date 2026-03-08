@@ -386,37 +386,23 @@ fn main() {
     let lang_btn_h = ((sh as f32 * 0.05) as i32).max(28);
 
     let kbd_y = pad + display_h + gap + lang_btn_h + gap;
-    let kbd_h = sh - kbd_y - 2 * pad; // bottom margin = 2*pad for a clearly visible gap
-    let key_h = ((kbd_h - 4 * gap) / 5).max(10);
+    let kbd_h = sh - kbd_y - 2 * pad; // bottom margin = 2*pad
+    // 6 rows (F-keys + 5 QWERTY rows), 5 inter-row gaps
+    let key_h = ((kbd_h - 5 * gap) / 6).max(10);
 
-    // Reference row: 13 Std + Bksp (fills) + 13 gaps = avail_w
-    //   key_w = (avail_w - 13*gap) / 15
-    // Bottom row after Menu removal: LCtrl + LWin + LAlt + RAlt + RCtrl = 5 Mod keys.
-    const BOTTOM_MOD_COUNT: i32 = 5;
-    let avail_w  = sw - 2 * pad;
-    let key_w    = ((avail_w - 13 * gap) / 15).max(10);
-
-    let bksp_w   = avail_w - 13 * key_w - 13 * gap;
-    let tab_w    = (key_w as f32 * 1.5).round() as i32;
-    let bslash_w = avail_w - tab_w - 12 * key_w - 13 * gap;
-    let caps_w   = (key_w as f32 * 1.75).round() as i32;
-    let enter_w  = avail_w - caps_w - 11 * key_w - 12 * gap;
-    let lshift_w = (key_w as f32 * 2.25).round() as i32;
-    let rshift_w = avail_w - lshift_w - 10 * key_w - 11 * gap;
-    let mod_w    = (key_w as f32 * 1.5).round() as i32;
-    let space_w  = avail_w - BOTTOM_MOD_COUNT * mod_w - BOTTOM_MOD_COUNT * gap;
+    // Ortholinear: every key is key_w wide.
+    // The widest rows (number row and QWERTY row) are 17 keys each, so:
+    //   17 * key_w + 16 * gap = avail_w
+    // Bottom row: Ctrl Win Alt [Space fills] AltGr Ctrl ← ↓ →
+    //   8 non-Space keys  →  space_w = avail_w - 8*key_w - 8*gap
+    //                       = 9*key_w + 8*gap  (substituting avail_w)
+    let avail_w = sw - 2 * pad;
+    let key_w   = ((avail_w - 16 * gap) / 17).max(10);
+    let space_w = avail_w - 8 * key_w - 8 * gap;
 
     let px = |kw: KW| match kw {
-        KW::Std    => key_w,
-        KW::Tab    => tab_w,
-        KW::BSlash => bslash_w,
-        KW::Caps   => caps_w,
-        KW::Enter  => enter_w,
-        KW::Bksp   => bksp_w,
-        KW::LShift => lshift_w,
-        KW::RShift => rshift_w,
-        KW::Mod    => mod_w,
-        KW::Space  => space_w,
+        KW::Space          => space_w,
+        KW::Std | KW::Spacer => key_w,
     };
 
     // --- Font sizes ---
@@ -520,11 +506,27 @@ fn main() {
         let mut x = pad;
         let mut btn_row: Vec<(Button, Action, u16, Color)> = Vec::new();
 
-        for (col_i, phys) in row.iter().enumerate() {
-            let w        = px(phys.kw);
+        // btn_col tracks the index within btn_row (skips Spacer slots).
+        let mut btn_col = 0usize;
+
+        for phys in row.iter() {
+            let w = px(phys.kw);
+
+            // Spacer: advance x but create no button.
+            if matches!(phys.kw, KW::Spacer) {
+                x += w + gap;
+                continue;
+            }
+
+            let col_i    = btn_col;
+            btn_col     += 1;
             let is_mod   = is_modifier(phys.action);
-            let is_win   = matches!(phys.action, Action::Win);
-            let base_col = if is_mod || is_win { col_key_mod() } else { col_key_normal() };
+            // Regular letter/symbol keys and the Space bar are light;
+            // every other key (modifiers, F-keys, nav, arrows) is dark.
+            let base_col = match phys.action {
+                Action::Regular(_) | Action::Space => col_key_normal(),
+                _                                  => col_key_mod(),
+            };
 
             let init_label: String = match phys.action {
                 Action::Regular(slot) => {
@@ -542,10 +544,10 @@ fn main() {
             btn.set_label(&init_label);
             btn.set_label_size(lbl_size);
             btn.set_color(base_col);
-            if is_mod || is_win {
-                btn.set_label_color(Color::from_rgb(210, 210, 210));
-            } else {
+            if matches!(phys.action, Action::Regular(_) | Action::Space) {
                 btn.set_label_color(Color::from_rgb(20, 20, 20));
+            } else {
+                btn.set_label_color(Color::from_rgb(210, 210, 210));
             }
 
             // --- Press / release hook (fires before default C++ button handling) ---
