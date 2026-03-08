@@ -361,14 +361,15 @@ fn main() {
     // app::screen_size() is reliable immediately after App::default() because
     // the display/compositor connection is open at that point.  We size the
     // window explicitly to those dimensions so the child-widget layout has real
-    // pixel values before show().  fullscreen(true) then asks the WM to cover
-    // the whole screen (removes decorations, etc.).
+    // pixel values before show().  set_border(false) removes the title bar /
+    // decorations entirely; fullscreen(true) then covers the whole screen.
     let (sw_f, sh_f) = app::screen_size();
     let sw = sw_f as i32;
     let sh = sh_f as i32;
 
     let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
     win.set_color(Color::from_rgb(40, 40, 43));
+    win.set_border(false); // remove title bar / window decorations
     win.fullscreen(true);
 
     let pad  = 10i32;
