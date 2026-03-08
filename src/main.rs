@@ -358,17 +358,18 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    // Create the window and call fullscreen() before end()/show().
-    // On X11, fullscreen() calls resize() synchronously so win.w()/win.h()
-    // immediately reflect the actual screen dimensions.
-    // On Wayland the compositor may not deliver the size until later, so we
-    // fall back to app::screen_size() (which is available after App::default()).
-    let mut win = Window::new(0, 0, 1, 1, "Smart Keyboard");
+    // app::screen_size() is reliable immediately after App::default() because
+    // the display/compositor connection is open at that point.  We size the
+    // window explicitly to those dimensions so the child-widget layout has real
+    // pixel values before show().  fullscreen(true) then asks the WM to cover
+    // the whole screen (removes decorations, etc.).
+    let (sw_f, sh_f) = app::screen_size();
+    let sw = sw_f as i32;
+    let sh = sh_f as i32;
+
+    let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
     win.set_color(Color::from_rgb(40, 40, 43));
     win.fullscreen(true);
-    let (sw_f, sh_f) = app::screen_size();
-    let sw = if win.w() > 1 { win.w() } else { sw_f as i32 };
-    let sh = if win.h() > 1 { win.h() } else { sh_f as i32 };
 
     let pad  = 10i32;
     let gap  =  3i32;
