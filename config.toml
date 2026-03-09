@@ -1,0 +1,50 @@
+# smart-keyboard configuration file
+#
+# This file is optional.  Remove it or delete individual keys to use defaults.
+# Place it in the same directory as the smart-keyboard executable.
+
+# ---------------------------------------------------------------------------
+# Keyboard navigation
+# ---------------------------------------------------------------------------
+#
+# These keys control the amber navigation cursor that moves between on-screen
+# buttons and activates the currently highlighted button.
+#
+# Supported key names:
+#   "Up", "Down", "Left", "Right"
+#   "Space", "Escape" / "Esc", "Enter" / "Return", "Tab", "Backspace"
+#   Any single ASCII character (e.g. "w", "a", "s", "d")
+
+[input.keyboard]
+navigate_up    = "Up"
+navigate_down  = "Down"
+navigate_left  = "Left"
+navigate_right = "Right"
+activate       = "Space"
+escape         = "Escape"
+
+# ---------------------------------------------------------------------------
+# Gamepad / joystick navigation
+# ---------------------------------------------------------------------------
+#
+# Set `enabled = true` to activate gamepad support.  The first connected
+# gamepad is used when `device = "auto"` (the only supported mode for now).
+#
+# Supported button names:
+#   D-pad  : "DpadUp", "DpadDown", "DpadLeft", "DpadRight"
+#   Face   : "South" (Xbox A / PlayStation ✕),
+#            "East"  (Xbox B / PlayStation ○),
+#            "North" (Xbox Y / PlayStation △),
+#            "West"  (Xbox X / PlayStation □)
+#   Misc   : "Select", "Start", "Mode"
+#   Bumpers: "LeftTrigger", "RightTrigger"
+#   Thumbs : "LeftThumb", "RightThumb"
+
+[input.gamepad]
+enabled        = false
+device         = "auto"
+navigate_up    = "DpadUp"
+navigate_down  = "DpadDown"
+navigate_left  = "DpadLeft"
+navigate_right = "DpadRight"
+activate       = "South"

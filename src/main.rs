@@ -1,3 +1,5 @@
+mod config;
+mod gamepad;
 mod keyboards;
 
 use std::cell::RefCell;
@@ -13,9 +15,11 @@ use fltk::{
 };
 
 use keyboards::{
-    is_modifier, is_sticky, special_hook_str, special_label,
-    Action, KW, KEYS, LAYOUTS, REGULAR_KEY_COUNT,
+    Action, KEYS, KW, LAYOUTS, REGULAR_KEY_COUNT, is_modifier, is_sticky, special_hook_str,
+    special_label,
 };
+
+use gamepad::GamepadNavEvent;
 
 // =============================================================================
 // Key hooks
@@ -57,12 +61,12 @@ impl KeyHook for DummyKeyHook {
 ///   keypress.  A second press before any regular key deactivates them early.
 #[derive(Default)]
 struct ModState {
-    pub caps:   bool,
+    pub caps: bool,
     pub lshift: bool,
     pub rshift: bool,
-    pub ctrl:   bool,
-    pub alt:    bool,
-    pub altgr:  bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub altgr: bool,
 }
 
 impl ModState {
@@ -77,33 +81,35 @@ impl ModState {
     fn release_sticky(&mut self) {
         self.lshift = false;
         self.rshift = false;
-        self.ctrl   = false;
-        self.alt    = false;
-        self.altgr  = false;
+        self.ctrl = false;
+        self.alt = false;
+        self.altgr = false;
     }
 
-    fn is_active(&self, action: Action) -> bool { *self.slot(action) }
+    fn is_active(&self, action: Action) -> bool {
+        *self.slot(action)
+    }
 
     fn slot(&self, action: Action) -> &bool {
         match action {
             Action::CapsLock => &self.caps,
-            Action::LShift   => &self.lshift,
-            Action::RShift   => &self.rshift,
-            Action::Ctrl     => &self.ctrl,
-            Action::Alt      => &self.alt,
-            Action::AltGr    => &self.altgr,
-            _                => unreachable!(),
+            Action::LShift => &self.lshift,
+            Action::RShift => &self.rshift,
+            Action::Ctrl => &self.ctrl,
+            Action::Alt => &self.alt,
+            Action::AltGr => &self.altgr,
+            _ => unreachable!(),
         }
     }
     fn slot_mut(&mut self, action: Action) -> &mut bool {
         match action {
             Action::CapsLock => &mut self.caps,
-            Action::LShift   => &mut self.lshift,
-            Action::RShift   => &mut self.rshift,
-            Action::Ctrl     => &mut self.ctrl,
-            Action::Alt      => &mut self.alt,
-            Action::AltGr    => &mut self.altgr,
-            _                => unreachable!(),
+            Action::LShift => &mut self.lshift,
+            Action::RShift => &mut self.rshift,
+            Action::Ctrl => &mut self.ctrl,
+            Action::Alt => &mut self.alt,
+            Action::AltGr => &mut self.altgr,
+            _ => unreachable!(),
         }
     }
 }
@@ -112,10 +118,18 @@ impl ModState {
 // Color constants
 // =============================================================================
 
-fn col_key_normal()  -> Color { Color::from_rgb(218, 218, 222) }
-fn col_key_mod()     -> Color { Color::from_rgb(100, 100, 110) }
-fn col_mod_active()  -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
-fn col_nav_sel()     -> Color { Color::from_rgb(255, 200,   0) } // amber
+fn col_key_normal() -> Color {
+    Color::from_rgb(218, 218, 222)
+}
+fn col_key_mod() -> Color {
+    Color::from_rgb(100, 100, 110)
+}
+fn col_mod_active() -> Color {
+    Color::from_rgb(70, 130, 180)
+} // steel-blue
+fn col_nav_sel() -> Color {
+    Color::from_rgb(255, 200, 0)
+} // amber
 
 // =============================================================================
 // Modifier button descriptor
@@ -124,8 +138,8 @@ fn col_nav_sel()     -> Color { Color::from_rgb(255, 200,   0) } // amber
 /// A modifier-key button together with its action and base (inactive) color.
 /// Stored in a shared list so execute_action can update visual state.
 struct ModBtn {
-    btn:      Button,
-    action:   Action,
+    btn: Button,
+    action: Action,
     base_col: Color,
 }
 
@@ -151,9 +165,13 @@ fn closest_to_cx(items: impl Iterator<Item = (i32, i32)>, cx: i32) -> usize {
     items
         .enumerate()
         .min_by_key(|(_, (bx, bw))| {
-            if cx >= *bx && cx < bx + bw { 0i32 }
-            else if cx < *bx             { bx - cx }
-            else                         { cx - (bx + bw) }
+            if cx >= *bx && cx < bx + bw {
+                0i32
+            } else if cx < *bx {
+                bx - cx
+            } else {
+                cx - (bx + bw)
+            }
         })
         .map(|(i, _)| i)
         .unwrap_or(0)
@@ -175,13 +193,13 @@ fn closest_lang(lang_btns: &[Button], cx: i32) -> usize {
 /// The cursor can move between the language-button strip and the keyboard grid;
 /// vertical transitions are pixel-centre aligned so wide keys map naturally.
 fn nav_move(
-    all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
-    lang_btns:  &mut Vec<Button>,
+    all_btns: &mut Vec<Vec<(Button, Action, u16, Color)>>,
+    lang_btns: &mut Vec<Button>,
     layout_idx: usize,
-    sel:        &mut NavSel,
-    mod_state:  &Rc<RefCell<ModState>>,
-    dr:         i32,
-    dc:         i32,
+    sel: &mut NavSel,
+    mod_state: &Rc<RefCell<ModState>>,
+    dr: i32,
+    dc: i32,
 ) {
     let new_sel: NavSel = match *sel {
         NavSel::Lang(li) => {
@@ -205,14 +223,14 @@ fn nav_move(
                 NavSel::Lang(closest_lang(lang_btns, cx))
             } else if dr != 0 {
                 let rows = all_btns.len();
-                let cx   = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
                 // Scan rows in direction dr, skipping any row where no button
                 // is close to cx.  This makes navigation skip rows that have no
                 // keys in the nav cluster (e.g. the home row has no nav-cluster
                 // buttons, so Down from End should pass over it and land on ↑).
                 // "Close enough" = the nearest edge of the best button in that
                 // row is within one button-width of cx.
-                let mut scan     = row;
+                let mut scan = row;
                 let mut dest_row = row; // will be updated when we find a close row
                 loop {
                     let next = (scan as i32 + dr).clamp(0, rows as i32 - 1) as usize;
@@ -222,7 +240,7 @@ fn nav_move(
                     }
                     scan = next;
                     let best_col = closest_col(&all_btns[scan], cx);
-                    let btn      = &all_btns[scan][best_col].0;
+                    let btn = &all_btns[scan][best_col].0;
                     let dist = if cx >= btn.x() && cx < btn.x() + btn.w() {
                         0
                     } else if cx < btn.x() {
@@ -243,7 +261,7 @@ fn nav_move(
                 }
             } else {
                 // Left / right within the current keyboard row, clamped.
-                let rl      = all_btns[row].len();
+                let rl = all_btns[row].len();
                 let new_col = (col as i32 + dc).clamp(0, rl as i32 - 1) as usize;
                 NavSel::Key(row, new_col)
             }
@@ -258,13 +276,16 @@ fn nav_move(
     // Restore the old selection's colour.
     match *sel {
         NavSel::Lang(li) => {
-            let c = if li == layout_idx { Color::from_rgb(70, 130, 180) }
-                    else                { Color::from_rgb(80, 80, 80) };
+            let c = if li == layout_idx {
+                Color::from_rgb(70, 130, 180)
+            } else {
+                Color::from_rgb(80, 80, 80)
+            };
             lang_btns[li].set_color(c);
         }
         NavSel::Key(row, col) => {
             let old_action = all_btns[row][col].1;
-            let old_base   = all_btns[row][col].3;
+            let old_base = all_btns[row][col].3;
             let c = if is_modifier(old_action) && mod_state.borrow().is_active(old_action) {
                 col_mod_active()
             } else {
@@ -299,36 +320,38 @@ fn nav_move(
 /// `mod_btns` is the list of modifier buttons so their visual state can be
 /// updated when a modifier is toggled or a sticky modifier auto-releases.
 fn execute_action(
-    action:    Action,
-    scancode:  u16,
-    layout_i:  usize,
-    buf:       &mut TextBuffer,
-    disp:      &mut TextDisplay,
-    hook:      &Rc<dyn KeyHook>,
+    action: Action,
+    scancode: u16,
+    layout_i: usize,
+    buf: &mut TextBuffer,
+    disp: &mut TextDisplay,
+    hook: &Rc<dyn KeyHook>,
     mod_state: &Rc<RefCell<ModState>>,
-    mod_btns:  &[ModBtn],
+    mod_btns: &[ModBtn],
 ) {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
-    // Symbol/number keys (shifted != "") use the shifted character on LShift/RShift;
+    // Symbol/number keys (insert_shifted != "") use the shifted character on LShift/RShift;
     // CapsLock does NOT affect them (standard keyboard behaviour).
-    // Letter keys (shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
+    // Letter keys (insert_shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
     let regular_text: Option<String> = if let Action::Regular(slot) = action {
         let key = &LAYOUTS[layout_i].keys[slot];
-        let ms  = mod_state.borrow();
-        Some(if !key.shifted.is_empty() && (ms.lshift || ms.rshift) {
-            key.shifted.to_string()
-        } else if key.shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
-            key.insert.to_uppercase()
-        } else {
-            key.insert.to_string()
-        })
+        let ms = mod_state.borrow();
+        Some(
+            if !key.insert_shifted.is_empty() && (ms.lshift || ms.rshift) {
+                key.insert_shifted.to_string()
+            } else if key.insert_shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
+                key.insert_unshifted.to_uppercase()
+            } else {
+                key.insert_unshifted.to_string()
+            },
+        )
     } else {
         None
     };
 
     let key_str: &str = match action {
         Action::Regular(_) => regular_text.as_deref().unwrap_or(""),
-        other              => special_hook_str(other),
+        other => special_hook_str(other),
     };
 
     hook.on_key_press(scancode, key_str);
@@ -338,7 +361,11 @@ fn execute_action(
         let now_active = mod_state.borrow_mut().toggle(action);
         for m in mod_btns {
             if m.action == action {
-                m.btn.clone().set_color(if now_active { col_mod_active() } else { m.base_col });
+                m.btn.clone().set_color(if now_active {
+                    col_mod_active()
+                } else {
+                    m.base_col
+                });
             }
         }
         app::redraw();
@@ -350,18 +377,18 @@ fn execute_action(
             }
             Action::Backspace => {
                 let text = buf.text();
-                let n    = text.chars().count();
+                let n = text.chars().count();
                 if n > 0 {
                     buf.set_text(&text.chars().take(n - 1).collect::<String>());
                 }
             }
-            Action::Tab   => buf.append("\t"),
+            Action::Tab => buf.append("\t"),
             Action::Enter => buf.append("\n"),
             Action::Space => buf.append(" "),
             _ => {}
         }
         // Scroll the display to keep the newest text visible.
-        let len   = buf.length();
+        let len = buf.length();
         let lines = disp.count_lines(0, len, false);
         disp.scroll(lines, 0);
 
@@ -382,6 +409,38 @@ fn execute_action(
 }
 
 // =============================================================================
+// Key name → FLTK Key mapping
+// =============================================================================
+
+/// Convert a key name string (as used in `config.toml`) to an FLTK `Key`.
+///
+/// Supported names: "Up", "Down", "Left", "Right", "Space", "Escape" / "Esc",
+/// "Enter", "Tab", "Backspace", and any single ASCII character (e.g. "w").
+/// Unknown names fall back to `Key::from_char('\0')` which never matches an
+/// actual event.
+fn key_from_name(name: &str) -> Key {
+    match name {
+        "Up" => Key::Up,
+        "Down" => Key::Down,
+        "Left" => Key::Left,
+        "Right" => Key::Right,
+        "Space" => Key::from_char(' '),
+        "Escape" | "Esc" => Key::Escape,
+        "Enter" | "Return" => Key::Enter,
+        "Tab" => Key::Tab,
+        "Backspace" => Key::BackSpace,
+        s if s.len() == 1 => Key::from_char(s.chars().next().unwrap()),
+        other => {
+            eprintln!(
+                "[config] unknown key name {:?}; navigation may not work",
+                other
+            );
+            Key::from_char('\0')
+        }
+    }
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -390,6 +449,17 @@ fn main() {
         LAYOUTS.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
         "every LayoutDef must have exactly REGULAR_KEY_COUNT entries"
     );
+
+    // Load configuration (falls back to defaults if config.toml is absent).
+    let cfg = config::Config::load();
+
+    // Resolve keyboard navigation keys from config strings to FLTK Key values.
+    let key_nav_up = key_from_name(&cfg.input.keyboard.navigate_up);
+    let key_nav_down = key_from_name(&cfg.input.keyboard.navigate_down);
+    let key_nav_left = key_from_name(&cfg.input.keyboard.navigate_left);
+    let key_nav_right = key_from_name(&cfg.input.keyboard.navigate_right);
+    let key_activate = key_from_name(&cfg.input.keyboard.activate);
+    let key_escape = key_from_name(&cfg.input.keyboard.escape);
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
@@ -407,19 +477,19 @@ fn main() {
     win.set_border(false); // remove title bar / window decorations
     win.fullscreen(true);
 
-    let pad  = 3i32;
-    let gap  =  1i32;
+    let pad = 3i32;
+    let gap = 1i32;
 
     let avail_w = sw - 2 * pad;
 
-    let display_h  = ((sh as f32 / 12.0) as i32).max(10);
+    let display_h = ((sh as f32 / 12.0) as i32).max(10);
     let lang_btn_h = ((sh as f32 / 12.0) as i32).max(10);
 
     let kbd_h = (sh - display_h - lang_btn_h - 2 * pad - gap).min(avail_w / 3);
     // 6 rows (F-keys + 5 QWERTY rows), 5 inter-row gaps
     let key_h = (kbd_h - 5 * gap) / 6;
 
-    let pad_top = pad + (sh - display_h - lang_btn_h - 6 * key_h - 7 * gap)/2;
+    let pad_top = pad + (sh - display_h - lang_btn_h - 6 * key_h - 7 * gap) / 2;
     let kbd_y = pad_top + display_h + lang_btn_h + 2 * gap;
 
     // Ortholinear: every key is key_w wide.
@@ -430,12 +500,12 @@ fn main() {
     //   Space spans exactly 6 grid columns: space_w = 6*key_w + 5*gap
     //   (Pinning to exact grid avoids integer-division remainder bleeding into the
     //   spacebar width; the row may be a few pixels narrower than avail_w.)
-    let key_w   = ((avail_w - 16 * gap) / 17).max(10);
+    let key_w = ((avail_w - 16 * gap) / 17).max(10);
     let space_w = 6 * key_w + 5 * gap;
-    let pad_left = pad + (avail_w - 17 * key_w - 16 * gap)/2;
+    let pad_left = pad + (avail_w - 17 * key_w - 16 * gap) / 2;
 
     let px = |kw: KW| match kw {
-        KW::Space            => space_w,
+        KW::Space => space_w,
         KW::Std | KW::Spacer => key_w,
     };
 
@@ -443,18 +513,18 @@ fn main() {
     // Drive label size from key width so the longest labels ("AltGr", "Enter",
     // "Shift") stay within the button boundary.  key_w/4 gives ~25% horizontal
     // margin for a 5-character label in a proportional font.
-    let lbl_size  = (key_w / 4).max(10);
+    let lbl_size = (key_w / 4).max(10);
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
     // Lang buttons are one grid column wide (key_w); reuse lbl_size so their
     // text labels fit with the same margin as keyboard-key labels.
-    let btn_size  = lbl_size;
+    let btn_size = lbl_size;
 
     // --- Shared state ---
-    let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
-    let mod_state:  Rc<RefCell<ModState>> = Rc::new(RefCell::new(ModState::default()));
+    let layout_idx: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+    let mod_state: Rc<RefCell<ModState>> = Rc::new(RefCell::new(ModState::default()));
     // mod_btns is populated during the key loop; closures borrow it at call time.
     let mod_btns: Rc<RefCell<Vec<ModBtn>>> = Rc::new(RefCell::new(Vec::new()));
-    let buf  = TextBuffer::default();
+    let buf = TextBuffer::default();
     let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
 
     // --- Text display (read-only) ---
@@ -466,7 +536,7 @@ fn main() {
     disp.set_text_size(disp_size);
 
     // --- Language toggle buttons (one per entry in LAYOUTS) ---
-    let active_col   = Color::from_rgb(70, 130, 180);
+    let active_col = Color::from_rgb(70, 130, 180);
     let inactive_col = Color::from_rgb(80, 80, 80);
 
     let lang_y = pad_top + display_h + gap;
@@ -475,7 +545,7 @@ fn main() {
     // with grid columns 0, 1, 2 …
     let lang_w = key_w;
 
-    let lang_btns:   Rc<RefCell<Vec<Button>>>          = Rc::new(RefCell::new(Vec::new()));
+    let lang_btns: Rc<RefCell<Vec<Button>>> = Rc::new(RefCell::new(Vec::new()));
     let switch_btns: Rc<RefCell<Vec<(Button, usize)>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Declared here (before the lang-button loop) so that lang-button click
@@ -493,12 +563,12 @@ fn main() {
         btn.set_label_color(Color::White);
         btn.set_label_size(btn_size);
 
-        let layout_idx_c  = layout_idx.clone();
-        let lang_btns_c   = lang_btns.clone();
+        let layout_idx_c = layout_idx.clone();
+        let lang_btns_c = lang_btns.clone();
         let switch_btns_c = switch_btns.clone();
-        let all_btns_c    = all_btns.clone();
-        let sel_c         = sel.clone();
-        let mod_state_c   = mod_state.clone();
+        let all_btns_c = all_btns.clone();
+        let sel_c = sel.clone();
+        let mod_state_c = mod_state.clone();
         btn.set_callback(move |_| {
             // Execute the language switch.
             *layout_idx_c.borrow_mut() = li;
@@ -508,10 +578,10 @@ fn main() {
             let def = LAYOUTS[li];
             for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
                 let key = &def.keys[*slot];
-                if key.shifted.is_empty() {
-                    kb.set_label(key.label);
+                if key.label_shifted.is_empty() {
+                    kb.set_label(key.label_unshifted);
                 } else {
-                    let lbl = format!("{}\n{}", key.shifted, key.label);
+                    let lbl = format!("{}\n{}", key.label_shifted, key.label_unshifted);
                     kb.set_label(&lbl);
                 }
             }
@@ -521,14 +591,13 @@ fn main() {
             if let NavSel::Key(old_r, old_c) = old_sel {
                 let mut ab = all_btns_c.borrow_mut();
                 let old_action = ab[old_r][old_c].1;
-                let old_base   = ab[old_r][old_c].3;
-                let restore = if is_modifier(old_action)
-                    && mod_state_c.borrow().is_active(old_action)
-                {
-                    col_mod_active()
-                } else {
-                    old_base
-                };
+                let old_base = ab[old_r][old_c].3;
+                let restore =
+                    if is_modifier(old_action) && mod_state_c.borrow().is_active(old_action) {
+                        col_mod_active()
+                    } else {
+                        old_base
+                    };
                 ab[old_r][old_c].0.set_color(restore);
             }
             // (If old_sel was Lang(_), the colour loop above already restored it.)
@@ -560,23 +629,23 @@ fn main() {
                 continue;
             }
 
-            let col_i    = btn_col;
-            btn_col     += 1;
-            let is_mod   = is_modifier(phys.action);
+            let col_i = btn_col;
+            btn_col += 1;
+            let is_mod = is_modifier(phys.action);
             // Regular letter/symbol keys and the Space bar are light;
             // every other key (modifiers, F-keys, nav, arrows) is dark.
             let base_col = match phys.action {
                 Action::Regular(_) | Action::Space => col_key_normal(),
-                _                                  => col_key_mod(),
+                _ => col_key_mod(),
             };
 
             let init_label: String = match phys.action {
                 Action::Regular(slot) => {
                     let key = &LAYOUTS[0].keys[slot];
-                    if key.shifted.is_empty() {
-                        key.label.to_string()
+                    if key.label_shifted.is_empty() {
+                        key.label_unshifted.to_string()
                     } else {
-                        format!("{}\n{}", key.shifted, key.label)
+                        format!("{}\n{}", key.label_shifted, key.label_unshifted)
                     }
                 }
                 other => special_label(other).to_string(),
@@ -594,21 +663,27 @@ fn main() {
 
             // --- Press / release hook (fires before default C++ button handling) ---
             {
-                let hook_c       = Rc::clone(&hook);
+                let hook_c = Rc::clone(&hook);
                 let layout_idx_h = layout_idx.clone();
-                let action       = phys.action;
-                let scancode     = phys.scancode;
+                let action = phys.action;
+                let scancode = phys.scancode;
                 btn.handle(move |_b, ev| {
                     let key_str: &str = match action {
                         Action::Regular(slot) => {
-                            LAYOUTS[*layout_idx_h.borrow()].keys[slot].insert
+                            LAYOUTS[*layout_idx_h.borrow()].keys[slot].insert_unshifted
                         }
                         other => special_hook_str(other),
                     };
                     match ev {
-                        Event::Push     => { hook_c.on_key_press(scancode, key_str);   false }
-                        Event::Released => { hook_c.on_key_release(scancode, key_str); false }
-                        _               => false,
+                        Event::Push => {
+                            hook_c.on_key_press(scancode, key_str);
+                            false
+                        }
+                        Event::Released => {
+                            hook_c.on_key_release(scancode, key_str);
+                            false
+                        }
+                        _ => false,
                     }
                 });
             }
@@ -616,32 +691,35 @@ fn main() {
             // --- Click callback: text insertion + modifier toggling ---
             {
                 let layout_idx_c = layout_idx.clone();
-                let mod_state_c  = mod_state.clone();
-                let mod_btns_c   = mod_btns.clone();
-                let all_btns_c   = all_btns.clone();
-                let lang_btns_c  = lang_btns.clone();
-                let sel_c        = sel.clone();
-                let mut buf_c    = buf.clone();
-                let mut disp_c   = disp.clone();
-                let hook_c       = Rc::clone(&hook);
-                let action       = phys.action;
-                let scancode     = phys.scancode;
+                let mod_state_c = mod_state.clone();
+                let mod_btns_c = mod_btns.clone();
+                let all_btns_c = all_btns.clone();
+                let lang_btns_c = lang_btns.clone();
+                let sel_c = sel.clone();
+                let mut buf_c = buf.clone();
+                let mut disp_c = disp.clone();
+                let hook_c = Rc::clone(&hook);
+                let action = phys.action;
+                let scancode = phys.scancode;
                 btn.set_callback(move |_| {
                     execute_action(
-                        action, scancode,
+                        action,
+                        scancode,
                         *layout_idx_c.borrow(),
-                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mut buf_c,
+                        &mut disp_c,
+                        &hook_c,
                         &mod_state_c,
                         &mod_btns_c.borrow(),
                     );
                     // Move the amber highlight to the clicked button.
                     let mut ab = all_btns_c.borrow_mut();
-                    let mut s  = sel_c.borrow_mut();
+                    let mut s = sel_c.borrow_mut();
                     // Restore the previously highlighted button's colour.
                     match *s {
                         NavSel::Key(old_r, old_c) => {
                             let old_action = ab[old_r][old_c].1;
-                            let old_base   = ab[old_r][old_c].3;
+                            let old_base = ab[old_r][old_c].3;
                             let restore = if is_modifier(old_action)
                                 && mod_state_c.borrow().is_active(old_action)
                             {
@@ -675,8 +753,8 @@ fn main() {
             // Track modifier keys for toggle color updates.
             if is_mod {
                 mod_btns.borrow_mut().push(ModBtn {
-                    btn:      btn.clone(),
-                    action:   phys.action,
+                    btn: btn.clone(),
+                    action: phys.action,
                     base_col: base_col,
                 });
             }
@@ -694,24 +772,24 @@ fn main() {
         let _ = ab[0][0].0.take_focus();
     }
 
-    // --- Navigation: physical arrow keys + spacebar ---
+    // --- Navigation: configurable keyboard keys ---
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
-    // the event to any child widget, so we can intercept arrow keys and spacebar
-    // before any focused button consumes them.
+    // the event to any child widget, so navigation keys and the activate key are
+    // intercepted here regardless of which button (if any) currently holds focus.
     {
-        let sel_c        = sel.clone();
-        let all_btns_c   = all_btns.clone();
-        let lang_btns_c  = lang_btns.clone();
+        let sel_c = sel.clone();
+        let all_btns_c = all_btns.clone();
+        let lang_btns_c = lang_btns.clone();
         let layout_idx_c = layout_idx.clone();
-        let mod_state_c  = mod_state.clone();
-        let mod_btns_c   = mod_btns.clone();
-        let mut buf_c    = buf.clone();
-        let mut disp_c   = disp.clone();
-        let hook_c       = Rc::clone(&hook);
+        let mod_state_c = mod_state.clone();
+        let mod_btns_c = mod_btns.clone();
+        let mut buf_c = buf.clone();
+        let mut disp_c = disp.clone();
+        let hook_c = Rc::clone(&hook);
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
-        // widget, so arrow keys and spacebar are intercepted here regardless of
-        // which button (if any) currently holds FLTK keyboard focus.
+        // widget, so navigation keys and the activate key are intercepted here
+        // regardless of which button (if any) currently holds FLTK keyboard focus.
         win.super_handle_first(false);
         win.handle(move |_w, ev| {
             if ev != Event::KeyDown {
@@ -719,28 +797,42 @@ fn main() {
             }
             let k = app::event_key();
 
-            // Suppress Escape so FLTK does not close the window.
-            if k == Key::Escape {
+            // Suppress the escape key so FLTK does not close the window.
+            if k == key_escape {
                 return true;
             }
 
-            // Arrow-key navigation.
-            if k == Key::Up || k == Key::Down || k == Key::Left || k == Key::Right {
-                let (dr, dc) = match k {
-                    Key::Up    => (-1,  0),
-                    Key::Down  => ( 1,  0),
-                    Key::Left  => ( 0, -1),
-                    _          => ( 0,  1), // Right
-                };
+            // Navigation keys move the amber selection cursor.
+            let nav_delta: Option<(i32, i32)> = if k == key_nav_up {
+                Some((-1, 0))
+            } else if k == key_nav_down {
+                Some((1, 0))
+            } else if k == key_nav_left {
+                Some((0, -1))
+            } else if k == key_nav_right {
+                Some((0, 1))
+            } else {
+                None
+            };
+
+            if let Some((dr, dc)) = nav_delta {
                 let mut ab = all_btns_c.borrow_mut();
                 let mut lb = lang_btns_c.borrow_mut();
-                let mut s  = sel_c.borrow_mut();
-                nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc);
+                let mut s = sel_c.borrow_mut();
+                nav_move(
+                    &mut ab,
+                    &mut lb,
+                    *layout_idx_c.borrow(),
+                    &mut s,
+                    &mod_state_c,
+                    dr,
+                    dc,
+                );
                 return true;
             }
 
-            // Physical spacebar fires the currently highlighted on-screen button.
-            if k == Key::from_char(' ') {
+            // The activate key fires the currently highlighted on-screen button.
+            if k == key_activate {
                 // Copy NavSel (it is Copy) so the borrow is released before any
                 // callback that may itself borrow sel_c (e.g. the lang callback).
                 let cur_sel = *sel_c.borrow();
@@ -756,9 +848,12 @@ fn main() {
                             (ab[row][col].1, ab[row][col].2)
                         };
                         execute_action(
-                            action, scancode,
+                            action,
+                            scancode,
                             *layout_idx_c.borrow(),
-                            &mut buf_c, &mut disp_c, &hook_c,
+                            &mut buf_c,
+                            &mut disp_c,
+                            &hook_c,
                             &mod_state_c,
                             &mod_btns_c.borrow(),
                         );
@@ -771,6 +866,82 @@ fn main() {
             }
 
             false
+        });
+    }
+
+    // --- Gamepad navigation ---
+    // A background thread (started below) polls gilrs and sends GamepadNavEvent
+    // values over an FLTK channel.  A periodic timeout callback drains the
+    // channel on the main thread and translates events into nav_move /
+    // execute_action calls, exactly mirroring the keyboard handler above.
+    {
+        let (gamepad_tx, gamepad_rx) = app::channel::<GamepadNavEvent>();
+        gamepad::start(cfg.input.gamepad, gamepad_tx);
+
+        let sel_c = sel.clone();
+        let all_btns_c = all_btns.clone();
+        let lang_btns_c = lang_btns.clone();
+        let layout_idx_c = layout_idx.clone();
+        let mod_state_c = mod_state.clone();
+        let mod_btns_c = mod_btns.clone();
+        let mut buf_c = buf.clone();
+        let mut disp_c = disp.clone();
+        let hook_c = Rc::clone(&hook);
+
+        app::add_timeout3(0.016, move |handle| {
+            while let Some(event) = gamepad_rx.recv() {
+                match event {
+                    GamepadNavEvent::Up
+                    | GamepadNavEvent::Down
+                    | GamepadNavEvent::Left
+                    | GamepadNavEvent::Right => {
+                        let (dr, dc) = match event {
+                            GamepadNavEvent::Up => (-1, 0),
+                            GamepadNavEvent::Down => (1, 0),
+                            GamepadNavEvent::Left => (0, -1),
+                            _ => (0, 1),
+                        };
+                        let mut ab = all_btns_c.borrow_mut();
+                        let mut lb = lang_btns_c.borrow_mut();
+                        let mut s = sel_c.borrow_mut();
+                        nav_move(
+                            &mut ab,
+                            &mut lb,
+                            *layout_idx_c.borrow(),
+                            &mut s,
+                            &mod_state_c,
+                            dr,
+                            dc,
+                        );
+                    }
+                    GamepadNavEvent::Activate => {
+                        let cur_sel = *sel_c.borrow();
+                        match cur_sel {
+                            NavSel::Lang(li) => {
+                                lang_btns_c.borrow_mut()[li].do_callback();
+                            }
+                            NavSel::Key(row, col) => {
+                                let (action, scancode) = {
+                                    let ab = all_btns_c.borrow();
+                                    (ab[row][col].1, ab[row][col].2)
+                                };
+                                execute_action(
+                                    action,
+                                    scancode,
+                                    *layout_idx_c.borrow(),
+                                    &mut buf_c,
+                                    &mut disp_c,
+                                    &hook_c,
+                                    &mod_state_c,
+                                    &mod_btns_c.borrow(),
+                                );
+                                all_btns_c.borrow_mut()[row][col].0.set_color(col_nav_sel());
+                            }
+                        }
+                    }
+                }
+            }
+            app::repeat_timeout3(0.016, handle);
         });
     }
 
