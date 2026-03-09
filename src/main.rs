@@ -410,10 +410,12 @@ fn main() {
     let pad  = 3i32;
     let gap  =  1i32;
 
+    let avail_w = sw - 2 * pad;
+
     let display_h  = ((sh as f32 / 12.0) as i32).max(10);
     let lang_btn_h = ((sh as f32 / 12.0) as i32).max(10);
 
-    let kbd_h = sh - display_h - lang_btn_h - 2 * pad - gap;
+    let kbd_h = (sh - display_h - lang_btn_h - 2 * pad - gap).min(avail_w / 3);
     // 6 rows (F-keys + 5 QWERTY rows), 5 inter-row gaps
     let key_h = (kbd_h - 5 * gap) / 6;
 
@@ -428,7 +430,6 @@ fn main() {
     //   Space spans exactly 6 grid columns: space_w = 6*key_w + 5*gap
     //   (Pinning to exact grid avoids integer-division remainder bleeding into the
     //   spacebar width; the row may be a few pixels narrower than avail_w.)
-    let avail_w = sw - 2 * pad;
     let key_w   = ((avail_w - 16 * gap) / 17).max(10);
     let space_w = 6 * key_w + 5 * gap;
     let pad_left = pad + (avail_w - 17 * key_w - 16 * gap)/2;
