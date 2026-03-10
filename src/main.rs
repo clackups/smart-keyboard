@@ -62,7 +62,8 @@ pub trait KeyHook {
     /// Called exactly once per logical key action from `execute_action`.
     ///
     /// Default: delegates to `on_key_press` + `on_key_release`.
-    fn on_key_action(&self, scancode: u16, key: &str, _modifier_bits: u8) {
+    fn on_key_action(&self, scancode: u16, key: &str, modifier_bits: u8) {
+        let _ = modifier_bits; // unused in default delegation
         self.on_key_press(scancode, key);
         self.on_key_release(scancode, key);
     }

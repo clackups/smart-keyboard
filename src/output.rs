@@ -126,8 +126,35 @@ impl LocalKeyHook {
             return None;
         }
 
-        // Enable all standard key codes (1..=255 covers the full keyboard range).
-        for code in 1u32..=255 {
+        // Enable the key codes used by the smart keyboard layout.
+        // These are the Linux evdev codes assigned to the physical keys in
+        // keyboards.rs plus the modifier keys injected from modifier_bits.
+        // Registering only the codes we actually emit keeps the virtual device
+        // declaration minimal and avoids spurious caps-lock / num-lock LED
+        // requests from the compositor.
+        const USED_KEYS: &[u16] = &[
+            // Row 0 – Esc, F1–F12
+            0x01, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44,
+            0x57, 0x58,
+            // Row 1 – number row + Backspace; nav cluster
+            0x29, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+            0x0c, 0x0d, 0x0e,
+            0x6e, 0x66, 0x68,        // Insert, Home, PageUp
+            // Row 2 – Tab, QWERTY row; nav cluster
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
+            0x1a, 0x1b,
+            0x6f, 0x6b, 0x6d,        // Delete, End, PageDown
+            // Row 3 – CapsLock, home row + Enter
+            0x3a, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+            0x28, 0x1c,
+            // Row 4 – Shifts, bottom alpha row
+            0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x34,
+            0x35, 0x36,
+            // Row 5 – Ctrl, Win, Alt, Space, AltGr, Ctrl; arrow cluster
+            0x1d, 0x7d, 0x38, 0x39, 0x64, 0x61,
+            0x67, 0x6c, 0x69, 0x6a, // Up, Down, Left, Right
+        ];
+        for &code in USED_KEYS {
             unsafe { libc::ioctl(fd, UI_SET_KEYBIT, code as libc::c_int) };
         }
 
@@ -334,6 +361,7 @@ impl KeyHook for BleKeyHook {
         // the remote host types the correct uppercase character regardless of its
         // own CapsLock state.
         let mut hid_modifier = ble_modifier_byte(modifier_bits);
+        // 0x22 = LEFTSHIFT (0x02) | RIGHTSHIFT (0x20) – check if any shift is active.
         if (hid_modifier & 0x22) == 0 {
             // No shift in modifier_bits → check if key_str implies uppercase.
             if is_uppercase_letter(key_str) {
