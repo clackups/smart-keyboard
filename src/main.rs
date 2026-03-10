@@ -59,13 +59,15 @@ pub trait KeyHook {
     fn on_key_press(&self, scancode: u16, key: &str);
     fn on_key_release(&self, scancode: u16, key: &str);
 
-    /// Called exactly once per logical key action from `execute_action`.
+    /// Called exactly once per logical key action from `execute_action` (on
+    /// physical key press).  `on_key_release` is called separately when the
+    /// physical activation key or button is released.
     ///
-    /// Default: delegates to `on_key_press` + `on_key_release`.
+    /// Default: delegates to `on_key_press` only.
     fn on_key_action(&self, scancode: u16, key: &str, modifier_bits: u8) {
         let _ = modifier_bits; // unused in default delegation
         self.on_key_press(scancode, key);
-        self.on_key_release(scancode, key);
+        // NOTE: on_key_release is driven by the physical key-up event, not here.
     }
 }
 
@@ -155,6 +157,12 @@ fn col_nav_sel()         -> Color { Color::from_rgb(255, 200,   0) } // amber
 fn col_status_bar_bg()   -> Color { Color::from_rgb( 25,  25,  28) }
 fn col_status_ind_bg()   -> Color { Color::from_rgb( 45,  45,  50) }
 fn col_status_ind_text() -> Color { Color::from_rgb( 90,  90,  95) }
+
+// Connectivity-indicator label colors.
+fn col_conn_no_output()    -> Color { col_status_ind_text() }          // grey  – print / no-hardware mode
+fn col_conn_disconnected() -> Color { Color::from_rgb(220,  60,  60) } // red   – BLE dongle not found
+fn col_conn_connecting()   -> Color { Color::from_rgb(220, 150,  40) } // amber – dongle open, host not paired
+fn col_conn_connected()    -> Color { Color::from_rgb( 80, 220,  80) } // green – BLE host paired and ready
 
 // =============================================================================
 // Modifier button descriptor
@@ -339,6 +347,10 @@ fn nav_move(
 ///
 /// `mod_btns` is the list of modifier buttons so their visual state can be
 /// updated when a modifier is toggled or a sticky modifier auto-releases.
+///
+/// Returns the `key_str` that was passed to `on_key_action`, so the caller
+/// can invoke `on_key_release` when the physical activation key is later
+/// released.
 fn execute_action(
     action:    Action,
     scancode:  u16,
@@ -348,7 +360,7 @@ fn execute_action(
     hook:      &Rc<dyn KeyHook>,
     mod_state: &Rc<RefCell<ModState>>,
     mod_btns:  &[ModBtn],
-) {
+) -> String {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
     // Symbol/number keys (label_shifted != "") use the shifted character on LShift/RShift;
     // CapsLock does NOT affect them (standard keyboard behaviour).
@@ -440,6 +452,7 @@ fn execute_action(
     }
 
     hook.on_key_action(scancode, key_str, modifier_bits);
+    key_str.to_string()
 }
 
 // =============================================================================
@@ -562,13 +575,16 @@ fn main() {
     let mod_state:  Rc<RefCell<ModState>> = Rc::new(RefCell::new(ModState::default()));
     // mod_btns is populated during the key loop; closures borrow it at call time.
     let mod_btns: Rc<RefCell<Vec<ModBtn>>> = Rc::new(RefCell::new(Vec::new()));
+    // Tracks the (scancode, key_str) of the key currently "held" by the keyboard
+    // activation key or gamepad action button.  Set on press, cleared on release.
+    let active_nav_key: Rc<RefCell<Option<(u16, String)>>> = Rc::new(RefCell::new(None));
     let buf  = TextBuffer::default();
 
     // Build the output hook from the loaded configuration and update the
     // connectivity indicator accordingly.
     let hook: Rc<dyn KeyHook> = match cfg.output.mode {
         config::OutputMode::Print => {
-            conn_status.set_label_color(col_status_ind_text());
+            conn_status.set_label_color(col_conn_no_output());
             Rc::new(output::PrintKeyHook)
         }
         config::OutputMode::Ble => {
@@ -580,7 +596,7 @@ fn main() {
             );
 
             // Start with red icon: dongle not yet connected.
-            conn_status.set_label_color(Color::from_rgb(220, 60, 60));
+            conn_status.set_label_color(col_conn_disconnected());
 
             // Intervals for the BLE connection-management timer.
             const BLE_RETRY_INTERVAL_S:  f64 = 1.0; // retry to connect when disconnected
@@ -589,24 +605,24 @@ fn main() {
             // Timer that manages the BLE connection life-cycle:
             //
             //  * When disconnected: try to connect once per second.
-            //    – On success → orange icon (connected, status not yet checked);
+            //    – On success → amber icon (connected, status not yet checked);
             //      schedule status check in 5 s.
             //    – On failure → red icon; retry in 1 s.
             //
             //  * When connected: send the "S" command every 5 s.
             //    – STATUS:CONNECTED:xxxx → green icon; re-check in 5 s.
-            //    – Other response / no response → orange icon; re-check in 5 s.
+            //    – Other response / no response → amber icon; re-check in 5 s.
             //    – Write failure (connection lost) → red icon; retry in 1 s.
             let mut conn_status_t = conn_status.clone();
             let ble_conn_t = ble_conn;
             app::add_timeout3(0.0, move |handle| {
                 if !ble_conn_t.borrow().is_connected() {
                     if ble_conn_t.borrow_mut().try_connect() {
-                        conn_status_t.set_label_color(Color::from_rgb(220, 150, 40));
+                        conn_status_t.set_label_color(col_conn_connecting());
                         app::redraw();
                         app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                     } else {
-                        conn_status_t.set_label_color(Color::from_rgb(220, 60, 60));
+                        conn_status_t.set_label_color(col_conn_disconnected());
                         app::redraw();
                         app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
                     }
@@ -614,18 +630,18 @@ fn main() {
                     match ble_conn_t.borrow_mut().check_status() {
                         Err(()) => {
                             // Write failed → connection lost.
-                            conn_status_t.set_label_color(Color::from_rgb(220, 60, 60));
+                            conn_status_t.set_label_color(col_conn_disconnected());
                             app::redraw();
                             app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
                         }
                         Ok(Some(ref s)) if s.starts_with("STATUS:CONNECTED:") => {
-                            conn_status_t.set_label_color(Color::from_rgb(80, 220, 80));
+                            conn_status_t.set_label_color(col_conn_connected());
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
                         Ok(_) => {
                             // Connected but remote host not paired / not ready.
-                            conn_status_t.set_label_color(Color::from_rgb(220, 150, 40));
+                            conn_status_t.set_label_color(col_conn_connecting());
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
@@ -807,13 +823,18 @@ fn main() {
                 let action       = phys.action;
                 let scancode     = phys.scancode;
                 btn.set_callback(move |_| {
-                    execute_action(
+                    let key_str = execute_action(
                         action, scancode,
                         *layout_idx_c.borrow(),
                         &mut buf_c, &mut disp_c, &hook_c,
                         &mod_state_c,
                         &mod_btns_c.borrow(),
                     );
+                    // For mouse/touch clicks the Released event fires before this
+                    // callback, so the key press command was sent in execute_action →
+                    // on_key_action.  Send the release immediately so the BLE dongle
+                    // receives K0000 right after the press.
+                    hook_c.on_key_release(scancode, &key_str);
                     // Move the amber highlight to the clicked button.
                     let mut ab = all_btns_c.borrow_mut();
                     let mut s  = sel_c.borrow_mut();
@@ -888,75 +909,89 @@ fn main() {
     // the event to any child widget, so we can intercept arrow keys and spacebar
     // before any focused button consumes them.
     {
-        let sel_c        = sel.clone();
-        let all_btns_c   = all_btns.clone();
-        let lang_btns_c  = lang_btns.clone();
-        let layout_idx_c = layout_idx.clone();
-        let mod_state_c  = mod_state.clone();
-        let mod_btns_c   = mod_btns.clone();
-        let mut buf_c    = buf.clone();
-        let mut disp_c   = disp.clone();
-        let hook_c       = Rc::clone(&hook);
+        let sel_c             = sel.clone();
+        let all_btns_c        = all_btns.clone();
+        let lang_btns_c       = lang_btns.clone();
+        let layout_idx_c      = layout_idx.clone();
+        let mod_state_c       = mod_state.clone();
+        let mod_btns_c        = mod_btns.clone();
+        let mut buf_c         = buf.clone();
+        let mut disp_c        = disp.clone();
+        let hook_c            = Rc::clone(&hook);
+        let active_nav_key_c  = active_nav_key.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
         // which button (if any) currently holds FLTK keyboard focus.
         win.super_handle_first(false);
         win.handle(move |_w, ev| {
-            if ev != Event::KeyDown {
-                return false;
-            }
             let k = app::event_key();
 
-            // Suppress Escape so FLTK does not close the window.
-            if k == Key::Escape {
-                return true;
-            }
-
-            // Arrow-key navigation (keys loaded from config).
-            if k == nav_keys.up || k == nav_keys.down
-                || k == nav_keys.left || k == nav_keys.right
-            {
-                let (dr, dc) = if k == nav_keys.up        { (-1,  0) }
-                               else if k == nav_keys.down  { ( 1,  0) }
-                               else if k == nav_keys.left  { ( 0, -1) }
-                               else                        { ( 0,  1) }; // right
-                let mut ab = all_btns_c.borrow_mut();
-                let mut lb = lang_btns_c.borrow_mut();
-                let mut s  = sel_c.borrow_mut();
-                nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc);
-                return true;
-            }
-
-            // Activate key fires the currently highlighted on-screen button (loaded from config).
-            if k == nav_keys.activate {
-                // Copy NavSel (it is Copy) so the borrow is released before any
-                // callback that may itself borrow sel_c (e.g. the lang callback).
-                let cur_sel = *sel_c.borrow();
-                match cur_sel {
-                    NavSel::Lang(li) => {
-                        // Fire the language-switch button.  Its callback updates
-                        // layout_idx, key labels, and the amber highlight.
-                        lang_btns_c.borrow_mut()[li].do_callback();
-                    }
-                    NavSel::Key(row, col) => {
-                        let (action, scancode) = {
-                            let ab = all_btns_c.borrow();
-                            (ab[row][col].1, ab[row][col].2)
-                        };
-                        execute_action(
-                            action, scancode,
-                            *layout_idx_c.borrow(),
-                            &mut buf_c, &mut disp_c, &hook_c,
-                            &mod_state_c,
-                            &mod_btns_c.borrow(),
-                        );
-                        // Re-apply amber in case execute_action changed the colour
-                        // (e.g. when the selected button is a modifier key).
-                        all_btns_c.borrow_mut()[row][col].0.set_color(col_nav_sel());
-                    }
+            if ev == Event::KeyDown {
+                // Suppress Escape so FLTK does not close the window.
+                if k == Key::Escape {
+                    return true;
                 }
-                return true;
+
+                // Arrow-key navigation (keys loaded from config).
+                if k == nav_keys.up || k == nav_keys.down
+                    || k == nav_keys.left || k == nav_keys.right
+                {
+                    let (dr, dc) = if k == nav_keys.up        { (-1,  0) }
+                                   else if k == nav_keys.down  { ( 1,  0) }
+                                   else if k == nav_keys.left  { ( 0, -1) }
+                                   else                        { ( 0,  1) }; // right
+                    let mut ab = all_btns_c.borrow_mut();
+                    let mut lb = lang_btns_c.borrow_mut();
+                    let mut s  = sel_c.borrow_mut();
+                    nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc);
+                    return true;
+                }
+
+                // Activate key: fire the currently highlighted on-screen button.
+                if k == nav_keys.activate {
+                    // Copy NavSel (it is Copy) so the borrow is released before any
+                    // callback that may itself borrow sel_c (e.g. the lang callback).
+                    let cur_sel = *sel_c.borrow();
+                    match cur_sel {
+                        NavSel::Lang(li) => {
+                            // Fire the language-switch button.  Its callback updates
+                            // layout_idx, key labels, and the amber highlight.
+                            lang_btns_c.borrow_mut()[li].do_callback();
+                            // Language switches don't generate hardware key events,
+                            // so there is nothing to release on activation-key up.
+                            *active_nav_key_c.borrow_mut() = None;
+                        }
+                        NavSel::Key(row, col) => {
+                            let (action, scancode) = {
+                                let ab = all_btns_c.borrow();
+                                (ab[row][col].1, ab[row][col].2)
+                            };
+                            let key_str = execute_action(
+                                action, scancode,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c,
+                                &mod_btns_c.borrow(),
+                            );
+                            // Store the activated key so on_key_release can be sent
+                            // when the physical activation key is released.
+                            *active_nav_key_c.borrow_mut() = Some((scancode, key_str));
+                            // Re-apply amber in case execute_action changed the colour
+                            // (e.g. when the selected button is a modifier key).
+                            all_btns_c.borrow_mut()[row][col].0.set_color(col_nav_sel());
+                        }
+                    }
+                    return true;
+                }
+            } else if ev == Event::KeyUp {
+                // Activation key released: send the key-release event.
+                if k == nav_keys.activate {
+                    if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                        hook_c.on_key_release(sc, &ks);
+                    }
+                    return true;
+                }
             }
 
             false
@@ -969,16 +1004,17 @@ fn main() {
     // --- Gamepad input (if enabled in config) ---
     if cfg.input.gamepad.enabled {
         if let Some(gp) = Gamepad::open(&cfg.input.gamepad) {
-            let gp_cell      = Rc::new(RefCell::new(gp));
-            let all_btns_c   = all_btns.clone();
-            let lang_btns_c  = lang_btns.clone();
-            let layout_idx_c = layout_idx.clone();
-            let mod_state_c  = mod_state.clone();
-            let mod_btns_c   = mod_btns.clone();
-            let sel_c        = sel.clone();
-            let mut buf_c    = buf.clone();
-            let mut disp_c   = disp.clone();
-            let hook_c       = Rc::clone(&hook);
+            let gp_cell           = Rc::new(RefCell::new(gp));
+            let all_btns_c        = all_btns.clone();
+            let lang_btns_c       = lang_btns.clone();
+            let layout_idx_c      = layout_idx.clone();
+            let mod_state_c       = mod_state.clone();
+            let mod_btns_c        = mod_btns.clone();
+            let sel_c             = sel.clone();
+            let mut buf_c         = buf.clone();
+            let mut disp_c        = disp.clone();
+            let hook_c            = Rc::clone(&hook);
+            let active_nav_key_c  = active_nav_key.clone();
 
             // Reuse a single Vec across poll calls to avoid repeated allocation.
             let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -988,15 +1024,15 @@ fn main() {
             app::add_timeout3(0.016, move |handle| {
                 gp_cell.borrow_mut().poll(&mut gp_evt_buf);
                 for evt in gp_evt_buf.iter() {
-                    // Only react to button presses, not releases.
-                    if !evt.pressed {
-                        continue;
-                    }
                     match evt.action {
                         GamepadAction::Up
                         | GamepadAction::Down
                         | GamepadAction::Left
                         | GamepadAction::Right => {
+                            // Only navigate on button press, not release.
+                            if !evt.pressed {
+                                continue;
+                            }
                             let (dr, dc) = match evt.action {
                                 GamepadAction::Up    => (-1,  0),
                                 GamepadAction::Down  => ( 1,  0),
@@ -1014,25 +1050,39 @@ fn main() {
                             );
                         }
                         GamepadAction::Activate => {
-                            let cur_sel = *sel_c.borrow();
-                            match cur_sel {
-                                NavSel::Lang(li) => {
-                                    lang_btns_c.borrow_mut()[li].do_callback();
+                            if evt.pressed {
+                                let cur_sel = *sel_c.borrow();
+                                match cur_sel {
+                                    NavSel::Lang(li) => {
+                                        lang_btns_c.borrow_mut()[li].do_callback();
+                                        // Language switches don't generate hardware key
+                                        // events, so there is nothing to release.
+                                        *active_nav_key_c.borrow_mut() = None;
+                                    }
+                                    NavSel::Key(row, col) => {
+                                        let (action, scancode) = {
+                                            let ab = all_btns_c.borrow();
+                                            (ab[row][col].1, ab[row][col].2)
+                                        };
+                                        let key_str = execute_action(
+                                            action, scancode,
+                                            *layout_idx_c.borrow(),
+                                            &mut buf_c, &mut disp_c, &hook_c,
+                                            &mod_state_c,
+                                            &mod_btns_c.borrow(),
+                                        );
+                                        // Store the activated key so on_key_release can be
+                                        // sent when the gamepad button is released.
+                                        *active_nav_key_c.borrow_mut() =
+                                            Some((scancode, key_str));
+                                        all_btns_c.borrow_mut()[row][col]
+                                            .0.set_color(col_nav_sel());
+                                    }
                                 }
-                                NavSel::Key(row, col) => {
-                                    let (action, scancode) = {
-                                        let ab = all_btns_c.borrow();
-                                        (ab[row][col].1, ab[row][col].2)
-                                    };
-                                    execute_action(
-                                        action, scancode,
-                                        *layout_idx_c.borrow(),
-                                        &mut buf_c, &mut disp_c, &hook_c,
-                                        &mod_state_c,
-                                        &mod_btns_c.borrow(),
-                                    );
-                                    all_btns_c.borrow_mut()[row][col]
-                                        .0.set_color(col_nav_sel());
+                            } else {
+                                // Button released: send the key-release event.
+                                if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                    hook_c.on_key_release(sc, &ks);
                                 }
                             }
                         }

@@ -22,10 +22,13 @@ pub struct PrintKeyHook;
 
 impl KeyHook for PrintKeyHook {
     fn on_key_press(&self, _scancode: u16, _key: &str) {}
-    fn on_key_release(&self, _scancode: u16, _key: &str) {}
 
-    fn on_key_action(&self, scancode: u16, key: &str, _modifier_bits: u8) {
-        println!("scancode=0x{:02x} key={:?}", scancode, key);
+    fn on_key_release(&self, scancode: u16, key: &str) {
+        println!("key_release: scancode=0x{:02x} key={:?}", scancode, key);
+    }
+
+    fn on_key_action(&self, scancode: u16, key: &str, modifier_bits: u8) {
+        println!("scancode=0x{:02x} key={:?} modifier_bits=0x{:02x}", scancode, key, modifier_bits);
     }
 }
 
@@ -121,15 +124,22 @@ impl BleConnection {
         true
     }
 
-    /// Send a keyboard HID report followed immediately by a key-release report.
+    /// Send a keyboard HID key-press report.
     ///
     /// `modifier` is the USB HID modifier byte (e.g. 0x02 = LEFTSHIFT).
     /// `keycode` is the USB HID usage-page-7 keycode (e.g. 0x04 = 'a').
+    ///
+    /// This sends only the key-press command; the matching key-release (`K0000`)
+    /// must be sent separately via [`send_key_release`].
     pub fn send_key(&mut self, modifier: u8, keycode: u8) {
-        // Press:   K <modifier:02X> 01 <keycode:02X>
-        // Release: K 00 00
-        let cmd = format!("K{:02X}01{:02X}\nK0000\n", modifier, keycode);
+        // Press: K <modifier:02X> 01 <keycode:02X>
+        let cmd = format!("K{:02X}01{:02X}\n", modifier, keycode);
         self.send(&cmd);
+    }
+
+    /// Send the key-release report (`K0000`) – releases all keys on the dongle.
+    pub fn send_key_release(&mut self) {
+        self.send("K0000\n");
     }
 
     /// Send the `S` status command and read the dongle's response.
@@ -186,7 +196,16 @@ impl BleKeyHook {
 
 impl KeyHook for BleKeyHook {
     fn on_key_press(&self, _scancode: u16, _key: &str) {}
-    fn on_key_release(&self, _scancode: u16, _key: &str) {}
+
+    /// Send the key-release report (`K0000`) when the physical activation key
+    /// or gamepad button is released.  Modifier-only actions are skipped because
+    /// they do not generate a preceding key-press report.
+    fn on_key_release(&self, _scancode: u16, key_str: &str) {
+        if is_modifier_key_str(key_str) {
+            return;
+        }
+        self.conn.borrow_mut().send_key_release();
+    }
 
     fn on_key_action(&self, scancode: u16, key_str: &str, modifier_bits: u8) {
         // Skip pure modifier-key events; their state is bundled into modifier_bits
