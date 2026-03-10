@@ -17,9 +17,8 @@ navigate_right = 0x03
 activate       = 0x04   # A/South button
 
 [output]
-# Output mode: "print" | "local" | "ble"
+# Output mode: "print" | "ble"
 #   print – print key events to stdout (default; no hardware output)
-#   local – inject key events into the local host via Linux uinput
 #   ble   – send keyboard HID reports to the BLE dongle (esp_hid_serial_bridge)
 mode = "print"
 

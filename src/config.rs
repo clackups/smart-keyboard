@@ -57,8 +57,6 @@ pub enum OutputMode {
     /// Print key events to stdout; no hardware output (default).
     #[default]
     Print,
-    /// Inject key events into the local host via Linux uinput.
-    Local,
     /// Send USB HID reports to the BLE dongle over a USB-serial port.
     Ble,
 }
