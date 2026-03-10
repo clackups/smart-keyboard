@@ -7,7 +7,8 @@
 //                   BLE dongle over a USB-serial connection (mode = "ble")
 
 use std::cell::RefCell;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::rc::Rc;
 
 use crate::KeyHook;
 
@@ -32,6 +33,133 @@ impl KeyHook for PrintKeyHook {
 // BLE dongle hook (esp_hid_serial_bridge)
 // =============================================================================
 
+/// Read buffer size for serial responses from the BLE dongle.
+const STATUS_BUF_LEN: usize = 64;
+
+/// Mutable connection state for the BLE dongle.
+///
+/// Wrapped in `Rc<RefCell<>>` so it can be shared between `BleKeyHook`
+/// (which forwards key events) and the periodic connection-management timer
+/// in `main.rs`.
+pub struct BleConnection {
+    /// Open serial port, or `None` when the dongle is not connected.
+    port:       Option<Box<dyn serialport::SerialPort>>,
+    pub vid:    u16,
+    pub pid:    u16,
+    pub serial: Option<String>,
+}
+
+impl BleConnection {
+    pub fn new(vid: u16, pid: u16, serial: Option<String>) -> Self {
+        BleConnection { port: None, vid, pid, serial }
+    }
+
+    /// Returns `true` if a serial port is currently open.
+    pub fn is_connected(&self) -> bool {
+        self.port.is_some()
+    }
+
+    /// Search for the dongle by VID/PID (and optional serial string) and
+    /// attempt to open its serial port.  Sets `self.port` on success and
+    /// returns `true`; returns `false` if the device is not found or the
+    /// port cannot be opened.
+    pub fn try_connect(&mut self) -> bool {
+        let ports = serialport::available_ports().unwrap_or_default();
+        let port_name = ports.into_iter().find_map(|info| {
+            if let serialport::SerialPortType::UsbPort(ref usb) = info.port_type {
+                if usb.vid != self.vid || usb.pid != self.pid {
+                    return None;
+                }
+                if let Some(ref filter) = self.serial {
+                    if usb.serial_number.as_deref() != Some(filter.as_str()) {
+                        return None;
+                    }
+                }
+                Some(info.port_name.clone())
+            } else {
+                None
+            }
+        });
+
+        let port_name = match port_name {
+            Some(n) => n,
+            None => return false,
+        };
+
+        eprintln!("[output/ble] found dongle at {port_name}");
+
+        match serialport::new(&port_name, 115_200)
+            .timeout(std::time::Duration::from_millis(50))
+            .open()
+        {
+            Ok(p) => {
+                eprintln!("[output/ble] serial port opened");
+                self.port = Some(p);
+                true
+            }
+            Err(e) => {
+                eprintln!("[output/ble] cannot open {port_name}: {e}");
+                false
+            }
+        }
+    }
+
+    /// Send a raw ASCII command string to the dongle.
+    ///
+    /// Returns `true` on success.  On write failure the port is closed and
+    /// `false` is returned; the caller should schedule a reconnect attempt.
+    pub fn send(&mut self, cmd: &str) -> bool {
+        let port = match self.port.as_mut() {
+            Some(p) => p,
+            None => return false,
+        };
+        if let Err(e) = port.write_all(cmd.as_bytes()) {
+            eprintln!("[output/ble] write error: {e}");
+            self.port = None;
+            return false;
+        }
+        true
+    }
+
+    /// Send a keyboard HID report followed immediately by a key-release report.
+    ///
+    /// `modifier` is the USB HID modifier byte (e.g. 0x02 = LEFTSHIFT).
+    /// `keycode` is the USB HID usage-page-7 keycode (e.g. 0x04 = 'a').
+    pub fn send_key(&mut self, modifier: u8, keycode: u8) {
+        // Press:   K <modifier:02X> 01 <keycode:02X>
+        // Release: K 00 00
+        let cmd = format!("K{:02X}01{:02X}\nK0000\n", modifier, keycode);
+        self.send(&cmd);
+    }
+
+    /// Send the `S` status command and read the dongle's response.
+    ///
+    /// Returns:
+    /// * `Err(())` – the write failed; the connection has been closed
+    ///   (caller should revert to retry mode).
+    /// * `Ok(Some(response))` – a non-empty response was received; if it
+    ///   starts with `"STATUS:CONNECTED:"` the dongle is ready.
+    /// * `Ok(None)` – the write succeeded but the read timed out or returned
+    ///   an empty buffer (dongle connected but remote host not yet paired).
+    pub fn check_status(&mut self) -> Result<Option<String>, ()> {
+        if !self.send("S\n") {
+            return Err(());
+        }
+        let port = match self.port.as_mut() {
+            Some(p) => p,
+            None => return Err(()),
+        };
+        let mut buf = [0u8; STATUS_BUF_LEN];
+        match port.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                let s = String::from_utf8_lossy(&buf[..n]).trim().to_string();
+                Ok(Some(s))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
 /// Sends USB HID keyboard reports to an esp_hid_serial_bridge dongle over
 /// its USB-serial interface.
 ///
@@ -40,62 +168,19 @@ impl KeyHook for PrintKeyHook {
 /// `K0000`   = key release (all keys up).
 /// See https://github.com/clackups/esp_hid_serial_bridge for the full spec.
 pub struct BleKeyHook {
-    port: RefCell<Box<dyn serialport::SerialPort>>,
+    conn: Rc<RefCell<BleConnection>>,
 }
 
 impl BleKeyHook {
-    /// Search for the BLE dongle by USB VID/PID (and optionally serial string)
-    /// and open the corresponding serial port.
+    /// Create a new `BleKeyHook` together with the shared [`BleConnection`].
     ///
-    /// Returns `None` if no matching device is found or the port cannot be opened.
-    pub fn new(vid: u16, pid: u16, serial: Option<&str>) -> Option<Self> {
-        let ports = serialport::available_ports().unwrap_or_default();
-
-        let port_name = ports.into_iter().find_map(|info| {
-            if let serialport::SerialPortType::UsbPort(ref usb) = info.port_type {
-                if usb.vid != vid || usb.pid != pid {
-                    return None;
-                }
-                if let Some(filter) = serial {
-                    if usb.serial_number.as_deref() != Some(filter) {
-                        return None;
-                    }
-                }
-                Some(info.port_name.clone())
-            } else {
-                None
-            }
-        })?;
-
-        eprintln!("[output/ble] found dongle at {port_name}");
-
-        let port = serialport::new(&port_name, 115_200)
-            .timeout(std::time::Duration::from_millis(50))
-            .open()
-            .map_err(|e| eprintln!("[output/ble] cannot open {port_name}: {e}"))
-            .ok()?;
-
-        eprintln!("[output/ble] serial port opened");
-        Some(BleKeyHook { port: RefCell::new(port) })
-    }
-
-    /// Send a raw ASCII command string to the dongle.
-    fn send(&self, cmd: &str) {
-        let mut port = self.port.borrow_mut();
-        if let Err(e) = port.write_all(cmd.as_bytes()) {
-            eprintln!("[output/ble] write error: {e}");
-        }
-    }
-
-    /// Send a keyboard HID report followed immediately by a key-release report.
-    ///
-    /// `modifier` is the USB HID modifier byte (e.g. 0x02 = LEFTSHIFT).
-    /// `keycode` is the USB HID usage-page-7 keycode (e.g. 0x04 = 'a').
-    fn send_key(&self, modifier: u8, keycode: u8) {
-        // Press:   K <modifier:02X> 01 <keycode:02X>
-        // Release: K 00 00
-        let cmd = format!("K{:02X}01{:02X}\nK0000\n", modifier, keycode);
-        self.send(&cmd);
+    /// The hook starts in the *disconnected* state.  Call
+    /// [`BleConnection::try_connect`] (through the returned `Rc`) to
+    /// establish the first connection, and set up a timer to retry
+    /// periodically until the dongle is found.
+    pub fn new(vid: u16, pid: u16, serial: Option<String>) -> (Self, Rc<RefCell<BleConnection>>) {
+        let conn = Rc::new(RefCell::new(BleConnection::new(vid, pid, serial)));
+        (BleKeyHook { conn: conn.clone() }, conn)
     }
 }
 
@@ -130,7 +215,7 @@ impl KeyHook for BleKeyHook {
             }
         }
 
-        self.send_key(hid_modifier, hid_code);
+        self.conn.borrow_mut().send_key(hid_modifier, hid_code);
     }
 }
 
