@@ -15,6 +15,11 @@ navigate_down  = 0x01
 navigate_left  = 0x02
 navigate_right = 0x03
 activate       = 0x04   # A/South button
+# Analog stick / axis navigation
+# axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
+# axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
+# axis_threshold            = 16384  # minimum |value| to register (0–32767)
+# axis_activate             = 5    # optional axis index for Activate (positive only)
 
 [output]
 # Output mode: "print" | "ble"
