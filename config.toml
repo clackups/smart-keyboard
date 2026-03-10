@@ -20,6 +20,11 @@ activate       = 0x05   # A/South button; comment out or remove to disable
 # axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
 # axis_threshold            = 16384  # minimum |value| to register (0–32767)
 axis_activate             = 0x05  # axis index for Activate (positive only); comment out or remove to disable
+# When absolute_axes = true the raw horizontal/vertical axis values are mapped
+# directly to keyboard positions rather than being treated as directional inputs.
+# The full axis range (−32767 … +32767) is divided evenly across the available
+# rows / columns.  Useful with touchpad-style controllers.
+# absolute_axes = false
 
 [output]
 # Output mode: "print" | "ble"

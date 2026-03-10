@@ -72,6 +72,13 @@ pub struct GamepadInputConfig {
     /// Default: 16384 (half of the maximum i16 range).
     #[serde(default = "default_axis_threshold")]
     pub axis_threshold: i32,
+    /// When `true`, the raw values of `axis_navigate_horizontal` and
+    /// `axis_navigate_vertical` are treated as absolute coordinates that map
+    /// directly to a keyboard key position rather than as directional inputs.
+    /// The full axis range (−32767 … +32767) is divided evenly across the
+    /// available rows/columns.  Default: false.
+    #[serde(default)]
+    pub absolute_axes: bool,
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
@@ -169,6 +176,7 @@ impl Default for GamepadInputConfig {
             axis_navigate_vertical:   default_axis_navigate_vertical(),
             axis_activate:            default_axis_activate(),
             axis_threshold:           default_axis_threshold(),
+            absolute_axes:            false,
         }
     }
 }

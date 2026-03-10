@@ -33,6 +33,10 @@ pub enum GamepadAction {
     Left,
     Right,
     Activate,
+    /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
+    /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
+    /// value) … `1.0` (max axis value).
+    AbsolutePos { horiz: f32, vert: f32 },
 }
 
 /// A single gamepad button event.
@@ -84,6 +88,10 @@ pub struct Gamepad {
     // Repeat timers: `Some(t)` means "fire next repeat event at time t".
     horiz_repeat_at: Option<Instant>,
     vert_repeat_at:  Option<Instant>,
+    // Absolute-axes mode
+    axis_absolute:  bool,    // true when absolute_axes = true in config
+    abs_horiz_raw:  i16,     // last raw horizontal axis value (absolute mode)
+    abs_vert_raw:   i16,     // last raw vertical axis value (absolute mode)
 }
 
 impl Gamepad {
@@ -122,6 +130,9 @@ impl Gamepad {
             act_active:      false,
             horiz_repeat_at: None,
             vert_repeat_at:  None,
+            axis_absolute:   cfg.absolute_axes,
+            abs_horiz_raw:   0,
+            abs_vert_raw:    0,
         })
     }
 
@@ -162,7 +173,7 @@ impl Gamepad {
                         }
                     } else if event_type & JS_EVENT_AXIS != 0 {
                         #[cfg(debug_assertions)]
-                        if (value.abs() as i32) > self.axis_threshold {
+                        if !self.axis_absolute && (value.abs() as i32) > self.axis_threshold {
                             eprintln!("[gamepad] axis=0x{:02x} value={}", number, value);
                         }
 
@@ -179,32 +190,35 @@ impl Gamepad {
         }
 
         // Emit repeat press events for any directional axis that is still held.
-        let now = Instant::now();
-        if let Some(t) = self.horiz_repeat_at {
-            if now >= t {
-                if let Some(dir) = self.horiz_dir {
-                    let action = match dir {
-                        AxisDir::Negative => GamepadAction::Left,
-                        AxisDir::Positive => GamepadAction::Right,
-                    };
-                    out.push(GamepadEvent { action, pressed: true });
-                    self.horiz_repeat_at = Some(now + REPEAT_INTERVAL);
-                } else {
-                    self.horiz_repeat_at = None;
+        // (Not applicable in absolute_axes mode.)
+        if !self.axis_absolute {
+            let now = Instant::now();
+            if let Some(t) = self.horiz_repeat_at {
+                if now >= t {
+                    if let Some(dir) = self.horiz_dir {
+                        let action = match dir {
+                            AxisDir::Negative => GamepadAction::Left,
+                            AxisDir::Positive => GamepadAction::Right,
+                        };
+                        out.push(GamepadEvent { action, pressed: true });
+                        self.horiz_repeat_at = Some(now + REPEAT_INTERVAL);
+                    } else {
+                        self.horiz_repeat_at = None;
+                    }
                 }
             }
-        }
-        if let Some(t) = self.vert_repeat_at {
-            if now >= t {
-                if let Some(dir) = self.vert_dir {
-                    let action = match dir {
-                        AxisDir::Negative => GamepadAction::Up,
-                        AxisDir::Positive => GamepadAction::Down,
-                    };
-                    out.push(GamepadEvent { action, pressed: true });
-                    self.vert_repeat_at = Some(now + REPEAT_INTERVAL);
-                } else {
-                    self.vert_repeat_at = None;
+            if let Some(t) = self.vert_repeat_at {
+                if now >= t {
+                    if let Some(dir) = self.vert_dir {
+                        let action = match dir {
+                            AxisDir::Negative => GamepadAction::Up,
+                            AxisDir::Positive => GamepadAction::Down,
+                        };
+                        out.push(GamepadEvent { action, pressed: true });
+                        self.vert_repeat_at = Some(now + REPEAT_INTERVAL);
+                    } else {
+                        self.vert_repeat_at = None;
+                    }
                 }
             }
         }
@@ -228,9 +242,53 @@ impl Gamepad {
     /// Each configured axis has a remembered active direction (`horiz_dir`,
     /// `vert_dir`, `act_active`).  A transition from neutral → active emits a
     /// *press* event; active → neutral emits a *release* event.
+    ///
+    /// When `axis_absolute` is `true` the horizontal and vertical axes instead
+    /// emit a [`GamepadAction::AbsolutePos`] event whose `horiz` / `vert`
+    /// values are normalised to `0.0 … 1.0`.  The event is only emitted when
+    /// the raw axis value changes, so that `main` can update the selection only
+    /// on actual movement.
     fn handle_axis(&mut self, axis: u32, value: i16, out: &mut Vec<GamepadEvent>) {
         let v = value as i32;
 
+        if self.axis_absolute {
+            // --- Absolute-position mode ---
+            if self.axis_horizontal == Some(axis) {
+                if value != self.abs_horiz_raw {
+                    self.abs_horiz_raw = value;
+                    out.push(GamepadEvent {
+                        action: GamepadAction::AbsolutePos {
+                            horiz: raw_to_frac(self.abs_horiz_raw),
+                            vert:  raw_to_frac(self.abs_vert_raw),
+                        },
+                        pressed: false,
+                    });
+                }
+            } else if self.axis_vertical == Some(axis) {
+                if value != self.abs_vert_raw {
+                    self.abs_vert_raw = value;
+                    out.push(GamepadEvent {
+                        action: GamepadAction::AbsolutePos {
+                            horiz: raw_to_frac(self.abs_horiz_raw),
+                            vert:  raw_to_frac(self.abs_vert_raw),
+                        },
+                        pressed: false,
+                    });
+                }
+            } else if self.axis_activate == Some(axis) {
+                let active = v > self.axis_threshold;
+                if active != self.act_active {
+                    out.push(GamepadEvent {
+                        action:  GamepadAction::Activate,
+                        pressed: active,
+                    });
+                    self.act_active = active;
+                }
+            }
+            return;
+        }
+
+        // --- Relative (threshold) mode ---
         if self.axis_horizontal == Some(axis) {
             let new_dir = axis_dir(v, self.axis_threshold);
             if new_dir != self.horiz_dir {
@@ -327,4 +385,18 @@ fn axis_dir(value: i32, threshold: i32) -> Option<AxisDir> {
     if value > threshold       { Some(AxisDir::Positive) }
     else if value < -threshold { Some(AxisDir::Negative) }
     else                       { None }
+}
+
+/// Full span of the symmetric i16 axis range used for normalisation.
+///
+/// Maps the range `−32767 … +32767` (width = 65534) to `0.0 … 1.0`.
+const AXIS_FULL_SPAN: f32 = 65534.0;
+
+/// Normalise a raw i16 axis value to the range `0.0 … 1.0`.
+///
+/// The symmetric axis range `−32767 … +32767` maps to `0.0 … 1.0`.
+/// Values outside that range are clamped first.
+fn raw_to_frac(v: i16) -> f32 {
+    let clamped = (v as i32).clamp(-32767, 32767);
+    (clamped + 32767) as f32 / AXIS_FULL_SPAN
 }
