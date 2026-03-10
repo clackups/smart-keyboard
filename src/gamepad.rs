@@ -121,6 +121,7 @@ impl Gamepad {
                     }
 
                     let pressed = value != 0;
+                    #[cfg(debug_assertions)]
                     eprintln!("[gamepad] button=0x{:02x} pressed={}", number, pressed);
 
                     if let Some(action) = self.map_button(number) {

@@ -799,13 +799,13 @@ fn main() {
             let hook_c       = Rc::clone(&hook);
 
             // Reuse a single Vec across poll calls to avoid repeated allocation.
-            let mut evt_buf: Vec<GamepadEvent> = Vec::new();
+            let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
 
             // Poll at ~60 Hz; this keeps input latency low without burning CPU
             // the way an idle callback would.
             app::add_timeout3(0.016, move |handle| {
-                gp_cell.borrow_mut().poll(&mut evt_buf);
-                for evt in evt_buf.iter() {
+                gp_cell.borrow_mut().poll(&mut gp_evt_buf);
+                for evt in gp_evt_buf.iter() {
                     // Only react to button presses, not releases.
                     if !evt.pressed {
                         continue;
