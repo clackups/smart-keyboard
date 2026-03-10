@@ -9,6 +9,7 @@ use fltk::{
     app,
     button::Button,
     enums::{Color, Event, FrameType, Key},
+    frame::Frame,
     prelude::*,
     text::{TextBuffer, TextDisplay},
     window::Window,
@@ -116,10 +117,13 @@ impl ModState {
 // Color constants
 // =============================================================================
 
-fn col_key_normal()  -> Color { Color::from_rgb(218, 218, 222) }
-fn col_key_mod()     -> Color { Color::from_rgb(100, 100, 110) }
-fn col_mod_active()  -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
-fn col_nav_sel()     -> Color { Color::from_rgb(255, 200,   0) } // amber
+fn col_key_normal()      -> Color { Color::from_rgb(218, 218, 222) }
+fn col_key_mod()         -> Color { Color::from_rgb(100, 100, 110) }
+fn col_mod_active()      -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
+fn col_nav_sel()         -> Color { Color::from_rgb(255, 200,   0) } // amber
+fn col_status_bar_bg()   -> Color { Color::from_rgb( 25,  25,  28) }
+fn col_status_ind_bg()   -> Color { Color::from_rgb( 45,  45,  50) }
+fn col_status_ind_text() -> Color { Color::from_rgb( 90,  90,  95) }
 
 // =============================================================================
 // Modifier button descriptor
@@ -131,6 +135,8 @@ struct ModBtn {
     btn:      Button,
     action:   Action,
     base_col: Color,
+    /// Corresponding status-bar indicator frame (shared between LShift & RShift).
+    status:   Option<Frame>,
 }
 
 // =============================================================================
@@ -343,6 +349,10 @@ fn execute_action(
         for m in mod_btns {
             if m.action == action {
                 m.btn.clone().set_color(if now_active { col_mod_active() } else { m.base_col });
+                if let Some(mut sf) = m.status.clone() {
+                    sf.set_color(if now_active { col_mod_active() } else { col_status_ind_bg() });
+                    sf.set_label_color(if now_active { Color::White } else { col_status_ind_text() });
+                }
             }
         }
         app::redraw();
@@ -375,6 +385,10 @@ fn execute_action(
             for m in mod_btns {
                 if is_sticky(m.action) && ms.is_active(m.action) {
                     m.btn.clone().set_color(m.base_col);
+                    if let Some(mut sf) = m.status.clone() {
+                        sf.set_color(col_status_ind_bg());
+                        sf.set_label_color(col_status_ind_text());
+                    }
                 }
             }
             ms.release_sticky();
@@ -422,11 +436,14 @@ fn main() {
     let display_h  = ((sh as f32 / 12.0) as i32).max(10);
     let lang_btn_h = ((sh as f32 / 12.0) as i32).max(10);
 
-    let kbd_h = (sh - display_h - lang_btn_h - 2 * pad - gap).min(avail_w / 3);
+    // Status bar occupies a thin strip at the very top of the window.
+    let status_h = (sh / 24).max(18).min(32);
+
+    let kbd_h = (sh - status_h - display_h - lang_btn_h - 2 * pad - gap).min(avail_w / 3);
     // 6 rows (F-keys + 5 QWERTY rows), 5 inter-row gaps
     let key_h = (kbd_h - 5 * gap) / 6;
 
-    let pad_top = pad + (sh - display_h - lang_btn_h - 6 * key_h - 7 * gap)/2;
+    let pad_top = status_h + pad + (sh - status_h - display_h - lang_btn_h - 6 * key_h - 7 * gap) / 2;
     let kbd_y = pad_top + display_h + lang_btn_h + 2 * gap;
 
     // Ortholinear: every key is key_w wide.
@@ -455,6 +472,45 @@ fn main() {
     // Lang buttons are one grid column wide (key_w); reuse lbl_size so their
     // text labels fit with the same margin as keyboard-key labels.
     let btn_size  = lbl_size;
+
+    // --- Status bar (top strip) ---
+    // Label size: 3/4 of key label size, at least 8 px.
+    let status_lbl_size = (lbl_size * 3 / 4).max(8);
+    // Each indicator is wide enough for a 5-character label ("ALTGR") plus margin.
+    let ind_gap = 4i32;
+    let ind_pad = 2i32;   // top/bottom padding inside the status bar strip
+    let ind_h   = status_h - 2 * ind_pad;
+    let ind_w   = status_lbl_size * 4;
+
+    let mut _status_bar_bg = Frame::new(0, 0, sw, status_h, "");
+    _status_bar_bg.set_color(col_status_bar_bg());
+    _status_bar_bg.set_frame(FrameType::FlatBox);
+
+    // Helper: build one status-bar indicator frame.
+    let make_ind = |x: i32, label: &'static str| {
+        let mut f = Frame::new(x, ind_pad, ind_w, ind_h, label);
+        f.set_color(col_status_ind_bg());
+        f.set_label_color(col_status_ind_text());
+        f.set_frame(FrameType::FlatBox);
+        f.set_label_size(status_lbl_size);
+        f
+    };
+
+    let mut ind_x = ind_gap;
+    let caps_status  = make_ind(ind_x, "CAPS");  ind_x += ind_w + ind_gap;
+    let shift_status = make_ind(ind_x, "SHIFT"); ind_x += ind_w + ind_gap;
+    let ctrl_status  = make_ind(ind_x, "CTRL");  ind_x += ind_w + ind_gap;
+    let alt_status   = make_ind(ind_x, "ALT");   ind_x += ind_w + ind_gap;
+    let altgr_status = make_ind(ind_x, "ALTGR");
+
+    // Connectivity status icon – right-aligned; color indicates connection state
+    // (currently a placeholder; will be wired to a real status in a future update).
+    let conn_x = sw - ind_gap - ind_w;
+    let mut _conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
+    _conn_status.set_color(col_status_ind_bg());
+    _conn_status.set_label_color(col_status_ind_text());
+    _conn_status.set_frame(FrameType::FlatBox);
+    _conn_status.set_label_size(status_lbl_size);
 
     // --- Shared state ---
     let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
@@ -681,10 +737,19 @@ fn main() {
 
             // Track modifier keys for toggle color updates.
             if is_mod {
+                let status = match phys.action {
+                    Action::CapsLock                => Some(caps_status.clone()),
+                    Action::LShift | Action::RShift => Some(shift_status.clone()),
+                    Action::Ctrl                    => Some(ctrl_status.clone()),
+                    Action::Alt                     => Some(alt_status.clone()),
+                    Action::AltGr                   => Some(altgr_status.clone()),
+                    _                               => None,
+                };
                 mod_btns.borrow_mut().push(ModBtn {
                     btn:      btn.clone(),
                     action:   phys.action,
                     base_col: base_col,
+                    status:   status,
                 });
             }
 
