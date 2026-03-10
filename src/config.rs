@@ -1,8 +1,11 @@
 // src/config.rs
 //
-// Loads input configuration from config.toml (Linux evdev scan codes in hex).
+// Loads input configuration from a TOML file.  The path is taken from the
+// SMART_KBD_CONFIG_PATH environment variable; if unset, "config.toml" in the
+// current working directory is used.
 // Falls back to built-in defaults if the file is missing or unparseable.
 
+use std::env;
 use std::fs;
 
 use fltk::enums::Key;
@@ -98,10 +101,14 @@ impl Default for Config {
 // =============================================================================
 
 impl Config {
-    /// Load configuration from `config.toml` in the current working directory.
+    /// Load configuration from the path given by the `SMART_KBD_CONFIG_PATH`
+    /// environment variable, or from `config.toml` in the current working
+    /// directory if the variable is not set.
     /// Falls back silently to built-in defaults on any error.
     pub fn load() -> Self {
-        let content = match fs::read_to_string("config.toml") {
+        let path = env::var("SMART_KBD_CONFIG_PATH")
+            .unwrap_or_else(|_| "config.toml".into());
+        let content = match fs::read_to_string(&path) {
             Ok(s) => s,
             Err(_) => return Self::default(),
         };
