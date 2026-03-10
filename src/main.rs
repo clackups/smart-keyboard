@@ -573,22 +573,67 @@ fn main() {
         }
         config::OutputMode::Ble => {
             let ble_cfg = &cfg.output.ble;
-            match output::BleKeyHook::new(
+            let (ble_hook, ble_conn) = output::BleKeyHook::new(
                 ble_cfg.vid,
                 ble_cfg.pid,
-                ble_cfg.serial.as_deref(),
-            ) {
-                Some(h) => {
-                    conn_status.set_label_color(Color::from_rgb(80, 220, 80));
-                    Rc::new(h)
+                ble_cfg.serial.clone(),
+            );
+
+            // Start with red icon: dongle not yet connected.
+            conn_status.set_label_color(Color::from_rgb(220, 60, 60));
+
+            // Intervals for the BLE connection-management timer.
+            const BLE_RETRY_INTERVAL_S:  f64 = 1.0; // retry to connect when disconnected
+            const BLE_STATUS_INTERVAL_S: f64 = 5.0; // status check when connected
+
+            // Timer that manages the BLE connection life-cycle:
+            //
+            //  * When disconnected: try to connect once per second.
+            //    – On success → orange icon (connected, status not yet checked);
+            //      schedule status check in 5 s.
+            //    – On failure → red icon; retry in 1 s.
+            //
+            //  * When connected: send the "S" command every 5 s.
+            //    – STATUS:CONNECTED:xxxx → green icon; re-check in 5 s.
+            //    – Other response / no response → orange icon; re-check in 5 s.
+            //    – Write failure (connection lost) → red icon; retry in 1 s.
+            let mut conn_status_t = conn_status.clone();
+            let ble_conn_t = ble_conn;
+            app::add_timeout3(0.0, move |handle| {
+                if !ble_conn_t.borrow().is_connected() {
+                    if ble_conn_t.borrow_mut().try_connect() {
+                        conn_status_t.set_label_color(Color::from_rgb(220, 150, 40));
+                        app::redraw();
+                        app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                    } else {
+                        conn_status_t.set_label_color(Color::from_rgb(220, 60, 60));
+                        app::redraw();
+                        app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
+                    }
+                } else {
+                    match ble_conn_t.borrow_mut().check_status() {
+                        Err(()) => {
+                            // Write failed → connection lost.
+                            conn_status_t.set_label_color(Color::from_rgb(220, 60, 60));
+                            app::redraw();
+                            app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
+                        }
+                        Ok(Some(ref s)) if s.starts_with("STATUS:CONNECTED:") => {
+                            conn_status_t.set_label_color(Color::from_rgb(80, 220, 80));
+                            app::redraw();
+                            app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                        }
+                        Ok(_) => {
+                            // Connected but remote host not paired / not ready.
+                            conn_status_t.set_label_color(Color::from_rgb(220, 150, 40));
+                            app::redraw();
+                            app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                        }
+                    }
                 }
-                None => {
-                    conn_status.set_label_color(Color::from_rgb(220, 180, 40));
-                    eprintln!("[output] BLE dongle not found (VID={:#06x} PID={:#06x}); falling back to PrintKeyHook",
-                        ble_cfg.vid, ble_cfg.pid);
-                    Rc::new(output::PrintKeyHook)
-                }
-            }
+            });
+
+            Rc::new(ble_hook)
         }
     };
 
