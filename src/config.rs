@@ -38,7 +38,31 @@ pub struct GamepadInputConfig {
     pub navigate_left: u32,
     pub navigate_right: u32,
     pub activate: u32,
+    /// Axis index used for left/right navigation.
+    /// Negative axis values → Left, positive → Right.
+    /// Default: 0 (left stick X on most gamepads).
+    #[serde(default = "default_axis_navigate_horizontal")]
+    pub axis_navigate_horizontal: u32,
+    /// Axis index used for up/down navigation.
+    /// Negative axis values → Up, positive → Down.
+    /// Default: 1 (left stick Y on most gamepads).
+    #[serde(default = "default_axis_navigate_vertical")]
+    pub axis_navigate_vertical: u32,
+    /// Optional axis index for the activate action.
+    /// Positive axis values above `axis_threshold` trigger Activate.
+    /// Absent / `null` means disabled (default).
+    #[serde(default)]
+    pub axis_activate: Option<u32>,
+    /// Minimum absolute axis value (0–32767) needed to register as active.
+    /// Compared as `|value| > axis_threshold` against the raw i16 axis value.
+    /// Default: 16384 (half of the maximum i16 range).
+    #[serde(default = "default_axis_threshold")]
+    pub axis_threshold: i32,
 }
+
+fn default_axis_navigate_horizontal() -> u32 { 0 }
+fn default_axis_navigate_vertical()   -> u32 { 1 }
+fn default_axis_threshold()           -> i32 { 16384 }
 
 #[derive(Deserialize)]
 pub struct InputConfig {
@@ -125,6 +149,10 @@ impl Default for GamepadInputConfig {
             navigate_left:  0x02,
             navigate_right: 0x03,
             activate:       0x04,
+            axis_navigate_horizontal: default_axis_navigate_horizontal(),
+            axis_navigate_vertical:   default_axis_navigate_vertical(),
+            axis_activate:            None,
+            axis_threshold:           default_axis_threshold(),
         }
     }
 }
