@@ -1,8 +1,8 @@
 // src/config.rs
 //
-// Loads input configuration from a TOML file.  The path is taken from the
-// SMART_KBD_CONFIG_PATH environment variable; if unset, "config.toml" in the
-// current working directory is used.
+// Loads input and output configuration from a TOML file.  The path is taken
+// from the SMART_KBD_CONFIG_PATH environment variable; if unset, "config.toml"
+// in the current working directory is used.
 // Falls back to built-in defaults if the file is missing or unparseable.
 
 use std::env;
@@ -46,9 +46,59 @@ pub struct InputConfig {
     pub gamepad: GamepadInputConfig,
 }
 
+// =============================================================================
+// Output configuration
+// =============================================================================
+
+/// Which output backend the application uses to forward key events.
+#[derive(Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputMode {
+    /// Print key events to stdout; no hardware output (default).
+    #[default]
+    Print,
+    /// Inject key events into the local host via Linux uinput.
+    Local,
+    /// Send USB HID reports to the BLE dongle over a USB-serial port.
+    Ble,
+}
+
+/// USB identification for the BLE dongle (esp_hid_serial_bridge).
+#[derive(Deserialize, Clone)]
+pub struct BleOutputConfig {
+    /// USB Vendor ID (default: 0x1209).
+    pub vid: u16,
+    /// USB Product ID (default: 0xbbd1).
+    pub pid: u16,
+    /// Optional USB serial string; when absent, the first matching device is used.
+    pub serial: Option<String>,
+}
+
+impl Default for BleOutputConfig {
+    fn default() -> Self {
+        BleOutputConfig {
+            vid:    0x1209,
+            pid:    0xbbd1,
+            serial: None,
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+pub struct OutputConfig {
+    /// Output mode (default: "print").
+    #[serde(default)]
+    pub mode: OutputMode,
+    /// BLE dongle settings (used only when mode = "ble").
+    #[serde(default)]
+    pub ble: BleOutputConfig,
+}
+
 #[derive(Deserialize)]
 pub struct Config {
     pub input: InputConfig,
+    #[serde(default)]
+    pub output: OutputConfig,
 }
 
 // =============================================================================
@@ -92,7 +142,10 @@ impl Default for InputConfig {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { input: InputConfig::default() }
+        Config {
+            input:  InputConfig::default(),
+            output: OutputConfig::default(),
+        }
     }
 }
 

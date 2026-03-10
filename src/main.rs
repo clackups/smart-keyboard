@@ -1,6 +1,7 @@
 mod config;
 mod gamepad;
 mod keyboards;
+mod output;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,13 +33,42 @@ use gamepad::{Gamepad, GamepadAction, GamepadEvent};
 /// `key` is the inserted string (e.g. "a", "\n") or a descriptor token for
 /// non-printing keys ("Backspace", "LShift", "CapsLock", etc.).
 ///
-/// Implement this trait and replace `DummyKeyHook` to react to virtual key events.
+/// There are two kinds of notifications:
+///
+/// * **Raw events** – `on_key_press` / `on_key_release` fire for every GUI
+///   push/release event (mouse button down, mouse button up).  They may fire
+///   twice per logical key action when the keyboard is operated by mouse or
+///   touch (once from the widget's raw event handler and once from the
+///   action-execution callback).  These are provided for hooks that need
+///   immediate, low-latency feedback (e.g. audio click).
+///
+/// * **Action events** – `on_key_action` fires exactly once per logical key
+///   action, after modifier state has been resolved.  `modifier_bits` carries
+///   the USB HID modifier byte that was active at the time of the action:
+///     bit 0 (0x01) = LEFTCTRL
+///     bit 1 (0x02) = LEFTSHIFT
+///     bit 2 (0x04) = LEFTALT
+///     bit 5 (0x20) = RIGHTSHIFT
+///     bit 6 (0x40) = RIGHTALT (AltGr)
+///   This is the correct callback to use for hardware output (uinput, BLE, …).
+///
+/// The default implementation of `on_key_action` calls `on_key_press` followed
+/// by `on_key_release`, preserving backwards compatibility for hooks that only
+/// implement those two methods.
 pub trait KeyHook {
     fn on_key_press(&self, scancode: u16, key: &str);
     fn on_key_release(&self, scancode: u16, key: &str);
+
+    /// Called exactly once per logical key action from `execute_action`.
+    ///
+    /// Default: delegates to `on_key_press` + `on_key_release`.
+    fn on_key_action(&self, scancode: u16, key: &str, _modifier_bits: u8) {
+        self.on_key_press(scancode, key);
+        self.on_key_release(scancode, key);
+    }
 }
 
-/// No-op hook: logs every event to stderr.  Replace with a real implementation.
+/// No-op hook: logs every action to stderr.  Used when no output is configured.
 pub struct DummyKeyHook;
 
 impl KeyHook for DummyKeyHook {
@@ -341,7 +371,19 @@ fn execute_action(
         other              => special_hook_str(other),
     };
 
-    hook.on_key_press(scancode, key_str);
+    // Capture modifier state BEFORE any toggles or auto-releases so that
+    // on_key_action receives the bits that were active when the key was pressed.
+    // Bit layout (matches USB HID modifier byte):
+    //   0x01 = Ctrl (left), 0x02 = LShift, 0x04 = Alt (left),
+    //   0x20 = RShift,       0x40 = AltGr (right alt)
+    let modifier_bits: u8 = {
+        let ms = mod_state.borrow();
+        (if ms.ctrl   { 0x01 } else { 0 })
+            | (if ms.lshift { 0x02 } else { 0 })
+            | (if ms.alt    { 0x04 } else { 0 })
+            | (if ms.rshift { 0x20 } else { 0 })
+            | (if ms.altgr  { 0x40 } else { 0 })
+    };
 
     if is_modifier(action) {
         // Toggle the modifier and refresh the color of its button(s).
@@ -396,7 +438,7 @@ fn execute_action(
         app::redraw();
     }
 
-    hook.on_key_release(scancode, key_str);
+    hook.on_key_action(scancode, key_str, modifier_bits);
 }
 
 // =============================================================================
@@ -503,14 +545,16 @@ fn main() {
     let alt_status   = make_ind(ind_x, "ALT");   ind_x += ind_w + ind_gap;
     let altgr_status = make_ind(ind_x, "ALTGR");
 
-    // Connectivity status icon – right-aligned; color indicates connection state
-    // (currently a placeholder; will be wired to a real status in a future update).
+    // Connectivity status icon – right-aligned; color indicates connection state.
+    // Green  = BLE dongle found and port open.
+    // Yellow = BLE mode configured but dongle not found.
+    // Grey   = non-BLE output mode (print or local).
     let conn_x = sw - ind_gap - ind_w;
-    let mut _conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
-    _conn_status.set_color(col_status_ind_bg());
-    _conn_status.set_label_color(col_status_ind_text());
-    _conn_status.set_frame(FrameType::FlatBox);
-    _conn_status.set_label_size(status_lbl_size);
+    let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
+    conn_status.set_color(col_status_ind_bg());
+    conn_status.set_label_color(col_status_ind_text());
+    conn_status.set_frame(FrameType::FlatBox);
+    conn_status.set_label_size(status_lbl_size);
 
     // --- Shared state ---
     let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
@@ -518,7 +562,44 @@ fn main() {
     // mod_btns is populated during the key loop; closures borrow it at call time.
     let mod_btns: Rc<RefCell<Vec<ModBtn>>> = Rc::new(RefCell::new(Vec::new()));
     let buf  = TextBuffer::default();
-    let hook: Rc<dyn KeyHook> = Rc::new(DummyKeyHook);
+
+    // Build the output hook from the loaded configuration and update the
+    // connectivity indicator accordingly.
+    let hook: Rc<dyn KeyHook> = match cfg.output.mode {
+        config::OutputMode::Print => {
+            conn_status.set_label_color(col_status_ind_text());
+            Rc::new(output::PrintKeyHook)
+        }
+        config::OutputMode::Local => {
+            conn_status.set_label_color(col_status_ind_text());
+            match output::LocalKeyHook::new() {
+                Some(h) => Rc::new(h),
+                None => {
+                    eprintln!("[output] falling back to PrintKeyHook (uinput unavailable)");
+                    Rc::new(output::PrintKeyHook)
+                }
+            }
+        }
+        config::OutputMode::Ble => {
+            let ble_cfg = &cfg.output.ble;
+            match output::BleKeyHook::new(
+                ble_cfg.vid,
+                ble_cfg.pid,
+                ble_cfg.serial.as_deref(),
+            ) {
+                Some(h) => {
+                    conn_status.set_label_color(Color::from_rgb(80, 220, 80));
+                    Rc::new(h)
+                }
+                None => {
+                    conn_status.set_label_color(Color::from_rgb(220, 180, 40));
+                    eprintln!("[output] BLE dongle not found (VID={:#06x} PID={:#06x}); falling back to PrintKeyHook",
+                        ble_cfg.vid, ble_cfg.pid);
+                    Rc::new(output::PrintKeyHook)
+                }
+            }
+        }
+    };
 
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad_left, pad_top, sw - 2 * pad_left, display_h, "");
