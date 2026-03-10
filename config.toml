@@ -15,3 +15,19 @@ navigate_down  = 0x01
 navigate_left  = 0x02
 navigate_right = 0x03
 activate       = 0x04   # A/South button
+
+[output]
+# Output mode: "print" | "local" | "ble"
+#   print – print key events to stdout (default; no hardware output)
+#   local – inject key events into the local host via Linux uinput
+#   ble   – send keyboard HID reports to the BLE dongle (esp_hid_serial_bridge)
+mode = "print"
+
+[output.ble]
+# USB Vendor ID and Product ID of the BLE dongle (esp_hid_serial_bridge).
+# These are the defaults; change them only if you have a custom firmware.
+vid = 0x1209
+pid = 0xbbd1
+# Uncomment and set `serial` to select a specific dongle when multiple
+# matching USB devices are connected:
+# serial = "your_dongle_serial_string"
