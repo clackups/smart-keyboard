@@ -1,3 +1,4 @@
+mod config;
 mod keyboards;
 
 use std::cell::RefCell;
@@ -38,10 +39,10 @@ pub struct DummyKeyHook;
 
 impl KeyHook for DummyKeyHook {
     fn on_key_press(&self, scancode: u16, key: &str) {
-        eprintln!("[key_press]   scancode={} key={:?}", scancode, key);
+        eprintln!("[key_press]   scancode=0x{:02x} key={:?}", scancode, key);
     }
     fn on_key_release(&self, scancode: u16, key: &str) {
-        eprintln!("[key_release] scancode={} key={:?}", scancode, key);
+        eprintln!("[key_release] scancode=0x{:02x} key={:?}", scancode, key);
     }
 }
 
@@ -309,18 +310,18 @@ fn execute_action(
     mod_btns:  &[ModBtn],
 ) {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
-    // Symbol/number keys (shifted != "") use the shifted character on LShift/RShift;
+    // Symbol/number keys (label_shifted != "") use the shifted character on LShift/RShift;
     // CapsLock does NOT affect them (standard keyboard behaviour).
-    // Letter keys (shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
+    // Letter keys (label_shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
     let regular_text: Option<String> = if let Action::Regular(slot) = action {
         let key = &LAYOUTS[layout_i].keys[slot];
         let ms  = mod_state.borrow();
-        Some(if !key.shifted.is_empty() && (ms.lshift || ms.rshift) {
-            key.shifted.to_string()
-        } else if key.shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
-            key.insert.to_uppercase()
+        Some(if !key.label_shifted.is_empty() && (ms.lshift || ms.rshift) {
+            key.insert_shifted.to_string()
+        } else if key.label_shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
+            key.insert_unshifted.to_uppercase()
         } else {
-            key.insert.to_string()
+            key.insert_unshifted.to_string()
         })
     } else {
         None
@@ -390,6 +391,9 @@ fn main() {
         LAYOUTS.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
         "every LayoutDef must have exactly REGULAR_KEY_COUNT entries"
     );
+
+    let cfg = config::Config::load();
+    let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
@@ -508,10 +512,10 @@ fn main() {
             let def = LAYOUTS[li];
             for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
                 let key = &def.keys[*slot];
-                if key.shifted.is_empty() {
-                    kb.set_label(key.label);
+                if key.label_shifted.is_empty() {
+                    kb.set_label(key.label_unshifted);
                 } else {
-                    let lbl = format!("{}\n{}", key.shifted, key.label);
+                    let lbl = format!("{}\n{}", key.label_shifted, key.label_unshifted);
                     kb.set_label(&lbl);
                 }
             }
@@ -573,10 +577,10 @@ fn main() {
             let init_label: String = match phys.action {
                 Action::Regular(slot) => {
                     let key = &LAYOUTS[0].keys[slot];
-                    if key.shifted.is_empty() {
-                        key.label.to_string()
+                    if key.label_shifted.is_empty() {
+                        key.label_unshifted.to_string()
                     } else {
-                        format!("{}\n{}", key.shifted, key.label)
+                        format!("{}\n{}", key.label_shifted, key.label_unshifted)
                     }
                 }
                 other => special_label(other).to_string(),
@@ -601,7 +605,7 @@ fn main() {
                 btn.handle(move |_b, ev| {
                     let key_str: &str = match action {
                         Action::Regular(slot) => {
-                            LAYOUTS[*layout_idx_h.borrow()].keys[slot].insert
+                            LAYOUTS[*layout_idx_h.borrow()].keys[slot].insert_unshifted
                         }
                         other => special_hook_str(other),
                     };
@@ -724,14 +728,14 @@ fn main() {
                 return true;
             }
 
-            // Arrow-key navigation.
-            if k == Key::Up || k == Key::Down || k == Key::Left || k == Key::Right {
-                let (dr, dc) = match k {
-                    Key::Up    => (-1,  0),
-                    Key::Down  => ( 1,  0),
-                    Key::Left  => ( 0, -1),
-                    _          => ( 0,  1), // Right
-                };
+            // Arrow-key navigation (keys loaded from config).
+            if k == nav_keys.up || k == nav_keys.down
+                || k == nav_keys.left || k == nav_keys.right
+            {
+                let (dr, dc) = if k == nav_keys.up        { (-1,  0) }
+                               else if k == nav_keys.down  { ( 1,  0) }
+                               else if k == nav_keys.left  { ( 0, -1) }
+                               else                        { ( 0,  1) }; // right
                 let mut ab = all_btns_c.borrow_mut();
                 let mut lb = lang_btns_c.borrow_mut();
                 let mut s  = sel_c.borrow_mut();
@@ -739,8 +743,8 @@ fn main() {
                 return true;
             }
 
-            // Physical spacebar fires the currently highlighted on-screen button.
-            if k == Key::from_char(' ') {
+            // Activate key fires the currently highlighted on-screen button (loaded from config).
+            if k == nav_keys.activate {
                 // Copy NavSel (it is Copy) so the borrow is released before any
                 // callback that may itself borrow sel_c (e.g. the lang callback).
                 let cur_sel = *sel_c.borrow();
