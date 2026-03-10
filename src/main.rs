@@ -602,6 +602,10 @@ fn main() {
             const BLE_RETRY_INTERVAL_S:  f64 = 1.0; // retry to connect when disconnected
             const BLE_STATUS_INTERVAL_S: f64 = 5.0; // status check when connected
 
+            // Three-valued state used to detect transitions for stdout logging.
+            #[derive(PartialEq, Clone, Copy)]
+            enum BleState { Disconnected, Connecting, Connected }
+
             // Timer that manages the BLE connection life-cycle:
             //
             //  * When disconnected: try to connect once per second.
@@ -613,15 +617,25 @@ fn main() {
             //    – STATUS:CONNECTED:xxxx → green icon; re-check in 5 s.
             //    – Other response / no response → amber icon; re-check in 5 s.
             //    – Write failure (connection lost) → red icon; retry in 1 s.
+            //
+            // State changes between Disconnected and Connected are printed to
+            // stdout.  When the host MAC address is available it is included in
+            // the "BLE connected" message.
             let mut conn_status_t = conn_status.clone();
             let ble_conn_t = ble_conn;
+            let ble_state = Rc::new(RefCell::new(BleState::Disconnected));
             app::add_timeout3(0.0, move |handle| {
                 if !ble_conn_t.borrow().is_connected() {
                     if ble_conn_t.borrow_mut().try_connect() {
+                        *ble_state.borrow_mut() = BleState::Connecting;
                         conn_status_t.set_label_color(col_conn_connecting());
                         app::redraw();
                         app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                     } else {
+                        if *ble_state.borrow() != BleState::Disconnected {
+                            println!("BLE disconnected");
+                        }
+                        *ble_state.borrow_mut() = BleState::Disconnected;
                         conn_status_t.set_label_color(col_conn_disconnected());
                         app::redraw();
                         app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
@@ -630,17 +644,27 @@ fn main() {
                     match ble_conn_t.borrow_mut().check_status() {
                         Err(()) => {
                             // Write failed → connection lost.
+                            if *ble_state.borrow() != BleState::Disconnected {
+                                println!("BLE disconnected");
+                            }
+                            *ble_state.borrow_mut() = BleState::Disconnected;
                             conn_status_t.set_label_color(col_conn_disconnected());
                             app::redraw();
                             app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
                         }
                         Ok(Some(ref s)) if s.starts_with("STATUS:CONNECTED:") => {
+                            if *ble_state.borrow() != BleState::Connected {
+                                let mac = s.trim_start_matches("STATUS:CONNECTED:").trim();
+                                println!("BLE connected: {}", mac);
+                            }
+                            *ble_state.borrow_mut() = BleState::Connected;
                             conn_status_t.set_label_color(col_conn_connected());
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
                         Ok(_) => {
                             // Connected but remote host not paired / not ready.
+                            *ble_state.borrow_mut() = BleState::Connecting;
                             conn_status_t.set_label_color(col_conn_connecting());
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
