@@ -8,11 +8,18 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crate::config::GamepadInputConfig;
 
 /// Maximum number of joystick device indices to probe during auto-detection.
 const MAX_JOYSTICK_DEVICES: u8 = 8;
+
+/// Time a directional axis must be held before the first repeat event fires.
+const REPEAT_DELAY: Duration = Duration::from_millis(300);
+
+/// Interval between successive repeat events once repeating has begun.
+const REPEAT_INTERVAL: Duration = Duration::from_millis(100);
 
 // =============================================================================
 // Public types
@@ -74,6 +81,9 @@ pub struct Gamepad {
     horiz_dir:   Option<AxisDir>,
     vert_dir:    Option<AxisDir>,
     act_active:  bool,
+    // Repeat timers: `Some(t)` means "fire next repeat event at time t".
+    horiz_repeat_at: Option<Instant>,
+    vert_repeat_at:  Option<Instant>,
 }
 
 impl Gamepad {
@@ -110,6 +120,8 @@ impl Gamepad {
             horiz_dir:       None,
             vert_dir:        None,
             act_active:      false,
+            horiz_repeat_at: None,
+            vert_repeat_at:  None,
         })
     }
 
@@ -150,7 +162,9 @@ impl Gamepad {
                         }
                     } else if event_type & JS_EVENT_AXIS != 0 {
                         #[cfg(debug_assertions)]
-                        eprintln!("[gamepad] axis=0x{:02x} value={}", number, value);
+                        if (value.abs() as i32) > self.axis_threshold {
+                            eprintln!("[gamepad] axis=0x{:02x} value={}", number, value);
+                        }
 
                         self.handle_axis(number, value, out);
                     }
@@ -163,6 +177,38 @@ impl Gamepad {
                 Err(_) => return false,
             }
         }
+
+        // Emit repeat press events for any directional axis that is still held.
+        let now = Instant::now();
+        if let Some(t) = self.horiz_repeat_at {
+            if now >= t {
+                if let Some(dir) = self.horiz_dir {
+                    let action = match dir {
+                        AxisDir::Negative => GamepadAction::Left,
+                        AxisDir::Positive => GamepadAction::Right,
+                    };
+                    out.push(GamepadEvent { action, pressed: true });
+                    self.horiz_repeat_at = Some(now + REPEAT_INTERVAL);
+                } else {
+                    self.horiz_repeat_at = None;
+                }
+            }
+        }
+        if let Some(t) = self.vert_repeat_at {
+            if now >= t {
+                if let Some(dir) = self.vert_dir {
+                    let action = match dir {
+                        AxisDir::Negative => GamepadAction::Up,
+                        AxisDir::Positive => GamepadAction::Down,
+                    };
+                    out.push(GamepadEvent { action, pressed: true });
+                    self.vert_repeat_at = Some(now + REPEAT_INTERVAL);
+                } else {
+                    self.vert_repeat_at = None;
+                }
+            }
+        }
+
         true
     }
 
@@ -205,6 +251,11 @@ impl Gamepad {
                     out.push(GamepadEvent { action, pressed: true });
                 }
                 self.horiz_dir = new_dir;
+                self.horiz_repeat_at = if new_dir.is_some() {
+                    Some(Instant::now() + REPEAT_DELAY)
+                } else {
+                    None
+                };
             }
         } else if self.axis_vertical == Some(axis) {
             let new_dir = axis_dir(v, self.axis_threshold);
@@ -226,6 +277,11 @@ impl Gamepad {
                     out.push(GamepadEvent { action, pressed: true });
                 }
                 self.vert_dir = new_dir;
+                self.vert_repeat_at = if new_dir.is_some() {
+                    Some(Instant::now() + REPEAT_DELAY)
+                } else {
+                    None
+                };
             }
         } else if self.axis_activate == Some(axis) {
             // Activate uses positive values only; this matches the physical
