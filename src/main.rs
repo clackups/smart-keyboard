@@ -549,7 +549,7 @@ fn main() {
     // Connectivity status icon – right-aligned; color indicates connection state.
     // Green  = BLE dongle found and port open.
     // Yellow = BLE mode configured but dongle not found.
-    // Grey   = non-BLE output mode (print or local).
+    // Grey   = print output mode.
     let conn_x = sw - ind_gap - ind_w;
     let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
     conn_status.set_color(col_status_ind_bg());
@@ -570,16 +570,6 @@ fn main() {
         config::OutputMode::Print => {
             conn_status.set_label_color(col_status_ind_text());
             Rc::new(output::PrintKeyHook)
-        }
-        config::OutputMode::Local => {
-            conn_status.set_label_color(col_status_ind_text());
-            match output::LocalKeyHook::new() {
-                Some(h) => Rc::new(h),
-                None => {
-                    eprintln!("[output] falling back to PrintKeyHook (uinput unavailable)");
-                    Rc::new(output::PrintKeyHook)
-                }
-            }
         }
         config::OutputMode::Ble => {
             let ble_cfg = &cfg.output.ble;
