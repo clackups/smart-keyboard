@@ -60,16 +60,16 @@ enum AxisDir { Negative, Positive }
 /// Non-blocking reader for a Linux joystick device (`/dev/input/js*`).
 pub struct Gamepad {
     file:           File,
-    navigate_up:    u32,
-    navigate_down:  u32,
-    navigate_left:  u32,
-    navigate_right: u32,
-    activate:       u32,
+    navigate_up:    Option<u32>,
+    navigate_down:  Option<u32>,
+    navigate_left:  Option<u32>,
+    navigate_right: Option<u32>,
+    activate:       Option<u32>,
     // Axis configuration
-    axis_horizontal: u32,         // axis index for left/right
-    axis_vertical:   u32,         // axis index for up/down
-    axis_activate:   Option<u32>, // axis index for activate (None = disabled)
-    axis_threshold:  i32,         // minimum |value| to register as active
+    axis_horizontal: Option<u32>,         // axis index for left/right (None = disabled)
+    axis_vertical:   Option<u32>,         // axis index for up/down (None = disabled)
+    axis_activate:   Option<u32>,         // axis index for activate (None = disabled)
+    axis_threshold:  i32,                 // minimum |value| to register as active
     // Axis state (tracks previous active direction to generate press/release)
     horiz_dir:   Option<AxisDir>,
     vert_dir:    Option<AxisDir>,
@@ -168,11 +168,11 @@ impl Gamepad {
 
     /// Map a raw button index to a `GamepadAction`, or `None` if unconfigured.
     fn map_button(&self, code: u32) -> Option<GamepadAction> {
-        if code == self.navigate_up    { return Some(GamepadAction::Up);       }
-        if code == self.navigate_down  { return Some(GamepadAction::Down);     }
-        if code == self.navigate_left  { return Some(GamepadAction::Left);     }
-        if code == self.navigate_right { return Some(GamepadAction::Right);    }
-        if code == self.activate       { return Some(GamepadAction::Activate); }
+        if self.navigate_up    == Some(code) { return Some(GamepadAction::Up);       }
+        if self.navigate_down  == Some(code) { return Some(GamepadAction::Down);     }
+        if self.navigate_left  == Some(code) { return Some(GamepadAction::Left);     }
+        if self.navigate_right == Some(code) { return Some(GamepadAction::Right);    }
+        if self.activate       == Some(code) { return Some(GamepadAction::Activate); }
         None
     }
 
@@ -185,7 +185,7 @@ impl Gamepad {
     fn handle_axis(&mut self, axis: u32, value: i16, out: &mut Vec<GamepadEvent>) {
         let v = value as i32;
 
-        if axis == self.axis_horizontal {
+        if self.axis_horizontal == Some(axis) {
             let new_dir = axis_dir(v, self.axis_threshold);
             if new_dir != self.horiz_dir {
                 // Release previous direction.
@@ -206,7 +206,7 @@ impl Gamepad {
                 }
                 self.horiz_dir = new_dir;
             }
-        } else if axis == self.axis_vertical {
+        } else if self.axis_vertical == Some(axis) {
             let new_dir = axis_dir(v, self.axis_threshold);
             if new_dir != self.vert_dir {
                 // Release previous direction.

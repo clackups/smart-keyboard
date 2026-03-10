@@ -9,17 +9,17 @@ activate       = 0x39   # KEY_SPACE
 [input.gamepad]
 enabled = true
 device  = "auto"        # Auto-detect first connected gamepad
-# Gamepad button codes (numeric, hexadecimal)
-navigate_up    = 0x00
-navigate_down  = 0x01
-navigate_left  = 0x02
-navigate_right = 0x03
-activate       = 0x04   # A/South button
-# Analog stick / axis navigation
+# Gamepad button codes (numeric, hexadecimal); comment out or remove to disable
+# navigate_up    = 0x00
+# navigate_down  = 0x01
+# navigate_left  = 0x02
+# navigate_right = 0x03
+activate       = 0x05   # A/South button; comment out or remove to disable
+# Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
 # axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
 # axis_threshold            = 16384  # minimum |value| to register (0–32767)
-# axis_activate             = 5    # optional axis index for Activate (positive only)
+axis_activate             = 0x05  # axis index for Activate (positive only); comment out or remove to disable
 
 [output]
 # Output mode: "print" | "ble"
