@@ -583,7 +583,7 @@ fn main() {
     // Gamepad icon – left of BLE icon when BLE is shown, otherwise rightmost.
     // Only created when gamepad input is enabled in config.
     let gp_icon_x = if ble_mode { conn_x - ind_gap - ind_w } else { conn_x };
-    let gamepad_status: Option<Frame> = if cfg.input.gamepad.enabled {
+    let mut gamepad_status: Option<Frame> = if cfg.input.gamepad.enabled {
         let mut f = Frame::new(gp_icon_x, ind_pad, ind_w, ind_h, "G");
         f.set_color(col_status_ind_bg());
         f.set_label_color(col_conn_disconnected()); // initial: disconnected (red G)
@@ -1067,7 +1067,7 @@ fn main() {
 
         // Update the initial gamepad icon state based on whether the device
         // was found at startup.
-        if let Some(ref mut icon) = gamepad_status.clone() {
+        if let Some(ref mut icon) = gamepad_status {
             if gp_cell.borrow().is_some() {
                 icon.set_label_color(col_conn_connected());
             }
