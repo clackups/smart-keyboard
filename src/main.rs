@@ -1,4 +1,5 @@
 mod config;
+mod gamepad;
 mod keyboards;
 
 use std::cell::RefCell;
@@ -17,6 +18,8 @@ use keyboards::{
     is_modifier, is_sticky, special_hook_str, special_label,
     Action, KW, KEYS, LAYOUTS, REGULAR_KEY_COUNT,
 };
+
+use gamepad::{Gamepad, GamepadAction, GamepadEvent};
 
 // =============================================================================
 // Key hooks
@@ -780,6 +783,83 @@ fn main() {
 
     win.end();
     win.show();
+
+    // --- Gamepad input (if enabled in config) ---
+    if cfg.input.gamepad.enabled {
+        if let Some(gp) = Gamepad::open(&cfg.input.gamepad) {
+            let gp_cell      = Rc::new(RefCell::new(gp));
+            let all_btns_c   = all_btns.clone();
+            let lang_btns_c  = lang_btns.clone();
+            let layout_idx_c = layout_idx.clone();
+            let mod_state_c  = mod_state.clone();
+            let mod_btns_c   = mod_btns.clone();
+            let sel_c        = sel.clone();
+            let mut buf_c    = buf.clone();
+            let mut disp_c   = disp.clone();
+            let hook_c       = Rc::clone(&hook);
+
+            // Reuse a single Vec across poll calls to avoid repeated allocation.
+            let mut evt_buf: Vec<GamepadEvent> = Vec::new();
+
+            // Poll at ~60 Hz; this keeps input latency low without burning CPU
+            // the way an idle callback would.
+            app::add_timeout3(0.016, move |handle| {
+                gp_cell.borrow_mut().poll(&mut evt_buf);
+                for evt in evt_buf.iter() {
+                    // Only react to button presses, not releases.
+                    if !evt.pressed {
+                        continue;
+                    }
+                    match evt.action {
+                        GamepadAction::Up
+                        | GamepadAction::Down
+                        | GamepadAction::Left
+                        | GamepadAction::Right => {
+                            let (dr, dc) = match evt.action {
+                                GamepadAction::Up    => (-1,  0),
+                                GamepadAction::Down  => ( 1,  0),
+                                GamepadAction::Left  => ( 0, -1),
+                                _                    => ( 0,  1), // Right
+                            };
+                            let mut ab = all_btns_c.borrow_mut();
+                            let mut lb = lang_btns_c.borrow_mut();
+                            let mut s  = sel_c.borrow_mut();
+                            nav_move(
+                                &mut ab, &mut lb,
+                                *layout_idx_c.borrow(),
+                                &mut s, &mod_state_c,
+                                dr, dc,
+                            );
+                        }
+                        GamepadAction::Activate => {
+                            let cur_sel = *sel_c.borrow();
+                            match cur_sel {
+                                NavSel::Lang(li) => {
+                                    lang_btns_c.borrow_mut()[li].do_callback();
+                                }
+                                NavSel::Key(row, col) => {
+                                    let (action, scancode) = {
+                                        let ab = all_btns_c.borrow();
+                                        (ab[row][col].1, ab[row][col].2)
+                                    };
+                                    execute_action(
+                                        action, scancode,
+                                        *layout_idx_c.borrow(),
+                                        &mut buf_c, &mut disp_c, &hook_c,
+                                        &mod_state_c,
+                                        &mod_btns_c.borrow(),
+                                    );
+                                    all_btns_c.borrow_mut()[row][col]
+                                        .0.set_color(col_nav_sel());
+                                }
+                            }
+                        }
+                    }
+                }
+                app::repeat_timeout3(0.016, handle);
+            });
+        }
+    }
 
     a.run().unwrap();
 }
