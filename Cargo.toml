@@ -9,3 +9,4 @@ path = "src/main.rs"
 
 [dependencies]
 fltk = { version = "1.5.22", features = ["use-wayland"] }
+toml = "0.8"

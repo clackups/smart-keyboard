@@ -1,0 +1,17 @@
+[input.keyboard]
+# Linux evdev scan codes (hexadecimal)
+navigate_up    = 0x67  # KEY_UP
+navigate_down  = 0x6C  # KEY_DOWN
+navigate_left  = 0x69  # KEY_LEFT
+navigate_right = 0x6A  # KEY_RIGHT
+activate       = 0x39  # KEY_SPACE
+
+[input.gamepad]
+enabled = true
+device  = "auto"       # Auto-detect first connected gamepad
+# Gamepad button codes (hexadecimal)
+navigate_up    = 0x00
+navigate_down  = 0x01
+navigate_left  = 0x02
+navigate_right = 0x03
+activate       = 0x04  # A/South button

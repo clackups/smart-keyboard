@@ -311,14 +311,17 @@ pub static KEYS: &[&[PhysKey]] = &[
 
 /// One substitutable key slot: label shown on the button and string inserted.
 pub struct LayoutKey {
-    /// Text shown on the button face (unshifted value).
-    pub label:   &'static str,
+    /// Text shown on the button face when unshifted.
+    pub label_unshifted:  &'static str,
     /// String inserted when the key is activated without Shift / CapsLock.
-    pub insert:  &'static str,
-    /// Shifted character shown in the top half of the button face and inserted
-    /// when Shift is held.  Empty for letter keys (they use `insert.to_uppercase()`
-    /// instead, and CapsLock also applies to them).
-    pub shifted: &'static str,
+    pub insert_unshifted: &'static str,
+    /// Text shown on the top half of the button face when Shift is active.
+    /// Empty for letter keys (their shifted label is the uppercase of `insert_unshifted`).
+    pub label_shifted:    &'static str,
+    /// String inserted when Shift is held.
+    /// Empty for letter keys (they use `insert_unshifted.to_uppercase()` instead,
+    /// and CapsLock also applies to them).
+    pub insert_shifted:   &'static str,
 }
 
 /// A named keyboard layout.
@@ -342,59 +345,59 @@ pub static US: LayoutDef = LayoutDef {
     name: "US",
     keys: &[
         // slots 0-12: number row  (shifted = symbol above the digit/key)
-        LayoutKey { label: "`",  insert: "`",  shifted: "~"  }, // 0
-        LayoutKey { label: "1",  insert: "1",  shifted: "!"  }, // 1
-        LayoutKey { label: "2",  insert: "2",  shifted: "@@"  }, // 2
-        LayoutKey { label: "3",  insert: "3",  shifted: "#"  }, // 3
-        LayoutKey { label: "4",  insert: "4",  shifted: "$"  }, // 4
-        LayoutKey { label: "5",  insert: "5",  shifted: "%"  }, // 5
-        LayoutKey { label: "6",  insert: "6",  shifted: "^"  }, // 6
-        LayoutKey { label: "7",  insert: "7",  shifted: "&&"  }, // 7
-        LayoutKey { label: "8",  insert: "8",  shifted: "*"  }, // 8
-        LayoutKey { label: "9",  insert: "9",  shifted: "("  }, // 9
-        LayoutKey { label: "0",  insert: "0",  shifted: ")"  }, // 10
-        LayoutKey { label: "-",  insert: "-",  shifted: "_"  }, // 11
-        LayoutKey { label: "=",  insert: "=",  shifted: "+"  }, // 12
+        LayoutKey { label_unshifted: "`",  insert_unshifted: "`",  label_shifted: "~",  insert_shifted: "~"  }, // 0
+        LayoutKey { label_unshifted: "1",  insert_unshifted: "1",  label_shifted: "!",  insert_shifted: "!"  }, // 1
+        LayoutKey { label_unshifted: "2",  insert_unshifted: "2",  label_shifted: "@@", insert_shifted: "@"  }, // 2
+        LayoutKey { label_unshifted: "3",  insert_unshifted: "3",  label_shifted: "#",  insert_shifted: "#"  }, // 3
+        LayoutKey { label_unshifted: "4",  insert_unshifted: "4",  label_shifted: "$",  insert_shifted: "$"  }, // 4
+        LayoutKey { label_unshifted: "5",  insert_unshifted: "5",  label_shifted: "%",  insert_shifted: "%"  }, // 5
+        LayoutKey { label_unshifted: "6",  insert_unshifted: "6",  label_shifted: "^",  insert_shifted: "^"  }, // 6
+        LayoutKey { label_unshifted: "7",  insert_unshifted: "7",  label_shifted: "&",  insert_shifted: "&"  }, // 7
+        LayoutKey { label_unshifted: "8",  insert_unshifted: "8",  label_shifted: "*",  insert_shifted: "*"  }, // 8
+        LayoutKey { label_unshifted: "9",  insert_unshifted: "9",  label_shifted: "(",  insert_shifted: "("  }, // 9
+        LayoutKey { label_unshifted: "0",  insert_unshifted: "0",  label_shifted: ")",  insert_shifted: ")"  }, // 10
+        LayoutKey { label_unshifted: "-",  insert_unshifted: "-",  label_shifted: "_",  insert_shifted: "_"  }, // 11
+        LayoutKey { label_unshifted: "=",  insert_unshifted: "=",  label_shifted: "+",  insert_shifted: "+"  }, // 12
         // slots 13-22: top alpha row (q-p) – letter keys, no shifted display
-        LayoutKey { label: "q",  insert: "q",  shifted: ""   }, // 13
-        LayoutKey { label: "w",  insert: "w",  shifted: ""   }, // 14
-        LayoutKey { label: "e",  insert: "e",  shifted: ""   }, // 15
-        LayoutKey { label: "r",  insert: "r",  shifted: ""   }, // 16
-        LayoutKey { label: "t",  insert: "t",  shifted: ""   }, // 17
-        LayoutKey { label: "y",  insert: "y",  shifted: ""   }, // 18
-        LayoutKey { label: "u",  insert: "u",  shifted: ""   }, // 19
-        LayoutKey { label: "i",  insert: "i",  shifted: ""   }, // 20
-        LayoutKey { label: "o",  insert: "o",  shifted: ""   }, // 21
-        LayoutKey { label: "p",  insert: "p",  shifted: ""   }, // 22
+        LayoutKey { label_unshifted: "q",  insert_unshifted: "q",  label_shifted: "",   insert_shifted: ""   }, // 13
+        LayoutKey { label_unshifted: "w",  insert_unshifted: "w",  label_shifted: "",   insert_shifted: ""   }, // 14
+        LayoutKey { label_unshifted: "e",  insert_unshifted: "e",  label_shifted: "",   insert_shifted: ""   }, // 15
+        LayoutKey { label_unshifted: "r",  insert_unshifted: "r",  label_shifted: "",   insert_shifted: ""   }, // 16
+        LayoutKey { label_unshifted: "t",  insert_unshifted: "t",  label_shifted: "",   insert_shifted: ""   }, // 17
+        LayoutKey { label_unshifted: "y",  insert_unshifted: "y",  label_shifted: "",   insert_shifted: ""   }, // 18
+        LayoutKey { label_unshifted: "u",  insert_unshifted: "u",  label_shifted: "",   insert_shifted: ""   }, // 19
+        LayoutKey { label_unshifted: "i",  insert_unshifted: "i",  label_shifted: "",   insert_shifted: ""   }, // 20
+        LayoutKey { label_unshifted: "o",  insert_unshifted: "o",  label_shifted: "",   insert_shifted: ""   }, // 21
+        LayoutKey { label_unshifted: "p",  insert_unshifted: "p",  label_shifted: "",   insert_shifted: ""   }, // 22
         // slots 23-25: top-row punctuation
-        LayoutKey { label: "[",  insert: "[",  shifted: "{"  }, // 23
-        LayoutKey { label: "]",  insert: "]",  shifted: "}"  }, // 24
-        LayoutKey { label: "\\", insert: "\\", shifted: "|"  }, // 25
+        LayoutKey { label_unshifted: "[",  insert_unshifted: "[",  label_shifted: "{",  insert_shifted: "{"  }, // 23
+        LayoutKey { label_unshifted: "]",  insert_unshifted: "]",  label_shifted: "}",  insert_shifted: "}"  }, // 24
+        LayoutKey { label_unshifted: "\\", insert_unshifted: "\\", label_shifted: "|",  insert_shifted: "|"  }, // 25
         // slots 26-34: home alpha row (a-l) – letter keys
-        LayoutKey { label: "a",  insert: "a",  shifted: ""   }, // 26
-        LayoutKey { label: "s",  insert: "s",  shifted: ""   }, // 27
-        LayoutKey { label: "d",  insert: "d",  shifted: ""   }, // 28
-        LayoutKey { label: "f",  insert: "f",  shifted: ""   }, // 29
-        LayoutKey { label: "g",  insert: "g",  shifted: ""   }, // 30
-        LayoutKey { label: "h",  insert: "h",  shifted: ""   }, // 31
-        LayoutKey { label: "j",  insert: "j",  shifted: ""   }, // 32
-        LayoutKey { label: "k",  insert: "k",  shifted: ""   }, // 33
-        LayoutKey { label: "l",  insert: "l",  shifted: ""   }, // 34
+        LayoutKey { label_unshifted: "a",  insert_unshifted: "a",  label_shifted: "",   insert_shifted: ""   }, // 26
+        LayoutKey { label_unshifted: "s",  insert_unshifted: "s",  label_shifted: "",   insert_shifted: ""   }, // 27
+        LayoutKey { label_unshifted: "d",  insert_unshifted: "d",  label_shifted: "",   insert_shifted: ""   }, // 28
+        LayoutKey { label_unshifted: "f",  insert_unshifted: "f",  label_shifted: "",   insert_shifted: ""   }, // 29
+        LayoutKey { label_unshifted: "g",  insert_unshifted: "g",  label_shifted: "",   insert_shifted: ""   }, // 30
+        LayoutKey { label_unshifted: "h",  insert_unshifted: "h",  label_shifted: "",   insert_shifted: ""   }, // 31
+        LayoutKey { label_unshifted: "j",  insert_unshifted: "j",  label_shifted: "",   insert_shifted: ""   }, // 32
+        LayoutKey { label_unshifted: "k",  insert_unshifted: "k",  label_shifted: "",   insert_shifted: ""   }, // 33
+        LayoutKey { label_unshifted: "l",  insert_unshifted: "l",  label_shifted: "",   insert_shifted: ""   }, // 34
         // slots 35-36: home-row punctuation
-        LayoutKey { label: ";",  insert: ";",  shifted: ":"  }, // 35
-        LayoutKey { label: "'",  insert: "'",  shifted: "\"" }, // 36
+        LayoutKey { label_unshifted: ";",  insert_unshifted: ";",  label_shifted: ":",  insert_shifted: ":"  }, // 35
+        LayoutKey { label_unshifted: "'",  insert_unshifted: "'",  label_shifted: "\"", insert_shifted: "\"" }, // 36
         // slots 37-43: lower alpha row (z-m) – letter keys
-        LayoutKey { label: "z",  insert: "z",  shifted: ""   }, // 37
-        LayoutKey { label: "x",  insert: "x",  shifted: ""   }, // 38
-        LayoutKey { label: "c",  insert: "c",  shifted: ""   }, // 39
-        LayoutKey { label: "v",  insert: "v",  shifted: ""   }, // 40
-        LayoutKey { label: "b",  insert: "b",  shifted: ""   }, // 41
-        LayoutKey { label: "n",  insert: "n",  shifted: ""   }, // 42
-        LayoutKey { label: "m",  insert: "m",  shifted: ""   }, // 43
+        LayoutKey { label_unshifted: "z",  insert_unshifted: "z",  label_shifted: "",   insert_shifted: ""   }, // 37
+        LayoutKey { label_unshifted: "x",  insert_unshifted: "x",  label_shifted: "",   insert_shifted: ""   }, // 38
+        LayoutKey { label_unshifted: "c",  insert_unshifted: "c",  label_shifted: "",   insert_shifted: ""   }, // 39
+        LayoutKey { label_unshifted: "v",  insert_unshifted: "v",  label_shifted: "",   insert_shifted: ""   }, // 40
+        LayoutKey { label_unshifted: "b",  insert_unshifted: "b",  label_shifted: "",   insert_shifted: ""   }, // 41
+        LayoutKey { label_unshifted: "n",  insert_unshifted: "n",  label_shifted: "",   insert_shifted: ""   }, // 42
+        LayoutKey { label_unshifted: "m",  insert_unshifted: "m",  label_shifted: "",   insert_shifted: ""   }, // 43
         // slots 44-46: lower-row punctuation
-        LayoutKey { label: ",",  insert: ",",  shifted: "<"  }, // 44
-        LayoutKey { label: ".",  insert: ".",  shifted: ">"  }, // 45
-        LayoutKey { label: "/",  insert: "/",  shifted: "?"  }, // 46
+        LayoutKey { label_unshifted: ",",  insert_unshifted: ",",  label_shifted: "<",  insert_shifted: "<"  }, // 44
+        LayoutKey { label_unshifted: ".",  insert_unshifted: ".",  label_shifted: ">",  insert_shifted: ">"  }, // 45
+        LayoutKey { label_unshifted: "/",  insert_unshifted: "/",  label_shifted: "?",  insert_shifted: "?"  }, // 46
     ],
 };
 
@@ -447,62 +450,62 @@ pub static UA: LayoutDef = LayoutDef {
         // slots 0-12: number row
         // The grave key carries the Ukrainian apostrophe; its physical Shift value is ~.
         // Number-row shifted symbols follow the KBDUR standard (differ from US layout).
-        LayoutKey { label: "\u{0027}", insert: "\u{0027}", shifted: "\u{20b4}"     }, // 0  ` -> apostrophe, hryvna
-        LayoutKey { label: "1",        insert: "1",        shifted: "!"            }, // 1
-        LayoutKey { label: "2",        insert: "2",        shifted: "\""           }, // 2  Shift+2 -> "
-        LayoutKey { label: "3",        insert: "3",        shifted: "\u{2116}"     }, // 3  Shift+3 -> №
-        LayoutKey { label: "4",        insert: "4",        shifted: ";"            }, // 4  Shift+4 -> ;
-        LayoutKey { label: "5",        insert: "5",        shifted: "%"            }, // 5
-        LayoutKey { label: "6",        insert: "6",        shifted: ":"            }, // 6  Shift+6 -> :
-        LayoutKey { label: "7",        insert: "7",        shifted: "?"            }, // 7  Shift+7 -> ?
-        LayoutKey { label: "8",        insert: "8",        shifted: "*"            }, // 8
-        LayoutKey { label: "9",        insert: "9",        shifted: "("            }, // 9
-        LayoutKey { label: "0",        insert: "0",        shifted: ")"            }, // 10
-        LayoutKey { label: "-",        insert: "-",        shifted: "_"            }, // 11
-        LayoutKey { label: "=",        insert: "=",        shifted: "+"            }, // 12
+        LayoutKey { label_unshifted: "\u{0027}", insert_unshifted: "\u{0027}", label_shifted: "\u{20b4}",  insert_shifted: "\u{20b4}"  }, // 0  ` -> apostrophe, hryvna
+        LayoutKey { label_unshifted: "1",        insert_unshifted: "1",        label_shifted: "!",         insert_shifted: "!"         }, // 1
+        LayoutKey { label_unshifted: "2",        insert_unshifted: "2",        label_shifted: "\"",        insert_shifted: "\""        }, // 2  Shift+2 -> "
+        LayoutKey { label_unshifted: "3",        insert_unshifted: "3",        label_shifted: "\u{2116}",  insert_shifted: "\u{2116}"  }, // 3  Shift+3 -> №
+        LayoutKey { label_unshifted: "4",        insert_unshifted: "4",        label_shifted: ";",         insert_shifted: ";"         }, // 4  Shift+4 -> ;
+        LayoutKey { label_unshifted: "5",        insert_unshifted: "5",        label_shifted: "%",         insert_shifted: "%"         }, // 5
+        LayoutKey { label_unshifted: "6",        insert_unshifted: "6",        label_shifted: ":",         insert_shifted: ":"         }, // 6  Shift+6 -> :
+        LayoutKey { label_unshifted: "7",        insert_unshifted: "7",        label_shifted: "?",         insert_shifted: "?"         }, // 7  Shift+7 -> ?
+        LayoutKey { label_unshifted: "8",        insert_unshifted: "8",        label_shifted: "*",         insert_shifted: "*"         }, // 8
+        LayoutKey { label_unshifted: "9",        insert_unshifted: "9",        label_shifted: "(",         insert_shifted: "("         }, // 9
+        LayoutKey { label_unshifted: "0",        insert_unshifted: "0",        label_shifted: ")",         insert_shifted: ")"         }, // 10
+        LayoutKey { label_unshifted: "-",        insert_unshifted: "-",        label_shifted: "_",         insert_shifted: "_"         }, // 11
+        LayoutKey { label_unshifted: "=",        insert_unshifted: "=",        label_shifted: "+",         insert_shifted: "+"         }, // 12
         // slots 13-22: top alpha row (Cyrillic letters) – no shifted display
-        LayoutKey { label: "\u{0439}", insert: "\u{0439}", shifted: ""   }, // 13  q -> J
-        LayoutKey { label: "\u{0446}", insert: "\u{0446}", shifted: ""   }, // 14  w -> Ts
-        LayoutKey { label: "\u{0443}", insert: "\u{0443}", shifted: ""   }, // 15  e -> U
-        LayoutKey { label: "\u{043A}", insert: "\u{043A}", shifted: ""   }, // 16  r -> K
-        LayoutKey { label: "\u{0435}", insert: "\u{0435}", shifted: ""   }, // 17  t -> Ye
-        LayoutKey { label: "\u{043D}", insert: "\u{043D}", shifted: ""   }, // 18  y -> N
-        LayoutKey { label: "\u{0433}", insert: "\u{0433}", shifted: ""   }, // 19  u -> G
-        LayoutKey { label: "\u{0448}", insert: "\u{0448}", shifted: ""   }, // 20  i -> Sh
-        LayoutKey { label: "\u{0449}", insert: "\u{0449}", shifted: ""   }, // 21  o -> Shch
-        LayoutKey { label: "\u{0437}", insert: "\u{0437}", shifted: ""   }, // 22  p -> Z
+        LayoutKey { label_unshifted: "\u{0439}", insert_unshifted: "\u{0439}", label_shifted: "", insert_shifted: "" }, // 13  q -> J
+        LayoutKey { label_unshifted: "\u{0446}", insert_unshifted: "\u{0446}", label_shifted: "", insert_shifted: "" }, // 14  w -> Ts
+        LayoutKey { label_unshifted: "\u{0443}", insert_unshifted: "\u{0443}", label_shifted: "", insert_shifted: "" }, // 15  e -> U
+        LayoutKey { label_unshifted: "\u{043A}", insert_unshifted: "\u{043A}", label_shifted: "", insert_shifted: "" }, // 16  r -> K
+        LayoutKey { label_unshifted: "\u{0435}", insert_unshifted: "\u{0435}", label_shifted: "", insert_shifted: "" }, // 17  t -> Ye
+        LayoutKey { label_unshifted: "\u{043D}", insert_unshifted: "\u{043D}", label_shifted: "", insert_shifted: "" }, // 18  y -> N
+        LayoutKey { label_unshifted: "\u{0433}", insert_unshifted: "\u{0433}", label_shifted: "", insert_shifted: "" }, // 19  u -> G
+        LayoutKey { label_unshifted: "\u{0448}", insert_unshifted: "\u{0448}", label_shifted: "", insert_shifted: "" }, // 20  i -> Sh
+        LayoutKey { label_unshifted: "\u{0449}", insert_unshifted: "\u{0449}", label_shifted: "", insert_shifted: "" }, // 21  o -> Shch
+        LayoutKey { label_unshifted: "\u{0437}", insert_unshifted: "\u{0437}", label_shifted: "", insert_shifted: "" }, // 22  p -> Z
         // slots 23-25: top-row bracket/backslash keys.
         // [ and ] now hold Cyrillic letters; Shift produces their uppercase, no secondary symbol.
         // \ is unchanged from US (Shift+\ = |).
-        LayoutKey { label: "\u{0445}", insert: "\u{0445}", shifted: ""   }, // 23  [ -> Kh
-        LayoutKey { label: "\u{0457}", insert: "\u{0457}", shifted: ""   }, // 24  ] -> Yi
-        LayoutKey { label: "\\",       insert: "\\",       shifted: "|"  }, // 25  \ -> same
+        LayoutKey { label_unshifted: "\u{0445}", insert_unshifted: "\u{0445}", label_shifted: "", insert_shifted: "" }, // 23  [ -> Kh
+        LayoutKey { label_unshifted: "\u{0457}", insert_unshifted: "\u{0457}", label_shifted: "", insert_shifted: "" }, // 24  ] -> Yi
+        LayoutKey { label_unshifted: "\\",       insert_unshifted: "\\",       label_shifted: "|", insert_shifted: "|" }, // 25  \ -> same
         // slots 26-34: home alpha row (Cyrillic letters) – no shifted display
-        LayoutKey { label: "\u{0444}", insert: "\u{0444}", shifted: ""   }, // 26  a -> F
-        LayoutKey { label: "\u{0456}", insert: "\u{0456}", shifted: ""   }, // 27  s -> I
-        LayoutKey { label: "\u{0432}", insert: "\u{0432}", shifted: ""   }, // 28  d -> V
-        LayoutKey { label: "\u{0430}", insert: "\u{0430}", shifted: ""   }, // 29  f -> A
-        LayoutKey { label: "\u{043F}", insert: "\u{043F}", shifted: ""   }, // 30  g -> P
-        LayoutKey { label: "\u{0440}", insert: "\u{0440}", shifted: ""   }, // 31  h -> R
-        LayoutKey { label: "\u{043E}", insert: "\u{043E}", shifted: ""   }, // 32  j -> O
-        LayoutKey { label: "\u{043B}", insert: "\u{043B}", shifted: ""   }, // 33  k -> L
-        LayoutKey { label: "\u{0434}", insert: "\u{0434}", shifted: ""   }, // 34  l -> D
+        LayoutKey { label_unshifted: "\u{0444}", insert_unshifted: "\u{0444}", label_shifted: "", insert_shifted: "" }, // 26  a -> F
+        LayoutKey { label_unshifted: "\u{0456}", insert_unshifted: "\u{0456}", label_shifted: "", insert_shifted: "" }, // 27  s -> I
+        LayoutKey { label_unshifted: "\u{0432}", insert_unshifted: "\u{0432}", label_shifted: "", insert_shifted: "" }, // 28  d -> V
+        LayoutKey { label_unshifted: "\u{0430}", insert_unshifted: "\u{0430}", label_shifted: "", insert_shifted: "" }, // 29  f -> A
+        LayoutKey { label_unshifted: "\u{043F}", insert_unshifted: "\u{043F}", label_shifted: "", insert_shifted: "" }, // 30  g -> P
+        LayoutKey { label_unshifted: "\u{0440}", insert_unshifted: "\u{0440}", label_shifted: "", insert_shifted: "" }, // 31  h -> R
+        LayoutKey { label_unshifted: "\u{043E}", insert_unshifted: "\u{043E}", label_shifted: "", insert_shifted: "" }, // 32  j -> O
+        LayoutKey { label_unshifted: "\u{043B}", insert_unshifted: "\u{043B}", label_shifted: "", insert_shifted: "" }, // 33  k -> L
+        LayoutKey { label_unshifted: "\u{0434}", insert_unshifted: "\u{0434}", label_shifted: "", insert_shifted: "" }, // 34  l -> D
         // slots 35-36: home-row keys that now hold Cyrillic letters.
         // Shift produces their uppercase; there is no secondary punctuation symbol.
-        LayoutKey { label: "\u{0436}", insert: "\u{0436}", shifted: ""   }, // 35  ; -> Zh
-        LayoutKey { label: "\u{0454}", insert: "\u{0454}", shifted: ""   }, // 36  ' -> Ye
+        LayoutKey { label_unshifted: "\u{0436}", insert_unshifted: "\u{0436}", label_shifted: "", insert_shifted: "" }, // 35  ; -> Zh
+        LayoutKey { label_unshifted: "\u{0454}", insert_unshifted: "\u{0454}", label_shifted: "", insert_shifted: "" }, // 36  ' -> Ye
         // slots 37-43: lower alpha row (Cyrillic letters) – no shifted display
-        LayoutKey { label: "\u{044F}", insert: "\u{044F}", shifted: ""   }, // 37  z -> Ya
-        LayoutKey { label: "\u{0447}", insert: "\u{0447}", shifted: ""   }, // 38  x -> Ch
-        LayoutKey { label: "\u{0441}", insert: "\u{0441}", shifted: ""   }, // 39  c -> S
-        LayoutKey { label: "\u{043C}", insert: "\u{043C}", shifted: ""   }, // 40  v -> M
-        LayoutKey { label: "\u{0438}", insert: "\u{0438}", shifted: ""   }, // 41  b -> I
-        LayoutKey { label: "\u{0442}", insert: "\u{0442}", shifted: ""   }, // 42  n -> T
-        LayoutKey { label: "\u{044C}", insert: "\u{044C}", shifted: ""   }, // 43  m -> soft sign
+        LayoutKey { label_unshifted: "\u{044F}", insert_unshifted: "\u{044F}", label_shifted: "", insert_shifted: "" }, // 37  z -> Ya
+        LayoutKey { label_unshifted: "\u{0447}", insert_unshifted: "\u{0447}", label_shifted: "", insert_shifted: "" }, // 38  x -> Ch
+        LayoutKey { label_unshifted: "\u{0441}", insert_unshifted: "\u{0441}", label_shifted: "", insert_shifted: "" }, // 39  c -> S
+        LayoutKey { label_unshifted: "\u{043C}", insert_unshifted: "\u{043C}", label_shifted: "", insert_shifted: "" }, // 40  v -> M
+        LayoutKey { label_unshifted: "\u{0438}", insert_unshifted: "\u{0438}", label_shifted: "", insert_shifted: "" }, // 41  b -> I
+        LayoutKey { label_unshifted: "\u{0442}", insert_unshifted: "\u{0442}", label_shifted: "", insert_shifted: "" }, // 42  n -> T
+        LayoutKey { label_unshifted: "\u{044C}", insert_unshifted: "\u{044C}", label_shifted: "", insert_shifted: "" }, // 43  m -> soft sign
         // slots 44-46: lower-row punctuation
-        LayoutKey { label: "\u{0431}", insert: "\u{0431}", shifted: ""   }, // 44  , -> B
-        LayoutKey { label: "\u{044E}", insert: "\u{044E}", shifted: ""   }, // 45  . -> Yu
-        LayoutKey { label: ".",        insert: ".",        shifted: ","  }, // 46  / -> FULL STOP, COMMA
+        LayoutKey { label_unshifted: "\u{0431}", insert_unshifted: "\u{0431}", label_shifted: "", insert_shifted: "" }, // 44  , -> B
+        LayoutKey { label_unshifted: "\u{044E}", insert_unshifted: "\u{044E}", label_shifted: "", insert_shifted: "" }, // 45  . -> Yu
+        LayoutKey { label_unshifted: ".",        insert_unshifted: ".",        label_shifted: ",", insert_shifted: "," }, // 46  / -> FULL STOP, COMMA
     ],
 };
 
