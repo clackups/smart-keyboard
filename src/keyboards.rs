@@ -347,12 +347,12 @@ pub static US: LayoutDef = LayoutDef {
         // slots 0-12: number row  (shifted = symbol above the digit/key)
         LayoutKey { label_unshifted: "`",  insert_unshifted: "`",  label_shifted: "~",  insert_shifted: "~"  }, // 0
         LayoutKey { label_unshifted: "1",  insert_unshifted: "1",  label_shifted: "!",  insert_shifted: "!"  }, // 1
-        LayoutKey { label_unshifted: "2",  insert_unshifted: "2",  label_shifted: "@@", insert_shifted: "@@" }, // 2
+        LayoutKey { label_unshifted: "2",  insert_unshifted: "2",  label_shifted: "@@", insert_shifted: "@"  }, // 2
         LayoutKey { label_unshifted: "3",  insert_unshifted: "3",  label_shifted: "#",  insert_shifted: "#"  }, // 3
         LayoutKey { label_unshifted: "4",  insert_unshifted: "4",  label_shifted: "$",  insert_shifted: "$"  }, // 4
         LayoutKey { label_unshifted: "5",  insert_unshifted: "5",  label_shifted: "%",  insert_shifted: "%"  }, // 5
         LayoutKey { label_unshifted: "6",  insert_unshifted: "6",  label_shifted: "^",  insert_shifted: "^"  }, // 6
-        LayoutKey { label_unshifted: "7",  insert_unshifted: "7",  label_shifted: "&&", insert_shifted: "&&" }, // 7
+        LayoutKey { label_unshifted: "7",  insert_unshifted: "7",  label_shifted: "&&", insert_shifted: "&"  }, // 7
         LayoutKey { label_unshifted: "8",  insert_unshifted: "8",  label_shifted: "*",  insert_shifted: "*"  }, // 8
         LayoutKey { label_unshifted: "9",  insert_unshifted: "9",  label_shifted: "(",  insert_shifted: "("  }, // 9
         LayoutKey { label_unshifted: "0",  insert_unshifted: "0",  label_shifted: ")",  insert_shifted: ")"  }, // 10

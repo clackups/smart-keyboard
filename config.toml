@@ -1,9 +1,9 @@
 [input.keyboard]
 # Linux evdev scan codes (hexadecimal, linux/input-event-codes.h)
 navigate_up    = 0x67   # KEY_UP
-navigate_down  = 0x6C   # KEY_DOWN
+navigate_down  = 0x6c   # KEY_DOWN
 navigate_left  = 0x69   # KEY_LEFT
-navigate_right = 0x6A   # KEY_RIGHT
+navigate_right = 0x6a   # KEY_RIGHT
 activate       = 0x39   # KEY_SPACE
 
 [input.gamepad]

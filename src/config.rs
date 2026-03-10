@@ -16,11 +16,11 @@ use serde::Deserialize;
 pub struct KeyboardInputConfig {
     /// Linux evdev scan code for "navigate up" (default: 0x67 KEY_UP).
     pub navigate_up: u32,
-    /// Linux evdev scan code for "navigate down" (default: 0x6C KEY_DOWN).
+    /// Linux evdev scan code for "navigate down" (default: 0x6c KEY_DOWN).
     pub navigate_down: u32,
     /// Linux evdev scan code for "navigate left" (default: 0x69 KEY_LEFT).
     pub navigate_left: u32,
-    /// Linux evdev scan code for "navigate right" (default: 0x6A KEY_RIGHT).
+    /// Linux evdev scan code for "navigate right" (default: 0x6a KEY_RIGHT).
     pub navigate_right: u32,
     /// Linux evdev scan code for "activate" (default: 0x39 KEY_SPACE).
     pub activate: u32,
@@ -56,9 +56,9 @@ impl Default for KeyboardInputConfig {
     fn default() -> Self {
         KeyboardInputConfig {
             navigate_up:    0x67,
-            navigate_down:  0x6C,
+            navigate_down:  0x6c,
             navigate_left:  0x69,
-            navigate_right: 0x6A,
+            navigate_right: 0x6a,
             activate:       0x39,
         }
     }
