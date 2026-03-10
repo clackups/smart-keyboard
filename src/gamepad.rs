@@ -117,7 +117,10 @@ impl Gamepad {
     ///
     /// `out` is cleared before filling so the caller can reuse the same
     /// allocation across calls.
-    pub fn poll(&mut self, out: &mut Vec<GamepadEvent>) {
+    ///
+    /// Returns `true` if the device is still connected, `false` if a device
+    /// error was encountered (e.g. the gamepad was unplugged).
+    pub fn poll(&mut self, out: &mut Vec<GamepadEvent>) -> bool {
         out.clear();
         // js_event is exactly 8 bytes (little-endian):
         //   [0..4]  u32  time    – milliseconds since driver start
@@ -156,10 +159,11 @@ impl Gamepad {
                 Ok(_) => break,
                 // No more events available right now.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                // Any other error (device disconnected, etc.) – stop polling.
-                Err(_) => break,
+                // Any other error (device disconnected, etc.) – signal disconnection.
+                Err(_) => return false,
             }
         }
+        true
     }
 
     /// Map a raw button index to a `GamepadAction`, or `None` if unconfigured.

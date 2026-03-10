@@ -159,7 +159,6 @@ fn col_status_ind_bg()   -> Color { Color::from_rgb( 45,  45,  50) }
 fn col_status_ind_text() -> Color { Color::from_rgb( 90,  90,  95) }
 
 // Connectivity-indicator label colors.
-fn col_conn_no_output()    -> Color { col_status_ind_text() }          // grey  – print / no-hardware mode
 fn col_conn_disconnected() -> Color { Color::from_rgb(220,  60,  60) } // red   – BLE dongle not found
 fn col_conn_connecting()   -> Color { Color::from_rgb(220, 150,  40) } // amber – dongle open, host not paired
 fn col_conn_connected()    -> Color { Color::from_rgb( 80, 220,  80) } // green – BLE host paired and ready
@@ -559,16 +558,41 @@ fn main() {
     let alt_status   = make_ind(ind_x, "ALT");   ind_x += ind_w + ind_gap;
     let altgr_status = make_ind(ind_x, "ALTGR");
 
-    // Connectivity status icon – right-aligned; color indicates connection state.
-    // Green  = BLE dongle found and port open.
-    // Yellow = BLE mode configured but dongle not found.
-    // Grey   = print output mode.
+    // Right-side status icons, built right-to-left:
+    //   [gamepad icon (if enabled)] [BLE icon (if ble mode)]
+    //
+    // BLE icon colours:
+    //   Green  = BLE dongle found and port open.
+    //   Yellow = BLE mode configured but dongle not found.
+    // Gamepad icon colours:
+    //   Green "G" = gamepad device connected.
+    //   Red   "G" = gamepad device not found / disconnected.
+    let ble_mode = matches!(cfg.output.mode, config::OutputMode::Ble);
+
+    // BLE connectivity icon – rightmost, only shown when output mode is BLE.
     let conn_x = sw - ind_gap - ind_w;
     let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
     conn_status.set_color(col_status_ind_bg());
-    conn_status.set_label_color(col_status_ind_text());
+    conn_status.set_label_color(col_conn_disconnected()); // initial: disconnected
     conn_status.set_frame(FrameType::FlatBox);
     conn_status.set_label_size(status_lbl_size);
+    if !ble_mode {
+        conn_status.hide();
+    }
+
+    // Gamepad icon – left of BLE icon when BLE is shown, otherwise rightmost.
+    // Only created when gamepad input is enabled in config.
+    let gp_icon_x = if ble_mode { conn_x - ind_gap - ind_w } else { conn_x };
+    let gamepad_status: Option<Frame> = if cfg.input.gamepad.enabled {
+        let mut f = Frame::new(gp_icon_x, ind_pad, ind_w, ind_h, "G");
+        f.set_color(col_status_ind_bg());
+        f.set_label_color(col_conn_disconnected()); // initial: disconnected (red G)
+        f.set_frame(FrameType::FlatBox);
+        f.set_label_size(status_lbl_size);
+        Some(f)
+    } else {
+        None
+    };
 
     // --- Shared state ---
     let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
@@ -584,7 +608,6 @@ fn main() {
     // connectivity indicator accordingly.
     let hook: Rc<dyn KeyHook> = match cfg.output.mode {
         config::OutputMode::Print => {
-            conn_status.set_label_color(col_conn_no_output());
             Rc::new(output::PrintKeyHook)
         }
         config::OutputMode::Ble => {
@@ -594,9 +617,6 @@ fn main() {
                 ble_cfg.pid,
                 ble_cfg.serial.clone(),
             );
-
-            // Start with red icon: dongle not yet connected.
-            conn_status.set_label_color(col_conn_disconnected());
 
             // Intervals for the BLE connection-management timer.
             const BLE_RETRY_INTERVAL_S:  f64 = 1.0; // retry to connect when disconnected
@@ -1040,94 +1060,144 @@ fn main() {
 
     // --- Gamepad input (if enabled in config) ---
     if cfg.input.gamepad.enabled {
-        if let Some(gp) = Gamepad::open(&cfg.input.gamepad) {
-            let gp_cell           = Rc::new(RefCell::new(gp));
-            let all_btns_c        = all_btns.clone();
-            let lang_btns_c       = lang_btns.clone();
-            let layout_idx_c      = layout_idx.clone();
-            let mod_state_c       = mod_state.clone();
-            let mod_btns_c        = mod_btns.clone();
-            let sel_c             = sel.clone();
-            let mut buf_c         = buf.clone();
-            let mut disp_c        = disp.clone();
-            let hook_c            = Rc::clone(&hook);
-            let active_nav_key_c  = active_nav_key.clone();
+        // Clone config for use inside the reconnection closure.
+        let gp_cfg = cfg.input.gamepad.clone();
+        // Wrap in Option so we can detect disconnection and reconnect.
+        let gp_cell = Rc::new(RefCell::new(Gamepad::open(&cfg.input.gamepad)));
 
-            // Reuse a single Vec across poll calls to avoid repeated allocation.
-            let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
+        // Update the initial gamepad icon state based on whether the device
+        // was found at startup.
+        if let Some(ref mut icon) = gamepad_status.clone() {
+            if gp_cell.borrow().is_some() {
+                icon.set_label_color(col_conn_connected());
+            }
+            // If not connected the icon already shows red (set at creation).
+        }
 
-            // Poll at ~60 Hz; this keeps input latency low without burning CPU
-            // the way an idle callback would.
-            app::add_timeout3(0.016, move |handle| {
-                gp_cell.borrow_mut().poll(&mut gp_evt_buf);
-                for evt in gp_evt_buf.iter() {
-                    match evt.action {
-                        GamepadAction::Up
-                        | GamepadAction::Down
-                        | GamepadAction::Left
-                        | GamepadAction::Right => {
-                            // Only navigate on button press, not release.
-                            if !evt.pressed {
-                                continue;
-                            }
-                            let (dr, dc) = match evt.action {
-                                GamepadAction::Up    => (-1,  0),
-                                GamepadAction::Down  => ( 1,  0),
-                                GamepadAction::Left  => ( 0, -1),
-                                _                    => ( 0,  1), // Right
-                            };
-                            let mut ab = all_btns_c.borrow_mut();
-                            let mut lb = lang_btns_c.borrow_mut();
-                            let mut s  = sel_c.borrow_mut();
-                            nav_move(
-                                &mut ab, &mut lb,
-                                *layout_idx_c.borrow(),
-                                &mut s, &mod_state_c,
-                                dr, dc,
-                            );
+        let all_btns_c        = all_btns.clone();
+        let lang_btns_c       = lang_btns.clone();
+        let layout_idx_c      = layout_idx.clone();
+        let mod_state_c       = mod_state.clone();
+        let mod_btns_c        = mod_btns.clone();
+        let sel_c             = sel.clone();
+        let mut buf_c         = buf.clone();
+        let mut disp_c        = disp.clone();
+        let hook_c            = Rc::clone(&hook);
+        let active_nav_key_c  = active_nav_key.clone();
+        let mut gamepad_status_t = gamepad_status.clone();
+
+        // Reuse a single Vec across poll calls to avoid repeated allocation.
+        let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
+
+        // Poll at ~60 Hz; this keeps input latency low without burning CPU
+        // the way an idle callback would.  When the gamepad is disconnected
+        // the timer slows to 1 Hz and retries opening the device.
+        app::add_timeout3(0.016, move |handle| {
+            // Phase 1 – reconnect if currently disconnected.
+            if gp_cell.borrow().is_none() {
+                match Gamepad::open(&gp_cfg) {
+                    Some(gp) => {
+                        eprintln!("[gamepad] reconnected");
+                        *gp_cell.borrow_mut() = Some(gp);
+                        if let Some(ref mut icon) = gamepad_status_t {
+                            icon.set_label_color(col_conn_connected());
+                            app::redraw();
                         }
-                        GamepadAction::Activate => {
-                            if evt.pressed {
-                                let cur_sel = *sel_c.borrow();
-                                match cur_sel {
-                                    NavSel::Lang(li) => {
-                                        lang_btns_c.borrow_mut()[li].do_callback();
-                                        // Language switches don't generate hardware key
-                                        // events, so there is nothing to release.
-                                        *active_nav_key_c.borrow_mut() = None;
-                                    }
-                                    NavSel::Key(row, col) => {
-                                        let (action, scancode) = {
-                                            let ab = all_btns_c.borrow();
-                                            (ab[row][col].1, ab[row][col].2)
-                                        };
-                                        let key_str = execute_action(
-                                            action, scancode,
-                                            *layout_idx_c.borrow(),
-                                            &mut buf_c, &mut disp_c, &hook_c,
-                                            &mod_state_c,
-                                            &mod_btns_c.borrow(),
-                                        );
-                                        // Store the activated key so on_key_release can be
-                                        // sent when the gamepad button is released.
-                                        *active_nav_key_c.borrow_mut() =
-                                            Some((scancode, key_str));
-                                        all_btns_c.borrow_mut()[row][col]
-                                            .0.set_color(col_nav_sel());
-                                    }
+                        // Fall through to poll the newly opened device.
+                    }
+                    None => {
+                        // Still no device; retry in 1 s.
+                        app::repeat_timeout3(1.0, handle);
+                        return;
+                    }
+                }
+            }
+
+            // Phase 2 – poll for events; detect disconnection.
+            let still_alive = {
+                let mut opt = gp_cell.borrow_mut();
+                opt.as_mut().unwrap().poll(&mut gp_evt_buf)
+            };
+
+            if !still_alive {
+                eprintln!("[gamepad] disconnected");
+                *gp_cell.borrow_mut() = None;
+                if let Some(ref mut icon) = gamepad_status_t {
+                    icon.set_label_color(col_conn_disconnected());
+                    app::redraw();
+                }
+                app::repeat_timeout3(1.0, handle);
+                return;
+            }
+
+            // Phase 3 – process the events collected in Phase 2.
+            for evt in gp_evt_buf.iter() {
+                match evt.action {
+                    GamepadAction::Up
+                    | GamepadAction::Down
+                    | GamepadAction::Left
+                    | GamepadAction::Right => {
+                        // Only navigate on button press, not release.
+                        if !evt.pressed {
+                            continue;
+                        }
+                        let (dr, dc) = match evt.action {
+                            GamepadAction::Up    => (-1,  0),
+                            GamepadAction::Down  => ( 1,  0),
+                            GamepadAction::Left  => ( 0, -1),
+                            _                    => ( 0,  1), // Right
+                        };
+                        let mut ab = all_btns_c.borrow_mut();
+                        let mut lb = lang_btns_c.borrow_mut();
+                        let mut s  = sel_c.borrow_mut();
+                        nav_move(
+                            &mut ab, &mut lb,
+                            *layout_idx_c.borrow(),
+                            &mut s, &mod_state_c,
+                            dr, dc,
+                        );
+                    }
+                    GamepadAction::Activate => {
+                        if evt.pressed {
+                            let cur_sel = *sel_c.borrow();
+                            match cur_sel {
+                                NavSel::Lang(li) => {
+                                    lang_btns_c.borrow_mut()[li].do_callback();
+                                    // Language switches don't generate hardware key
+                                    // events, so there is nothing to release.
+                                    *active_nav_key_c.borrow_mut() = None;
                                 }
-                            } else {
-                                // Button released: send the key-release event.
-                                if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
-                                    hook_c.on_key_release(sc, &ks);
+                                NavSel::Key(row, col) => {
+                                    let (action, scancode) = {
+                                        let ab = all_btns_c.borrow();
+                                        (ab[row][col].1, ab[row][col].2)
+                                    };
+                                    let key_str = execute_action(
+                                        action, scancode,
+                                        *layout_idx_c.borrow(),
+                                        &mut buf_c, &mut disp_c, &hook_c,
+                                        &mod_state_c,
+                                        &mod_btns_c.borrow(),
+                                    );
+                                    // Store the activated key so on_key_release can be
+                                    // sent when the gamepad button is released.
+                                    *active_nav_key_c.borrow_mut() =
+                                        Some((scancode, key_str));
+                                    all_btns_c.borrow_mut()[row][col]
+                                        .0.set_color(col_nav_sel());
                                 }
+                            }
+                        } else {
+                            // Button released: send the key-release event.
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
                             }
                         }
                     }
                 }
-                app::repeat_timeout3(0.016, handle);
-            });
-        }
+            }
+            app::repeat_timeout3(0.016, handle);
+        });
     }
 
     a.run().unwrap();
