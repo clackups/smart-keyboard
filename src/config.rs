@@ -29,7 +29,7 @@ pub struct KeyboardInputConfig {
     pub activate: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct GamepadInputConfig {
     pub enabled: bool,
     pub device: String,
