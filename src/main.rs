@@ -600,7 +600,7 @@ fn main() {
 
             // Intervals for the BLE connection-management timer.
             const BLE_RETRY_INTERVAL_S:  f64 = 1.0; // retry to connect when disconnected
-            const BLE_STATUS_INTERVAL_S: f64 = 5.0; // status check when connected
+            const BLE_STATUS_INTERVAL_S: f64 = 1.0; // status check when connected
 
             // Three-valued state used to detect transitions for stdout logging.
             #[derive(PartialEq, Clone, Copy)]
@@ -610,12 +610,14 @@ fn main() {
             //
             //  * When disconnected: try to connect once per second.
             //    – On success → amber icon (connected, status not yet checked);
-            //      schedule status check in 5 s.
+            //      schedule status check in 1 s.
             //    – On failure → red icon; retry in 1 s.
             //
-            //  * When connected: send the "S" command every 5 s.
-            //    – STATUS:CONNECTED:xxxx → green icon; re-check in 5 s.
-            //    – Other response / no response → amber icon; re-check in 5 s.
+            //  * When connected: send the "S" command every 1 s.
+            //    – STATUS:CONNECTED:xxxx  → green icon; re-check in 1 s.
+            //    – STATUS:NOTCONNECTED    → amber icon; log disconnect if
+            //      previously connected; re-check in 1 s.
+            //    – Other response / no response → amber icon; re-check in 1 s.
             //    – Write failure (connection lost) → red icon; retry in 1 s.
             //
             // State changes between Disconnected and Connected are printed to
@@ -659,6 +661,17 @@ fn main() {
                             }
                             *ble_state.borrow_mut() = BleState::Connected;
                             conn_status_t.set_label_color(col_conn_connected());
+                            app::redraw();
+                            app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                        }
+                        Ok(Some(ref s)) if s.starts_with("STATUS:NOTCONNECTED") => {
+                            // The dongle is reachable but the BLE link to the
+                            // remote host has been lost.
+                            if *ble_state.borrow() == BleState::Connected {
+                                println!("BLE disconnected");
+                            }
+                            *ble_state.borrow_mut() = BleState::Connecting;
+                            conn_status_t.set_label_color(col_conn_connecting());
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
