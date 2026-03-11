@@ -133,6 +133,25 @@ pub enum OutputMode {
     Ble,
 }
 
+/// Audio feedback mode for keyboard-navigation selection changes.
+#[derive(Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioMode {
+    /// No audio feedback (default).
+    #[default]
+    None,
+    /// Play a WAV clip naming each button.  Clips are loaded from the
+    /// directory given by `SMART_KBD_AUDIO_PATH` (env var) or from the
+    /// `audio/` sub-directory of the current working directory.
+    Narrate,
+    /// Play a short musical tone whose pitch varies by key category:
+    /// letter/punctuation keys share one tone; F and J have a distinctive
+    /// tone; digit keys play an ascending scale (1 = lowest, 0 = highest);
+    /// function keys (F1–F12) play a lower ascending scale; all other
+    /// special keys have their own unique tones.
+    Tone,
+}
+
 /// USB identification for the BLE dongle (esp_hid_serial_bridge).
 #[derive(Deserialize, Clone)]
 pub struct BleOutputConfig {
@@ -162,13 +181,12 @@ pub struct OutputConfig {
     /// BLE dongle settings (used only when mode = "ble").
     #[serde(default)]
     pub ble: BleOutputConfig,
-    /// When `true`, play a short WAV clip naming each button on every change
-    /// of the keyboard-navigation selection.  Clips are loaded from the
-    /// directory given by `SMART_KBD_AUDIO_PATH` (env var) or from the
-    /// `audio/` sub-directory of the current working directory.
-    /// Default: `false`.
+    /// Audio feedback mode for keyboard-navigation selection changes.
+    /// "none"    – silent (default)
+    /// "narrate" – play a WAV clip naming each button
+    /// "tone"    – play a short musical tone that varies by key category
     #[serde(default)]
-    pub narrate: bool,
+    pub audio: AudioMode,
 }
 
 // =============================================================================

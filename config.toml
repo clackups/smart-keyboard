@@ -41,11 +41,18 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 #   print – print key events to stdout (default; no hardware output)
 #   ble   – send keyboard HID reports to the BLE dongle (esp_hid_serial_bridge)
 mode = "print"
-# When narrate = true, a short audio clip naming each button is played on every
-# change of the keyboard-navigation selection.  Clips are loaded from the
-# `audio/` sub-directory of the current working directory, or from the path
-# given by the SMART_KBD_AUDIO_PATH environment variable.
-# narrate = false
+# Audio feedback on keyboard-navigation selection changes.
+#   "none"    – silent (default)
+#   "narrate" – play a WAV clip naming each button; clips are loaded from the
+#               `audio/` sub-directory of the current working directory, or
+#               from the path given by the SMART_KBD_AUDIO_PATH environment
+#               variable.
+#   "tone"    – play a short musical tone that varies by key category:
+#               letter/punctuation keys share one pitch; F and J have a
+#               distinctive pitch; digit keys 1–0 play an ascending scale;
+#               function keys F1–F12 play a lower ascending scale; each
+#               special key (Space, Enter, arrows, …) has its own tone.
+# audio = "none"
 
 [output.ble]
 # USB Vendor ID and Product ID of the BLE dongle (esp_hid_serial_bridge).
