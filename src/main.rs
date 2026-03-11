@@ -217,6 +217,57 @@ fn closest_lang(lang_btns: &[Button], cx: i32) -> usize {
     closest_to_cx(lang_btns.iter().map(|b| (b.x(), b.w())), cx)
 }
 
+/// Apply a specific navigation selection, updating highlight colours.
+///
+/// Does nothing if `new_sel` equals the current `*sel`.
+fn nav_set(
+    all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
+    lang_btns:  &mut Vec<Button>,
+    layout_idx: usize,
+    sel:        &mut NavSel,
+    mod_state:  &Rc<RefCell<ModState>>,
+    new_sel:    NavSel,
+) {
+    // Nothing to do when already at the target.
+    if new_sel == *sel {
+        return;
+    }
+
+    // Restore the old selection's colour.
+    match *sel {
+        NavSel::Lang(li) => {
+            let c = if li == layout_idx { Color::from_rgb(70, 130, 180) }
+                    else                { Color::from_rgb(80, 80, 80) };
+            lang_btns[li].set_color(c);
+        }
+        NavSel::Key(row, col) => {
+            let old_action = all_btns[row][col].1;
+            let old_base   = all_btns[row][col].3;
+            let c = if is_modifier(old_action) && mod_state.borrow().is_active(old_action) {
+                col_mod_active()
+            } else {
+                old_base
+            };
+            all_btns[row][col].0.set_color(c);
+        }
+    }
+
+    // Highlight the new selection in amber and give it keyboard focus.
+    match new_sel {
+        NavSel::Lang(li) => {
+            lang_btns[li].set_color(col_nav_sel());
+            let _ = lang_btns[li].take_focus();
+        }
+        NavSel::Key(row, col) => {
+            all_btns[row][col].0.set_color(col_nav_sel());
+            let _ = all_btns[row][col].0.take_focus();
+        }
+    }
+
+    *sel = new_sel;
+    app::redraw();
+}
+
 /// Move the keyboard-navigation cursor and update highlight colours.
 ///
 /// Navigation clamps at all edges (no wrap-around).
@@ -298,44 +349,7 @@ fn nav_move(
         }
     };
 
-    // Nothing to do when already at the edge.
-    if new_sel == *sel {
-        return;
-    }
-
-    // Restore the old selection's colour.
-    match *sel {
-        NavSel::Lang(li) => {
-            let c = if li == layout_idx { Color::from_rgb(70, 130, 180) }
-                    else                { Color::from_rgb(80, 80, 80) };
-            lang_btns[li].set_color(c);
-        }
-        NavSel::Key(row, col) => {
-            let old_action = all_btns[row][col].1;
-            let old_base   = all_btns[row][col].3;
-            let c = if is_modifier(old_action) && mod_state.borrow().is_active(old_action) {
-                col_mod_active()
-            } else {
-                old_base
-            };
-            all_btns[row][col].0.set_color(c);
-        }
-    }
-
-    // Highlight the new selection in amber and give it keyboard focus.
-    match new_sel {
-        NavSel::Lang(li) => {
-            lang_btns[li].set_color(col_nav_sel());
-            let _ = lang_btns[li].take_focus();
-        }
-        NavSel::Key(row, col) => {
-            all_btns[row][col].0.set_color(col_nav_sel());
-            let _ = all_btns[row][col].0.take_focus();
-        }
-    }
-
-    *sel = new_sel;
-    app::redraw();
+    nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel);
 }
 
 // =============================================================================
@@ -1193,6 +1207,39 @@ fn main() {
                                 hook_c.on_key_release(sc, &ks);
                             }
                         }
+                    }
+                    GamepadAction::AbsolutePos { horiz, vert } => {
+                        // Map normalised 0.0…1.0 coordinates to keyboard grid indices.
+                        let (row, col) = {
+                            let ab = all_btns_c.borrow();
+                            let num_rows = ab.len();
+                            if num_rows == 0 { continue; }
+                            let row = (vert * num_rows as f32)
+                                .floor()
+                                .clamp(0.0, num_rows as f32 - 1.0) as usize;
+                            let num_cols = ab[row].len();
+                            let col = (horiz * num_cols as f32)
+                                .floor()
+                                .clamp(0.0, num_cols as f32 - 1.0) as usize;
+                            (row, col)
+                        };
+                        let new_sel = NavSel::Key(row, col);
+                        // Only update (and log) when the selection actually changes.
+                        if new_sel == *sel_c.borrow() { continue; }
+                        #[cfg(debug_assertions)]
+                        eprintln!(
+                            "[gamepad] abs_pos horiz={:.3} vert={:.3} → row={} col={}",
+                            horiz, vert, row, col
+                        );
+                        let mut ab = all_btns_c.borrow_mut();
+                        let mut lb = lang_btns_c.borrow_mut();
+                        let mut s  = sel_c.borrow_mut();
+                        nav_set(
+                            &mut ab, &mut lb,
+                            *layout_idx_c.borrow(),
+                            &mut s, &mod_state_c,
+                            new_sel,
+                        );
                     }
                 }
             }
