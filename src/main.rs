@@ -979,10 +979,12 @@ fn main() {
     // of the keyboard grid.  Otherwise start at the top-left key (row 0, col 0).
     let (init_row, init_col) = {
         let ab = all_btns.borrow();
-        if cfg.input.gamepad.absolute_axes && !ab.is_empty() {
-            let mid_row = ab.len() / 2;
-            let mid_col = if ab[mid_row].is_empty() { 0 } else { ab[mid_row].len() / 2 };
-            (mid_row, mid_col)
+        let mid_row = ab.len() / 2;
+        if cfg.input.gamepad.absolute_axes
+            && !ab.is_empty()
+            && !ab[mid_row].is_empty()
+        {
+            (mid_row, ab[mid_row].len() / 2)
         } else {
             (0, 0)
         }
@@ -1252,27 +1254,60 @@ fn main() {
                         }
                     }
                     GamepadAction::AbsolutePos { horiz, vert } => {
-                        // Map normalised 0.0…1.0 coordinates to keyboard grid indices.
-                        let (row, col) = {
+                        // Map normalised 0.0…1.0 coordinates to the full
+                        // selectable area, which consists of the language-toggle
+                        // strip followed by the keyboard key rows.
+                        //
+                        // The vertical range is divided into equal bands:
+                        //   band 0 (when lang buttons exist) → language strip
+                        //   remaining bands → keyboard rows (0-indexed)
+                        //
+                        // If there are no language buttons the vertical range is
+                        // divided solely across the keyboard rows.
+                        let new_sel = {
                             let ab = all_btns_c.borrow();
+                            let lb = lang_btns_c.borrow();
                             let num_rows = ab.len();
+                            let num_lang = lb.len();
                             if num_rows == 0 { continue; }
-                            let row = (vert * num_rows as f32)
+                            // Total virtual rows: 1 for the lang strip (if any)
+                            // plus one per keyboard row.
+                            let has_lang = num_lang > 0;
+                            let total_bands = if has_lang { 1 + num_rows } else { num_rows };
+                            let band = (vert * total_bands as f32)
                                 .floor()
-                                .clamp(0.0, num_rows as f32 - 1.0) as usize;
-                            let num_cols = ab[row].len();
-                            let col = (horiz * num_cols as f32)
-                                .floor()
-                                .clamp(0.0, num_cols as f32 - 1.0) as usize;
-                            (row, col)
+                                .clamp(0.0, total_bands as f32 - 1.0) as usize;
+                            if has_lang && band == 0 {
+                                // Language strip: map horiz across lang buttons.
+                                let li = (horiz * num_lang as f32)
+                                    .floor()
+                                    .clamp(0.0, num_lang as f32 - 1.0) as usize;
+                                NavSel::Lang(li)
+                            } else {
+                                // Keyboard row: subtract 1 for the lang strip
+                                // band when it exists.
+                                let row = if has_lang { band - 1 } else { band };
+                                let num_cols = ab[row].len();
+                                let col = (horiz * num_cols as f32)
+                                    .floor()
+                                    .clamp(0.0, num_cols as f32 - 1.0) as usize;
+                                NavSel::Key(row, col)
+                            }
                         };
-                        let new_sel = NavSel::Key(row, col);
                         #[cfg(debug_assertions)]
                         if new_sel != *sel_c.borrow() {
-                            eprintln!(
-                                "[gamepad] abs_pos horiz={:.3} vert={:.3} → row={} col={}",
-                                horiz, vert, row, col
-                            );
+                            match new_sel {
+                                NavSel::Lang(li) =>
+                                    eprintln!(
+                                        "[gamepad] abs_pos horiz={:.3} vert={:.3} → lang={}",
+                                        horiz, vert, li
+                                    ),
+                                NavSel::Key(row, col) =>
+                                    eprintln!(
+                                        "[gamepad] abs_pos horiz={:.3} vert={:.3} → row={} col={}",
+                                        horiz, vert, row, col
+                                    ),
+                            }
                         }
                         let changed = {
                             let mut ab = all_btns_c.borrow_mut();

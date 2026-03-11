@@ -558,17 +558,17 @@ fn open_rumble(js_path: &std::path::Path) -> Option<(File, i16)> {
 
     eprintln!("[gamepad] rumble: opened {:?}", event_path);
 
-    // Upload a short (150 ms) rumble effect.  The kernel fills in `id` on
+    // Upload a short (50 ms) gentle rumble effect.  The kernel fills in `id` on
     // success; we pass -1 to request a fresh slot.
     let mut effect = FfEffect {
         effect_type: FF_RUMBLE,
         id:          -1,
         direction:   0,
         trigger:     FfTrigger  { button: 0, interval: 0 },
-        replay:      FfReplay   { length: 150, delay: 0 },
+        replay:      FfReplay   { length: 50, delay: 0 },
         u:           FfEffectUnion { rumble: FfRumbleEffect {
-            strong_magnitude: 0xC000,
-            weak_magnitude:   0xC000,
+            strong_magnitude: 0x4000,
+            weak_magnitude:   0x4000,
         }},
     };
 
