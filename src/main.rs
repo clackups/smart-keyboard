@@ -544,7 +544,7 @@ fn main() {
     let lbl_size  = (key_w / 4).max(10);
     // Buttons that show only a single character get a larger font so they are
     // easier to read at a glance (single letters / digits / symbols).
-    let big_lbl_size = (lbl_size * 3 / 2).max(lbl_size + 4);
+    let big_lbl_size = lbl_size * 2;
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
     // Lang buttons are one grid column wide (key_w); reuse lbl_size so their
     // text labels fit with the same margin as keyboard-key labels.
