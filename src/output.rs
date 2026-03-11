@@ -142,6 +142,15 @@ impl BleConnection {
         self.send("K0000\n");
     }
 
+    /// Send the `Z` disconnect command to the BLE dongle.
+    ///
+    /// This requests the dongle to drop the active BLE connection to the remote
+    /// host.  Returns `true` if the command was sent successfully, `false` if
+    /// the port is not open or the write failed.
+    pub fn send_disconnect(&mut self) -> bool {
+        self.send("Z\n")
+    }
+
     /// Send the `S` status command and read the dongle's response.
     ///
     /// Returns:

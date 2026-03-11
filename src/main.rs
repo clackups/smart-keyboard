@@ -9,8 +9,9 @@ use std::rc::Rc;
 use fltk::{
     app,
     button::Button,
-    enums::{Color, Event, FrameType, Key},
+    enums::{Align, Color, Event, FrameType, Key},
     frame::Frame,
+    group::Group,
     prelude::*,
     text::{TextBuffer, TextDisplay},
     window::Window,
@@ -80,6 +81,68 @@ impl KeyHook for DummyKeyHook {
     }
     fn on_key_release(&self, scancode: u16, key: &str) {
         eprintln!("[key_release] scancode=0x{:02x} key={:?}", scancode, key);
+    }
+}
+
+// =============================================================================
+// Menu
+// =============================================================================
+
+/// A single entry in the application pop-up menu.
+///
+/// Each item has a human-readable `label`, an `is_enabled` closure that is
+/// evaluated at menu-open time to decide whether the item can be selected, and
+/// an `execute` closure that is called when the item is activated by the user.
+///
+/// Add new items to the `menu_item_defs` `Vec` inside `main` to extend the
+/// menu in the future.
+pub struct MenuItemDef {
+    pub label:      &'static str,
+    is_enabled: Box<dyn Fn() -> bool>,
+    execute:    Box<dyn Fn()>,
+}
+
+/// Return the index of the first enabled item in `items`, or `None` if all
+/// items are disabled (or the list is empty).
+fn menu_first_enabled(items: &[MenuItemDef]) -> Option<usize> {
+    items.iter().position(|it| (it.is_enabled)())
+}
+
+/// Starting from `current`, scan in direction `dir` (+1 = down, -1 = up) for
+/// the next enabled item.  Returns `current` unchanged if no other enabled
+/// item exists in that direction (the cursor stays put at the edge).
+fn menu_move_sel(current: usize, dir: i32, items: &[MenuItemDef]) -> usize {
+    let n = items.len() as i32;
+    let mut i = current as i32 + dir;
+    while i >= 0 && i < n {
+        if (items[i as usize].is_enabled)() {
+            return i as usize;
+        }
+        i += dir;
+    }
+    current
+}
+
+/// Refresh the background and label colours of every menu item frame to
+/// reflect the current selection and enabled state.
+fn menu_set_item_colors(
+    sel:    Option<usize>,
+    items:  &[MenuItemDef],
+    frames: &mut [Frame],
+    colors: Colors,
+) {
+    for (i, frame) in frames.iter_mut().enumerate() {
+        let enabled = (items[i].is_enabled)();
+        if Some(i) == sel {
+            frame.set_color(colors.nav_sel);
+            frame.set_label_color(colors.key_label_normal);
+        } else if enabled {
+            frame.set_color(colors.key_mod);
+            frame.set_label_color(colors.key_label_mod);
+        } else {
+            frame.set_color(colors.status_ind_bg);
+            frame.set_label_color(colors.status_ind_text);
+        }
     }
 }
 
@@ -669,6 +732,9 @@ fn main() {
 
     // Build the output hook from the loaded configuration and update the
     // connectivity indicator accordingly.
+    // `ble_conn_opt` holds a shared reference to the BLE connection when BLE
+    // mode is active; used by the "Disconnect BLE" menu item.
+    let mut ble_conn_opt: Option<std::rc::Rc<std::cell::RefCell<output::BleConnection>>> = None;
     let hook: Rc<dyn KeyHook> = match cfg.output.mode {
         config::OutputMode::Print => {
             Rc::new(output::PrintKeyHook)
@@ -707,6 +773,7 @@ fn main() {
             // stdout.  When the host MAC address is available it is included in
             // the "BLE connected" message.
             let mut conn_status_t = conn_status.clone();
+            ble_conn_opt = Some(ble_conn.clone());
             let ble_conn_t = ble_conn;
             let ble_state = Rc::new(RefCell::new(BleState::Disconnected));
             app::add_timeout3(0.0, move |handle| {
@@ -772,6 +839,33 @@ fn main() {
             Rc::new(ble_hook)
         }
     };
+
+    // --- Menu item definitions ---
+    //
+    // Each `MenuItemDef` has a label, an `is_enabled` closure (checked at
+    // menu-open time) and an `execute` closure (called on activation).
+    // Add new items to this Vec to extend the menu in the future.
+    let mut menu_item_defs: Vec<MenuItemDef> = Vec::new();
+
+    // "Disconnect BLE": only available when BLE mode is active and the dongle
+    // is currently connected.
+    if ble_mode {
+        if let Some(ref conn) = ble_conn_opt {
+            let conn_check = conn.clone();
+            let conn_exec  = conn.clone();
+            menu_item_defs.push(MenuItemDef {
+                label:      "Disconnect BLE",
+                is_enabled: Box::new(move || conn_check.borrow().is_connected()),
+                execute:    Box::new(move || {
+                    if !conn_exec.borrow_mut().send_disconnect() {
+                        eprintln!("[menu] Disconnect BLE: failed to send disconnect command");
+                    }
+                }),
+            });
+        }
+    }
+
+    let menu_item_defs: Rc<Vec<MenuItemDef>> = Rc::new(menu_item_defs);
 
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad_left, pad_top, sw - 2 * pad_left, display_h, "");
@@ -1053,6 +1147,68 @@ fn main() {
     // handler and the gamepad polling timer can share the same instance.
     let gp_cell: Rc<RefCell<Option<Gamepad>>> = Rc::new(RefCell::new(None));
 
+    // --- Menu state & UI ---
+    // `menu_sel` tracks whether the pop-up menu is currently open (Some(i) =
+    // open with item i selected; None = closed).
+    let menu_sel: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
+
+    // Layout parameters for the menu overlay (centred on screen).
+    let menu_item_h   = key_h;
+    let menu_title_h  = key_h;
+    let menu_inner_pad = pad * 2;
+    let num_menu_items = menu_item_defs.len();
+    let menu_w = (sw / 2).max(200).min(600);
+    let menu_h = menu_inner_pad * 2 + menu_title_h
+        + if num_menu_items > 0 {
+            gap + num_menu_items as i32 * menu_item_h
+                + (num_menu_items as i32 - 1) * gap
+        } else {
+            0
+        };
+    let menu_x = (sw - menu_w) / 2;
+    let menu_y = (sh - menu_h) / 2;
+
+    // The Group is the last widget added to the window so it renders on top.
+    let mut menu_group = Group::new(menu_x, menu_y, menu_w, menu_h, "");
+
+    let mut _menu_bg = Frame::new(menu_x, menu_y, menu_w, menu_h, "");
+    _menu_bg.set_color(colors.status_bar_bg);
+    _menu_bg.set_frame(FrameType::FlatBox);
+
+    let mut _menu_title = Frame::new(
+        menu_x + menu_inner_pad,
+        menu_y + menu_inner_pad,
+        menu_w - 2 * menu_inner_pad,
+        menu_title_h,
+        "Menu",
+    );
+    _menu_title.set_color(colors.status_bar_bg);
+    _menu_title.set_label_color(colors.status_ind_active_text);
+    _menu_title.set_frame(FrameType::FlatBox);
+    _menu_title.set_label_size(lbl_size);
+
+    let mut menu_item_frames: Vec<Frame> = Vec::new();
+    for (i, item) in menu_item_defs.iter().enumerate() {
+        let fy = menu_y + menu_inner_pad + menu_title_h + gap
+            + i as i32 * (menu_item_h + gap);
+        let mut f = Frame::new(
+            menu_x + menu_inner_pad,
+            fy,
+            menu_w - 2 * menu_inner_pad,
+            menu_item_h,
+            item.label,
+        );
+        f.set_color(colors.key_mod);
+        f.set_label_color(colors.key_label_mod);
+        f.set_frame(FrameType::FlatBox);
+        f.set_label_size(lbl_size);
+        f.set_align(Align::Inside | Align::Left);
+        menu_item_frames.push(f);
+    }
+
+    menu_group.end();
+    menu_group.hide();
+
     // --- Navigation: physical arrow keys + spacebar ---
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
     // the event to any child widget, so we can intercept arrow keys and spacebar
@@ -1070,6 +1226,10 @@ fn main() {
         let active_nav_key_c  = active_nav_key.clone();
         let gp_cell_c         = gp_cell.clone();
         let gp_rumble         = cfg.input.gamepad.rumble;
+        let menu_sel_c        = menu_sel.clone();
+        let menu_items_c      = menu_item_defs.clone();
+        let mut menu_item_frames_c = menu_item_frames.clone();
+        let mut menu_group_c  = menu_group.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1079,6 +1239,37 @@ fn main() {
             let k = app::event_key();
 
             if ev == Event::KeyDown {
+                // ── Menu open: route all key events to menu navigation ─────
+                if menu_sel_c.borrow().is_some() {
+                    if k == Key::Escape || k == nav_keys.menu {
+                        // Close the menu without taking any action.
+                        *menu_sel_c.borrow_mut() = None;
+                        menu_group_c.hide();
+                        app::redraw();
+                    } else if k == nav_keys.up || k == nav_keys.down {
+                        let dir = if k == nav_keys.up { -1i32 } else { 1i32 };
+                        let cur = menu_sel_c.borrow().unwrap();
+                        let next = menu_move_sel(cur, dir, &menu_items_c);
+                        if next != cur {
+                            *menu_sel_c.borrow_mut() = Some(next);
+                            menu_set_item_colors(
+                                Some(next), &menu_items_c,
+                                &mut menu_item_frames_c, colors,
+                            );
+                            app::redraw();
+                        }
+                    } else if k == nav_keys.activate {
+                        // Execute the selected item and close the menu.
+                        let idx = menu_sel_c.borrow().unwrap();
+                        (menu_items_c[idx].execute)();
+                        *menu_sel_c.borrow_mut() = None;
+                        menu_group_c.hide();
+                        app::redraw();
+                    }
+                    // Consume all key events while the menu is open.
+                    return true;
+                }
+
                 // Suppress Escape so FLTK does not close the window.
                 if k == Key::Escape {
                     return true;
@@ -1143,7 +1334,30 @@ fn main() {
                     }
                     return true;
                 }
+
+                // Menu key: open the pop-up menu (if any items are enabled).
+                if k == nav_keys.menu {
+                    if let Some(first) = menu_first_enabled(&menu_items_c) {
+                        // Release any held activation key before entering menu mode
+                        // so the BLE dongle receives a key-release report.
+                        if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                            hook_c.on_key_release(sc, &ks);
+                        }
+                        *menu_sel_c.borrow_mut() = Some(first);
+                        menu_set_item_colors(
+                            Some(first), &menu_items_c,
+                            &mut menu_item_frames_c, colors,
+                        );
+                        menu_group_c.show();
+                        app::redraw();
+                    }
+                    return true;
+                }
             } else if ev == Event::KeyUp {
+                // When the menu is open, consume key-up events silently.
+                if menu_sel_c.borrow().is_some() {
+                    return true;
+                }
                 // Activation key released: send the key-release event.
                 if k == nav_keys.activate {
                     if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
@@ -1190,6 +1404,10 @@ fn main() {
         let active_nav_key_c  = active_nav_key.clone();
         let mut gamepad_status_t = gamepad_status.clone();
         let gp_cell_t         = gp_cell.clone();
+        let menu_sel_gp       = menu_sel.clone();
+        let menu_items_gp     = menu_item_defs.clone();
+        let mut menu_item_frames_gp = menu_item_frames.clone();
+        let mut menu_group_gp = menu_group.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -1238,12 +1456,54 @@ fn main() {
             // Phase 3 – process the events collected in Phase 2.
             for evt in gp_evt_buf.iter() {
                 match evt.action {
+                    GamepadAction::Menu => {
+                        if !evt.pressed { continue; }
+                        if menu_sel_gp.borrow().is_some() {
+                            // Menu is open: close it.
+                            *menu_sel_gp.borrow_mut() = None;
+                            menu_group_gp.hide();
+                            app::redraw();
+                        } else {
+                            // Menu is closed: open it if any items are enabled.
+                            if let Some(first) = menu_first_enabled(&menu_items_gp) {
+                                if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                    hook_c.on_key_release(sc, &ks);
+                                }
+                                *menu_sel_gp.borrow_mut() = Some(first);
+                                menu_set_item_colors(
+                                    Some(first), &menu_items_gp,
+                                    &mut menu_item_frames_gp, colors,
+                                );
+                                menu_group_gp.show();
+                                app::redraw();
+                            }
+                        }
+                    }
                     GamepadAction::Up
                     | GamepadAction::Down
                     | GamepadAction::Left
                     | GamepadAction::Right => {
                         // Only navigate on button press, not release.
                         if !evt.pressed {
+                            continue;
+                        }
+                        // When menu is open, route vertical nav to menu.
+                        if menu_sel_gp.borrow().is_some() {
+                            let dir = match evt.action {
+                                GamepadAction::Up   => -1i32,
+                                GamepadAction::Down =>  1i32,
+                                _                   => continue, // ignore left/right
+                            };
+                            let cur = menu_sel_gp.borrow().unwrap();
+                            let next = menu_move_sel(cur, dir, &menu_items_gp);
+                            if next != cur {
+                                *menu_sel_gp.borrow_mut() = Some(next);
+                                menu_set_item_colors(
+                                    Some(next), &menu_items_gp,
+                                    &mut menu_item_frames_gp, colors,
+                                );
+                                app::redraw();
+                            }
                             continue;
                         }
                         let (dr, dc) = match evt.action {
@@ -1271,6 +1531,17 @@ fn main() {
                         }
                     }
                     GamepadAction::Activate => {
+                        // When menu is open, Activate executes the selected item.
+                        if menu_sel_gp.borrow().is_some() {
+                            if evt.pressed {
+                                let idx = menu_sel_gp.borrow().unwrap();
+                                (menu_items_gp[idx].execute)();
+                                *menu_sel_gp.borrow_mut() = None;
+                                menu_group_gp.hide();
+                                app::redraw();
+                            }
+                            continue;
+                        }
                         if evt.pressed {
                             let cur_sel = *sel_c.borrow();
                             match cur_sel {
@@ -1309,6 +1580,8 @@ fn main() {
                         }
                     }
                     GamepadAction::AbsolutePos { horiz, vert } => {
+                        // Ignore absolute-position events while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
                         // Map normalised 0.0…1.0 coordinates to the full
                         // selectable area, which consists of the language-toggle
                         // strip followed by the keyboard key rows.
