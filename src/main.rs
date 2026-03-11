@@ -542,6 +542,9 @@ fn main() {
     // "Shift") stay within the button boundary.  key_w/4 gives ~25% horizontal
     // margin for a 5-character label in a proportional font.
     let lbl_size  = (key_w / 4).max(10);
+    // Buttons that show only a single character get a larger font so they are
+    // easier to read at a glance (single letters / digits / symbols).
+    let big_lbl_size = (lbl_size * 3 / 2).max(lbl_size + 4);
     let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
     // Lang buttons are one grid column wide (key_w); reuse lbl_size so their
     // text labels fit with the same margin as keyboard-key labels.
@@ -782,9 +785,12 @@ fn main() {
                 let key = &def.keys[*slot];
                 if key.label_shifted.is_empty() {
                     kb.set_label(key.label_unshifted);
+                    let sz = if key.label_unshifted.chars().count() == 1 { big_lbl_size } else { lbl_size };
+                    kb.set_label_size(sz);
                 } else {
                     let lbl = format!("{}\n{}", key.label_shifted, key.label_unshifted);
                     kb.set_label(&lbl);
+                    kb.set_label_size(lbl_size);
                 }
             }
             // Move the amber highlight to this lang button.
@@ -856,7 +862,8 @@ fn main() {
 
             let mut btn = Button::new(x, row_y, w, key_h, None);
             btn.set_label(&init_label);
-            btn.set_label_size(lbl_size);
+            let this_lbl_size = if init_label.chars().count() == 1 { big_lbl_size } else { lbl_size };
+            btn.set_label_size(this_lbl_size);
             btn.set_color(base_col);
             if matches!(phys.action, Action::Regular(_) | Action::Space) {
                 btn.set_label_color(Color::from_rgb(20, 20, 20));
