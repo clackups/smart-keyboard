@@ -47,3 +47,49 @@ pid = 0xbbd1
 # Uncomment and set `serial` to select a specific dongle when multiple
 # matching USB devices are connected:
 # serial = "your_dongle_serial_string"
+
+[ui.colors]
+# All colour values are 6-digit hex strings ("#RRGGBB").
+# Remove or comment out any line to restore the built-in default.
+
+# Regular key (letter / digit / symbol / Space) button background.
+# key_normal            = "#dadade"
+# Modifier / function / navigation key button background (inactive).
+# key_mod               = "#64646e"
+# Active modifier and selected language button background (steel-blue).
+# mod_active            = "#4682b4"
+# Keyboard-navigation cursor highlight.
+# nav_sel               = "#ffc800"
+
+# Status bar background strip.
+# status_bar_bg         = "#19191c"
+# Inactive modifier-pill background.
+# status_ind_bg         = "#2d2d32"
+# Inactive modifier-pill label colour.
+# status_ind_text       = "#5a5a5f"
+# Active modifier-pill label colour.
+# status_ind_active_text = "#ffffff"
+
+# BLE / gamepad icon: disconnected state (red).
+# conn_disconnected     = "#dc3c3c"
+# BLE icon: connecting state – dongle found, host not yet paired (amber).
+# conn_connecting       = "#dc9628"
+# BLE / gamepad icon: connected state (green).
+# conn_connected        = "#50dc50"
+
+# Window / keyboard area background.
+# win_bg                = "#28282b"
+# Text display background.
+# disp_bg               = "#1c1c1c"
+# Text display foreground (typed characters).
+# disp_text             = "#b4ffb4"
+
+# Language button background when not the active layout.
+# lang_btn_inactive     = "#505050"
+# Language button label colour.
+# lang_btn_label        = "#ffffff"
+
+# Text label colour on regular keys (dark text on light background).
+# key_label_normal      = "#141414"
+# Text label colour on modifier / function keys (light text on dark background).
+# key_label_mod         = "#d2d2d2"

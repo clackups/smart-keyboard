@@ -147,21 +147,58 @@ impl ModState {
 }
 
 // =============================================================================
-// Color constants
+// UI colour palette (resolved from config)
 // =============================================================================
 
-fn col_key_normal()      -> Color { Color::from_rgb(218, 218, 222) }
-fn col_key_mod()         -> Color { Color::from_rgb(100, 100, 110) }
-fn col_mod_active()      -> Color { Color::from_rgb( 70, 130, 180) } // steel-blue
-fn col_nav_sel()         -> Color { Color::from_rgb(255, 200,   0) } // amber
-fn col_status_bar_bg()   -> Color { Color::from_rgb( 25,  25,  28) }
-fn col_status_ind_bg()   -> Color { Color::from_rgb( 45,  45,  50) }
-fn col_status_ind_text() -> Color { Color::from_rgb( 90,  90,  95) }
+/// All UI colours resolved from [`config::ColorsConfig`] into FLTK [`Color`] values.
+/// Implements `Copy` because [`Color`] is a newtype over `u32`.
+#[derive(Clone, Copy)]
+struct Colors {
+    key_normal:              Color,
+    key_mod:                 Color,
+    mod_active:              Color,
+    nav_sel:                 Color,
+    status_bar_bg:           Color,
+    status_ind_bg:           Color,
+    status_ind_text:         Color,
+    status_ind_active_text:  Color,
+    conn_disconnected:       Color,
+    conn_connecting:         Color,
+    conn_connected:          Color,
+    win_bg:                  Color,
+    disp_bg:                 Color,
+    disp_text:               Color,
+    lang_btn_inactive:       Color,
+    lang_btn_label:          Color,
+    key_label_normal:        Color,
+    key_label_mod:           Color,
+}
 
-// Connectivity-indicator label colors.
-fn col_conn_disconnected() -> Color { Color::from_rgb(220,  60,  60) } // red   – BLE dongle not found
-fn col_conn_connecting()   -> Color { Color::from_rgb(220, 150,  40) } // amber – dongle open, host not paired
-fn col_conn_connected()    -> Color { Color::from_rgb( 80, 220,  80) } // green – BLE host paired and ready
+impl Colors {
+    fn from_config(cfg: &config::ColorsConfig) -> Self {
+        let c = |rgb: &config::ColorRgb| Color::from_rgb(rgb.0, rgb.1, rgb.2);
+        Colors {
+            key_normal:              c(&cfg.key_normal),
+            key_mod:                 c(&cfg.key_mod),
+            mod_active:              c(&cfg.mod_active),
+            nav_sel:                 c(&cfg.nav_sel),
+            status_bar_bg:           c(&cfg.status_bar_bg),
+            status_ind_bg:           c(&cfg.status_ind_bg),
+            status_ind_text:         c(&cfg.status_ind_text),
+            status_ind_active_text:  c(&cfg.status_ind_active_text),
+            conn_disconnected:       c(&cfg.conn_disconnected),
+            conn_connecting:         c(&cfg.conn_connecting),
+            conn_connected:          c(&cfg.conn_connected),
+            win_bg:                  c(&cfg.win_bg),
+            disp_bg:                 c(&cfg.disp_bg),
+            disp_text:               c(&cfg.disp_text),
+            lang_btn_inactive:       c(&cfg.lang_btn_inactive),
+            lang_btn_label:          c(&cfg.lang_btn_label),
+            key_label_normal:        c(&cfg.key_label_normal),
+            key_label_mod:           c(&cfg.key_label_mod),
+        }
+    }
+}
 
 // =============================================================================
 // Modifier button descriptor
@@ -228,6 +265,7 @@ fn nav_set(
     sel:        &mut NavSel,
     mod_state:  &Rc<RefCell<ModState>>,
     new_sel:    NavSel,
+    colors:     Colors,
 ) -> bool {
     // Nothing to do when already at the target.
     if new_sel == *sel {
@@ -237,15 +275,15 @@ fn nav_set(
     // Restore the old selection's colour.
     match *sel {
         NavSel::Lang(li) => {
-            let c = if li == layout_idx { Color::from_rgb(70, 130, 180) }
-                    else                { Color::from_rgb(80, 80, 80) };
+            let c = if li == layout_idx { colors.mod_active }
+                    else                { colors.lang_btn_inactive };
             lang_btns[li].set_color(c);
         }
         NavSel::Key(row, col) => {
             let old_action = all_btns[row][col].1;
             let old_base   = all_btns[row][col].3;
             let c = if is_modifier(old_action) && mod_state.borrow().is_active(old_action) {
-                col_mod_active()
+                colors.mod_active
             } else {
                 old_base
             };
@@ -253,14 +291,14 @@ fn nav_set(
         }
     }
 
-    // Highlight the new selection in amber and give it keyboard focus.
+    // Highlight the new selection and give it keyboard focus.
     match new_sel {
         NavSel::Lang(li) => {
-            lang_btns[li].set_color(col_nav_sel());
+            lang_btns[li].set_color(colors.nav_sel);
             let _ = lang_btns[li].take_focus();
         }
         NavSel::Key(row, col) => {
-            all_btns[row][col].0.set_color(col_nav_sel());
+            all_btns[row][col].0.set_color(colors.nav_sel);
             let _ = all_btns[row][col].0.take_focus();
         }
     }
@@ -286,6 +324,7 @@ fn nav_move(
     mod_state:  &Rc<RefCell<ModState>>,
     dr:         i32,
     dc:         i32,
+    colors:     Colors,
 ) -> bool {
     let new_sel: NavSel = match *sel {
         NavSel::Lang(li) => {
@@ -354,7 +393,7 @@ fn nav_move(
         }
     };
 
-    nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel)
+    nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel, colors)
 }
 
 // =============================================================================
@@ -378,6 +417,7 @@ fn execute_action(
     hook:      &Rc<dyn KeyHook>,
     mod_state: &Rc<RefCell<ModState>>,
     mod_btns:  &[ModBtn],
+    colors:    Colors,
 ) -> String {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
     // Symbol/number keys (label_shifted != "") use the shifted character on LShift/RShift;
@@ -421,10 +461,10 @@ fn execute_action(
         let now_active = mod_state.borrow_mut().toggle(action);
         for m in mod_btns {
             if m.action == action {
-                m.btn.clone().set_color(if now_active { col_mod_active() } else { m.base_col });
+                m.btn.clone().set_color(if now_active { colors.mod_active } else { m.base_col });
                 if let Some(mut sf) = m.status.clone() {
-                    sf.set_color(if now_active { col_mod_active() } else { col_status_ind_bg() });
-                    sf.set_label_color(if now_active { Color::White } else { col_status_ind_text() });
+                    sf.set_color(if now_active { colors.mod_active } else { colors.status_ind_bg });
+                    sf.set_label_color(if now_active { colors.status_ind_active_text } else { colors.status_ind_text });
                 }
             }
         }
@@ -459,8 +499,8 @@ fn execute_action(
                 if is_sticky(m.action) && ms.is_active(m.action) {
                     m.btn.clone().set_color(m.base_col);
                     if let Some(mut sf) = m.status.clone() {
-                        sf.set_color(col_status_ind_bg());
-                        sf.set_label_color(col_status_ind_text());
+                        sf.set_color(colors.status_ind_bg);
+                        sf.set_label_color(colors.status_ind_text);
                     }
                 }
             }
@@ -485,6 +525,7 @@ fn main() {
 
     let cfg = config::Config::load();
     let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
+    let colors = Colors::from_config(&cfg.ui.colors);
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
@@ -498,7 +539,7 @@ fn main() {
     let sh = sh_f as i32;
 
     let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
-    win.set_color(Color::from_rgb(40, 40, 43));
+    win.set_color(colors.win_bg);
     win.set_border(false); // remove title bar / window decorations
     win.fullscreen(true);
 
@@ -560,14 +601,14 @@ fn main() {
     let ind_w   = status_lbl_size * 4;
 
     let mut _status_bar_bg = Frame::new(0, 0, sw, status_h, "");
-    _status_bar_bg.set_color(col_status_bar_bg());
+    _status_bar_bg.set_color(colors.status_bar_bg);
     _status_bar_bg.set_frame(FrameType::FlatBox);
 
     // Helper: build one status-bar indicator frame.
     let make_ind = |x: i32, label: &'static str| {
         let mut f = Frame::new(x, ind_pad, ind_w, ind_h, label);
-        f.set_color(col_status_ind_bg());
-        f.set_label_color(col_status_ind_text());
+        f.set_color(colors.status_ind_bg);
+        f.set_label_color(colors.status_ind_text);
         f.set_frame(FrameType::FlatBox);
         f.set_label_size(status_lbl_size);
         f
@@ -594,8 +635,8 @@ fn main() {
     // BLE connectivity icon – rightmost, only shown when output mode is BLE.
     let conn_x = sw - ind_gap - ind_w;
     let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
-    conn_status.set_color(col_status_ind_bg());
-    conn_status.set_label_color(col_conn_disconnected()); // initial: disconnected
+    conn_status.set_color(colors.status_ind_bg);
+    conn_status.set_label_color(colors.conn_disconnected); // initial: disconnected
     conn_status.set_frame(FrameType::FlatBox);
     conn_status.set_label_size(status_lbl_size);
     if !ble_mode {
@@ -607,8 +648,8 @@ fn main() {
     let gp_icon_x = if ble_mode { conn_x - ind_gap - ind_w } else { conn_x };
     let mut gamepad_status: Option<Frame> = if cfg.input.gamepad.enabled {
         let mut f = Frame::new(gp_icon_x, ind_pad, ind_w, ind_h, "G");
-        f.set_color(col_status_ind_bg());
-        f.set_label_color(col_conn_disconnected()); // initial: disconnected (red G)
+        f.set_color(colors.status_ind_bg);
+        f.set_label_color(colors.conn_disconnected); // initial: disconnected (red G)
         f.set_frame(FrameType::FlatBox);
         f.set_label_size(status_lbl_size);
         Some(f)
@@ -672,7 +713,7 @@ fn main() {
                 if !ble_conn_t.borrow().is_connected() {
                     if ble_conn_t.borrow_mut().try_connect() {
                         *ble_state.borrow_mut() = BleState::Connecting;
-                        conn_status_t.set_label_color(col_conn_connecting());
+                        conn_status_t.set_label_color(colors.conn_connecting);
                         app::redraw();
                         app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                     } else {
@@ -680,7 +721,7 @@ fn main() {
                             println!("BLE disconnected");
                         }
                         *ble_state.borrow_mut() = BleState::Disconnected;
-                        conn_status_t.set_label_color(col_conn_disconnected());
+                        conn_status_t.set_label_color(colors.conn_disconnected);
                         app::redraw();
                         app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
                     }
@@ -692,7 +733,7 @@ fn main() {
                                 println!("BLE disconnected");
                             }
                             *ble_state.borrow_mut() = BleState::Disconnected;
-                            conn_status_t.set_label_color(col_conn_disconnected());
+                            conn_status_t.set_label_color(colors.conn_disconnected);
                             app::redraw();
                             app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
                         }
@@ -702,7 +743,7 @@ fn main() {
                                 println!("BLE connected: {}", mac);
                             }
                             *ble_state.borrow_mut() = BleState::Connected;
-                            conn_status_t.set_label_color(col_conn_connected());
+                            conn_status_t.set_label_color(colors.conn_connected);
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
@@ -713,14 +754,14 @@ fn main() {
                                 println!("BLE disconnected");
                             }
                             *ble_state.borrow_mut() = BleState::Connecting;
-                            conn_status_t.set_label_color(col_conn_connecting());
+                            conn_status_t.set_label_color(colors.conn_connecting);
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
                         Ok(_) => {
                             // Connected but remote host not paired / not ready.
                             *ble_state.borrow_mut() = BleState::Connecting;
-                            conn_status_t.set_label_color(col_conn_connecting());
+                            conn_status_t.set_label_color(colors.conn_connecting);
                             app::redraw();
                             app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
                         }
@@ -735,14 +776,14 @@ fn main() {
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad_left, pad_top, sw - 2 * pad_left, display_h, "");
     disp.set_buffer(buf.clone());
-    disp.set_color(Color::from_rgb(28, 28, 28));
-    disp.set_text_color(Color::from_rgb(180, 255, 180));
+    disp.set_color(colors.disp_bg);
+    disp.set_text_color(colors.disp_text);
     disp.set_frame(FrameType::DownBox);
     disp.set_text_size(disp_size);
 
     // --- Language toggle buttons (one per entry in LAYOUTS) ---
-    let active_col   = Color::from_rgb(70, 130, 180);
-    let inactive_col = Color::from_rgb(80, 80, 80);
+    let active_col   = colors.mod_active;
+    let inactive_col = colors.lang_btn_inactive;
 
     let lang_y = pad_top + display_h + gap;
     // Language buttons snap to the keyboard grid: each button is exactly one
@@ -765,7 +806,7 @@ fn main() {
         let btn_x = pad_left + li as i32 * (lang_w + gap);
         let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, def.name);
         btn.set_color(if li == 0 { active_col } else { inactive_col });
-        btn.set_label_color(Color::White);
+        btn.set_label_color(colors.lang_btn_label);
         btn.set_label_size(btn_size);
 
         let layout_idx_c  = layout_idx.clone();
@@ -803,14 +844,14 @@ fn main() {
                 let restore = if is_modifier(old_action)
                     && mod_state_c.borrow().is_active(old_action)
                 {
-                    col_mod_active()
+                    colors.mod_active
                 } else {
                     old_base
                 };
                 ab[old_r][old_c].0.set_color(restore);
             }
             // (If old_sel was Lang(_), the colour loop above already restored it.)
-            lang_btns_c.borrow_mut()[li].set_color(col_nav_sel());
+            lang_btns_c.borrow_mut()[li].set_color(colors.nav_sel);
             let _ = lang_btns_c.borrow_mut()[li].take_focus();
             *sel_c.borrow_mut() = NavSel::Lang(li);
             app::redraw();
@@ -844,8 +885,8 @@ fn main() {
             // Regular letter/symbol keys and the Space bar are light;
             // every other key (modifiers, F-keys, nav, arrows) is dark.
             let base_col = match phys.action {
-                Action::Regular(_) | Action::Space => col_key_normal(),
-                _                                  => col_key_mod(),
+                Action::Regular(_) | Action::Space => colors.key_normal,
+                _                                  => colors.key_mod,
             };
 
             let init_label: String = match phys.action {
@@ -866,9 +907,9 @@ fn main() {
             btn.set_label_size(this_lbl_size);
             btn.set_color(base_col);
             if matches!(phys.action, Action::Regular(_) | Action::Space) {
-                btn.set_label_color(Color::from_rgb(20, 20, 20));
+                btn.set_label_color(colors.key_label_normal);
             } else {
-                btn.set_label_color(Color::from_rgb(210, 210, 210));
+                btn.set_label_color(colors.key_label_mod);
             }
 
             // --- Press / release hook (fires before default C++ button handling) ---
@@ -912,6 +953,7 @@ fn main() {
                         &mut buf_c, &mut disp_c, &hook_c,
                         &mod_state_c,
                         &mod_btns_c.borrow(),
+                        colors,
                     );
                     // For mouse/touch clicks the Released event fires before this
                     // callback, so the key press command was sent in execute_action →
@@ -929,7 +971,7 @@ fn main() {
                             let restore = if is_modifier(old_action)
                                 && mod_state_c.borrow().is_active(old_action)
                             {
-                                col_mod_active()
+                                colors.mod_active
                             } else {
                                 old_base
                             };
@@ -937,14 +979,14 @@ fn main() {
                         }
                         NavSel::Lang(li) => {
                             let restore = if li == *layout_idx_c.borrow() {
-                                Color::from_rgb(70, 130, 180)
+                                colors.mod_active
                             } else {
-                                Color::from_rgb(80, 80, 80)
+                                colors.lang_btn_inactive
                             };
                             lang_btns_c.borrow_mut()[li].set_color(restore);
                         }
                     }
-                    ab[row_i][col_i].0.set_color(col_nav_sel());
+                    ab[row_i][col_i].0.set_color(colors.nav_sel);
                     let _ = ab[row_i][col_i].0.take_focus();
                     *s = NavSel::Key(row_i, col_i);
                     app::redraw();
@@ -1001,7 +1043,7 @@ fn main() {
     };
     {
         let mut ab = all_btns.borrow_mut();
-        ab[init_row][init_col].0.set_color(col_nav_sel());
+        ab[init_row][init_col].0.set_color(colors.nav_sel);
         let _ = ab[init_row][init_col].0.take_focus();
     }
     *sel.borrow_mut() = NavSel::Key(init_row, init_col);
@@ -1054,7 +1096,7 @@ fn main() {
                         let mut ab = all_btns_c.borrow_mut();
                         let mut lb = lang_btns_c.borrow_mut();
                         let mut s  = sel_c.borrow_mut();
-                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc)
+                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors)
                     };
                     if changed && gp_rumble {
                         if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
@@ -1089,13 +1131,14 @@ fn main() {
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c,
                                 &mod_btns_c.borrow(),
+                                colors,
                             );
                             // Store the activated key so on_key_release can be sent
                             // when the physical activation key is released.
                             *active_nav_key_c.borrow_mut() = Some((scancode, key_str));
                             // Re-apply amber in case execute_action changed the colour
                             // (e.g. when the selected button is a modifier key).
-                            all_btns_c.borrow_mut()[row][col].0.set_color(col_nav_sel());
+                            all_btns_c.borrow_mut()[row][col].0.set_color(colors.nav_sel);
                         }
                     }
                     return true;
@@ -1130,7 +1173,7 @@ fn main() {
         // was found at startup.
         if let Some(ref mut icon) = gamepad_status {
             if gp_cell.borrow().is_some() {
-                icon.set_label_color(col_conn_connected());
+                icon.set_label_color(colors.conn_connected);
             }
             // If not connected the icon already shows red (set at creation).
         }
@@ -1162,7 +1205,7 @@ fn main() {
                         eprintln!("[gamepad] reconnected");
                         *gp_cell_t.borrow_mut() = Some(gp);
                         if let Some(ref mut icon) = gamepad_status_t {
-                            icon.set_label_color(col_conn_connected());
+                            icon.set_label_color(colors.conn_connected);
                             app::redraw();
                         }
                         // Fall through to poll the newly opened device.
@@ -1185,7 +1228,7 @@ fn main() {
                 eprintln!("[gamepad] disconnected");
                 *gp_cell_t.borrow_mut() = None;
                 if let Some(ref mut icon) = gamepad_status_t {
-                    icon.set_label_color(col_conn_disconnected());
+                    icon.set_label_color(colors.conn_disconnected);
                     app::redraw();
                 }
                 app::repeat_timeout3(1.0, handle);
@@ -1218,6 +1261,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut s, &mod_state_c,
                                 dr, dc,
+                                colors,
                             )
                         };
                         if changed && gp_rumble {
@@ -1247,13 +1291,14 @@ fn main() {
                                         &mut buf_c, &mut disp_c, &hook_c,
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
+                                        colors,
                                     );
                                     // Store the activated key so on_key_release can be
                                     // sent when the gamepad button is released.
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
                                     all_btns_c.borrow_mut()[row][col]
-                                        .0.set_color(col_nav_sel());
+                                        .0.set_color(colors.nav_sel);
                                 }
                             }
                         } else {
@@ -1328,6 +1373,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut s, &mod_state_c,
                                 new_sel,
+                                colors,
                             )
                         };
                         if changed && gp_rumble {
