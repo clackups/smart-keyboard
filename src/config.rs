@@ -27,6 +27,8 @@ pub struct KeyboardInputConfig {
     pub navigate_right: u32,
     /// Linux evdev scan code for "activate" (default: 0x39 KEY_SPACE).
     pub activate: u32,
+    /// Linux evdev scan code for "menu" (default: 0x32 KEY_M).
+    pub menu: u32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -49,6 +51,10 @@ pub struct GamepadInputConfig {
     /// Default: 0x05.
     #[serde(default = "default_activate")]
     pub activate: Option<u32>,
+    /// Button index for "menu"; absent / `null` means disabled.
+    /// Default: 0x08.
+    #[serde(default = "default_menu")]
+    pub menu: Option<u32>,
     /// Axis index used for left/right navigation.
     /// Negative axis values → Left, positive → Right.
     /// Absent / `null` means disabled.
@@ -67,6 +73,11 @@ pub struct GamepadInputConfig {
     /// Default: 0x05.
     #[serde(default = "default_axis_activate")]
     pub axis_activate: Option<u32>,
+    /// Axis index for the menu action.
+    /// Positive axis values above `axis_threshold` trigger Menu.
+    /// Absent / `null` means disabled.
+    #[serde(default)]
+    pub axis_menu: Option<u32>,
     /// Minimum absolute axis value (0–32767) needed to register as active.
     /// Compared as `|value| > axis_threshold` against the raw i16 axis value.
     /// Default: 16384 (half of the maximum i16 range).
@@ -93,6 +104,7 @@ pub struct GamepadInputConfig {
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
+fn default_menu()                     -> Option<u32> { Some(0x08) }
 fn default_axis_navigate_horizontal() -> Option<u32> { Some(0) }
 fn default_axis_navigate_vertical()   -> Option<u32> { Some(1) }
 fn default_axis_activate()            -> Option<u32> { Some(0x05) }
@@ -313,6 +325,7 @@ impl Default for KeyboardInputConfig {
             navigate_left:  0x69,
             navigate_right: 0x6a,
             activate:       0x39,
+            menu:           0x32,
         }
     }
 }
@@ -327,9 +340,11 @@ impl Default for GamepadInputConfig {
             navigate_left:  None,
             navigate_right: None,
             activate:       default_activate(),
+            menu:           default_menu(),
             axis_navigate_horizontal: default_axis_navigate_horizontal(),
             axis_navigate_vertical:   default_axis_navigate_vertical(),
             axis_activate:            default_axis_activate(),
+            axis_menu:                None,
             axis_threshold:           default_axis_threshold(),
             absolute_axes:            false,
             rumble:                   false,
@@ -393,6 +408,7 @@ pub fn evdev_to_fltk_key(evdev: u32) -> Option<Key> {
         0x0e => 0xff08,       // KEY_BACKSPACE   → Key::BackSpace
         0x0f => 0xff09,       // KEY_TAB         → Key::Tab
         0x1c => 0xff0d,       // KEY_ENTER       → Key::Enter
+        0x32 => 0x6d,         // KEY_M           → 'm' (ASCII)
         0x39 => 0x20,         // KEY_SPACE       → space (ASCII)
         0x67 => 0xff52,       // KEY_UP          → Key::Up
         0x6c => 0xff54,       // KEY_DOWN        → Key::Down
@@ -433,6 +449,7 @@ pub struct NavKeys {
     pub left:  Key,
     pub right: Key,
     pub activate: Key,
+    pub menu: Key,
 }
 
 impl NavKeys {
@@ -445,6 +462,7 @@ impl NavKeys {
             left:     evdev_to_fltk_key(cfg.navigate_left)  .unwrap_or(Key::Left),
             right:    evdev_to_fltk_key(cfg.navigate_right) .unwrap_or(Key::Right),
             activate: evdev_to_fltk_key(cfg.activate)       .unwrap_or(Key::from_char(' ')),
+            menu:     evdev_to_fltk_key(cfg.menu)           .unwrap_or(Key::from_char('m')),
         }
     }
 }

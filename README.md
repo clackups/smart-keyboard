@@ -83,6 +83,7 @@ codes in decimal or hexadecimal (see `/usr/include/linux/input-event-codes.h`).
 | `navigate_left` | `0x69` (`KEY_LEFT`) | Move selection one column left |
 | `navigate_right` | `0x6a` (`KEY_RIGHT`) | Move selection one column right |
 | `activate` | `0x39` (`KEY_SPACE`) | Type the currently selected key |
+| `menu` | `0x32` (`KEY_M`) | Open the application pop-up menu |
 
 **Example**
 
@@ -93,6 +94,7 @@ navigate_down  = 0x6c   # KEY_DOWN
 navigate_left  = 0x69   # KEY_LEFT
 navigate_right = 0x6a   # KEY_RIGHT
 activate       = 0x39   # KEY_SPACE
+menu           = 0x32   # KEY_M
 ```
 
 ---
@@ -123,6 +125,7 @@ a key to disable that action.
 | `navigate_left` | *(disabled)* | Button index for move-left |
 | `navigate_right` | *(disabled)* | Button index for move-right |
 | `activate` | `0x05` | Button index for activate (type selected key). `0x05` is the A/South button on most gamepads. |
+| `menu` | `0x08` | Button index for opening the application pop-up menu. `0x08` is typically the Start/Menu button. Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
 
@@ -131,6 +134,7 @@ a key to disable that action.
 | `axis_navigate_horizontal` | `0` | Axis index for left/right navigation (left stick X on most gamepads). Negative values → Left, positive → Right. Remove/null to disable. |
 | `axis_navigate_vertical` | `1` | Axis index for up/down navigation (left stick Y on most gamepads). Negative values → Up, positive → Down. Remove/null to disable. |
 | `axis_activate` | `0x05` | Axis index whose positive values trigger Activate (e.g. a trigger axis). Remove/null to disable. |
+| `axis_menu` | *(disabled)* | Axis index whose positive values trigger Menu (e.g. a trigger axis). Remove/null to disable. |
 | `axis_threshold` | `16384` | Minimum absolute axis value (0–32767) required to register a direction or activation. Raw axis values range from −32767 to +32767; `16384` corresponds to approximately half-deflection. |
 
 #### Absolute-axes mode
@@ -160,12 +164,14 @@ device  = "auto"
 # navigate_left  = 0x02
 # navigate_right = 0x03
 activate = 0x05   # A/South button
+menu     = 0x08   # Start/Menu button
 
 # Analog stick navigation
 # axis_navigate_horizontal = 0
 # axis_navigate_vertical   = 1
 # axis_threshold           = 16384
 axis_activate = 0x05
+# axis_menu     = null
 
 # Absolute-axes mode (for touchpad-style controllers)
 # absolute_axes = false
@@ -175,6 +181,31 @@ axis_activate = 0x05
 # rumble_duration_ms = 50
 # rumble_magnitude   = 16384
 ```
+
+---
+
+### Pop-up menu
+
+When the menu key (`input.keyboard.menu`, default: `M`) or gamepad menu button
+(`input.gamepad.menu`, default: `0x08`) is pressed, a pop-up menu appears in
+the centre of the screen.
+
+The cursor starts on the first enabled item.  Navigate vertically with the
+standard navigation keys (up / down or the gamepad stick / D-pad) and confirm
+the selection with the activate key (Space or gamepad activate button).  Press
+Escape or the menu key again to close the menu without taking any action.
+
+If all menu items are currently disabled, the menu event is silently ignored
+and the menu does not appear.
+
+#### Menu items
+
+| Item | Description | Enabled when |
+|------|-------------|--------------|
+| **Disconnect BLE** | Sends the `Z` disconnect command to the BLE dongle, dropping the active BLE link to the remote host. | BLE output mode is active (`[output] mode = "ble"`) **and** the dongle is currently connected. |
+
+More items can be added in the future by appending `MenuItemDef` entries to
+the `menu_item_defs` vector in `src/main.rs`.
 
 ---
 

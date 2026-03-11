@@ -5,6 +5,7 @@ navigate_down  = 0x6c   # KEY_DOWN
 navigate_left  = 0x69   # KEY_LEFT
 navigate_right = 0x6a   # KEY_RIGHT
 activate       = 0x39   # KEY_SPACE
+menu           = 0x32   # KEY_M
 
 [input.gamepad]
 enabled = true
@@ -15,11 +16,13 @@ device  = "auto"        # Auto-detect first connected gamepad
 # navigate_left  = 0x02
 # navigate_right = 0x03
 activate       = 0x05   # A/South button; comment out or remove to disable
+menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
 # axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
 # axis_threshold            = 16384  # minimum |value| to register (0–32767)
 axis_activate             = 0x05  # axis index for Activate (positive only); comment out or remove to disable
+# axis_menu                 = null   # axis index for Menu (positive only); comment out or remove to disable
 # When absolute_axes = true the raw horizontal/vertical axis values are mapped
 # directly to keyboard positions rather than being treated as directional inputs.
 # The full axis range (−32767 … +32767) is divided evenly across the available

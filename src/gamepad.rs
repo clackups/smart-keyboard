@@ -37,6 +37,7 @@ pub enum GamepadAction {
     Left,
     Right,
     Activate,
+    Menu,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
     /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
     /// value) … `1.0` (max axis value).
@@ -179,15 +180,18 @@ pub struct Gamepad {
     navigate_left:  Option<u32>,
     navigate_right: Option<u32>,
     activate:       Option<u32>,
+    menu:           Option<u32>,
     // Axis configuration
     axis_horizontal: Option<u32>,         // axis index for left/right (None = disabled)
     axis_vertical:   Option<u32>,         // axis index for up/down (None = disabled)
     axis_activate:   Option<u32>,         // axis index for activate (None = disabled)
+    axis_menu:       Option<u32>,         // axis index for menu (None = disabled)
     axis_threshold:  i32,                 // minimum |value| to register as active
     // Axis state (tracks previous active direction to generate press/release)
     horiz_dir:   Option<AxisDir>,
     vert_dir:    Option<AxisDir>,
     act_active:  bool,
+    menu_active: bool,
     // Repeat timers: `Some(t)` means "fire next repeat event at time t".
     horiz_repeat_at: Option<Instant>,
     vert_repeat_at:  Option<Instant>,
@@ -240,13 +244,16 @@ impl Gamepad {
             navigate_left:  cfg.navigate_left,
             navigate_right: cfg.navigate_right,
             activate:       cfg.activate,
+            menu:           cfg.menu,
             axis_horizontal: cfg.axis_navigate_horizontal,
             axis_vertical:   cfg.axis_navigate_vertical,
             axis_activate:   cfg.axis_activate,
+            axis_menu:       cfg.axis_menu,
             axis_threshold:  cfg.axis_threshold,
             horiz_dir:       None,
             vert_dir:        None,
             act_active:      false,
+            menu_active:     false,
             horiz_repeat_at: None,
             vert_repeat_at:  None,
             axis_absolute:   cfg.absolute_axes,
@@ -382,6 +389,7 @@ impl Gamepad {
         if self.navigate_left  == Some(code) { return Some(GamepadAction::Left);     }
         if self.navigate_right == Some(code) { return Some(GamepadAction::Right);    }
         if self.activate       == Some(code) { return Some(GamepadAction::Activate); }
+        if self.menu           == Some(code) { return Some(GamepadAction::Menu);     }
         None
     }
 
@@ -432,6 +440,15 @@ impl Gamepad {
                         pressed: active,
                     });
                     self.act_active = active;
+                }
+            } else if self.axis_menu == Some(axis) {
+                let active = v > self.axis_threshold;
+                if active != self.menu_active {
+                    out.push(GamepadEvent {
+                        action:  GamepadAction::Menu,
+                        pressed: active,
+                    });
+                    self.menu_active = active;
                 }
             }
             return;
@@ -500,6 +517,16 @@ impl Gamepad {
                     pressed: active,
                 });
                 self.act_active = active;
+            }
+        } else if self.axis_menu == Some(axis) {
+            // Menu uses positive values only.
+            let active = v > self.axis_threshold;
+            if active != self.menu_active {
+                out.push(GamepadEvent {
+                    action:  GamepadAction::Menu,
+                    pressed: active,
+                });
+                self.menu_active = active;
             }
         }
     }
