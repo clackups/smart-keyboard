@@ -25,6 +25,13 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # The full axis range (−32767 … +32767) is divided evenly across the available
 # rows / columns.  Useful with touchpad-style controllers.
 # absolute_axes = false
+# When rumble = true, a short force-feedback rumble is sent to the gamepad on
+# every change of the keyboard navigation selection.
+# rumble = false
+# Duration of the rumble effect in milliseconds (default: 50).
+# rumble_duration_ms = 50
+# Intensity of both rumble motors: 0 = silent, 65535 = maximum (default: 16384 = 0x4000 ≈ 25 %).
+# rumble_magnitude = 16384
 
 [output]
 # Output mode: "print" | "ble"

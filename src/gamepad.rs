@@ -3,10 +3,14 @@
 // Non-blocking gamepad event polling using the Linux joystick API
 // (/dev/input/js*).  Each call to `Gamepad::poll` drains all pending events
 // and returns a list of `GamepadEvent` values without blocking.
+//
+// Force-feedback (rumble) is driven through the evdev event interface
+// (/dev/input/event*), which is separate from the joystick read interface.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -61,6 +65,105 @@ const JS_EVENT_INIT:   u8 = 0x80;
 const O_NONBLOCK: i32 = libc::O_NONBLOCK;
 
 // =============================================================================
+// Linux force-feedback types (used for rumble)
+// =============================================================================
+
+/// Trigger conditions for a force-feedback effect (both fields unused for
+/// simple one-shot rumble; set to 0).
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FfTrigger {
+    button:   u16,
+    interval: u16,
+}
+
+/// Playback timing for a force-feedback effect.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FfReplay {
+    /// Duration of the effect in milliseconds.
+    length: u16,
+    /// Delay before the effect starts in milliseconds.
+    delay:  u16,
+}
+
+/// Rumble (dual-motor) force-feedback effect parameters.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FfRumbleEffect {
+    strong_magnitude: u16,
+    weak_magnitude:   u16,
+}
+
+/// Union holding the type-specific parameters of a force-feedback effect.
+///
+/// The `align(8)` ensures that on 64-bit Linux the union starts at the same
+/// offset (16) as the C union inside `struct ff_effect`, matching the kernel's
+/// layout (the largest C union member, `ff_periodic_effect`, contains a
+/// pointer and therefore has 8-byte alignment).
+#[repr(C, align(8))]
+union FfEffectUnion {
+    rumble: FfRumbleEffect,
+    /// Padding to match the size of the largest C union member (32 bytes on
+    /// 64-bit Linux, occupied by `struct ff_periodic_effect`).
+    _pad: [u8; 32],
+}
+
+/// `struct ff_effect` from `<linux/input.h>`.
+///
+/// Layout on 64-bit Linux:
+/// - offset  0: type (2), id (2), direction (2), trigger (4), replay (4)
+/// - offset 14: 2 bytes implicit padding (aligns the union to 8 bytes)
+/// - offset 16: union (32 bytes)
+/// - total: 48 bytes
+#[repr(C)]
+struct FfEffect {
+    effect_type: u16,
+    /// Effect ID; set to -1 when uploading so the kernel assigns a new ID.
+    id:          i16,
+    direction:   u16,
+    trigger:     FfTrigger,
+    replay:      FfReplay,
+    // 2 bytes implicit padding inserted by the compiler to align `u` to 8.
+    u: FfEffectUnion,
+}
+
+// Compile-time check: FfEffect must be exactly 48 bytes on 64-bit Linux.
+// If this assertion fails the struct layout does not match the kernel ABI.
+const _: () = assert!(std::mem::size_of::<FfEffect>() == 48);
+
+/// `struct input_event` from `<linux/input.h>` (64-bit layout: 24 bytes).
+#[repr(C)]
+struct InputEvent {
+    /// Timestamp (ignored when writing); 16 bytes (`struct timeval` on 64-bit).
+    time:    [u8; 16],
+    ev_type: u16,
+    code:    u16,
+    value:   i32,
+}
+
+/// Force-feedback rumble effect type (`FF_RUMBLE`).
+const FF_RUMBLE: u16 = 0x50;
+
+/// EV_FF event type (used to play / stop uploaded effects).
+const EV_FF: u16 = 0x15;
+
+/// `EVIOCSFF` ioctl: upload / update a force-feedback effect.
+///
+/// Computed as `_IOW('E', 0x80, struct ff_effect)`:
+///   (IOC_WRITE=1 << 30) | ('E' << 8) | 0x80 | (sizeof(ff_effect) << 16)
+///   = 0x40000000 | 0x4500 | 0x0080 | (48 << 16)
+///   = 0x40304580
+const EVIOCSFF: libc::c_ulong =
+    (1u64 << 30) as libc::c_ulong
+    | ((b'E' as u64) << 8) as libc::c_ulong
+    | 0x80
+    | ((std::mem::size_of::<FfEffect>() as u64) << 16) as libc::c_ulong;
+
+// Validate that the EVIOCSFF constant matches the expected value.
+const _: () = assert!(EVIOCSFF == 0x40304580);
+
+// =============================================================================
 // Gamepad
 // =============================================================================
 
@@ -92,6 +195,9 @@ pub struct Gamepad {
     axis_absolute:  bool,    // true when absolute_axes = true in config
     abs_horiz_raw:  i16,     // last raw horizontal axis value (absolute mode)
     abs_vert_raw:   i16,     // last raw vertical axis value (absolute mode)
+    // Force-feedback (rumble)
+    rumble_file:      Option<File>,  // event device opened for writing FF events
+    rumble_effect_id: i16,           // ID assigned by the kernel for the rumble effect
 }
 
 impl Gamepad {
@@ -114,6 +220,19 @@ impl Gamepad {
 
         eprintln!("[gamepad] opened {:?}", path);
 
+        // Optionally open the corresponding evdev event device for force feedback.
+        let (rumble_file, rumble_effect_id) = if cfg.rumble {
+            match open_rumble(&path, cfg.rumble_duration_ms, cfg.rumble_magnitude) {
+                Some((f, id)) => (Some(f), id),
+                None => {
+                    eprintln!("[gamepad] rumble requested but not available on {:?}", path);
+                    (None, -1)
+                }
+            }
+        } else {
+            (None, -1)
+        };
+
         Some(Gamepad {
             file,
             navigate_up:    cfg.navigate_up,
@@ -133,7 +252,37 @@ impl Gamepad {
             axis_absolute:   cfg.absolute_axes,
             abs_horiz_raw:   0,
             abs_vert_raw:    0,
+            rumble_file,
+            rumble_effect_id,
         })
+    }
+
+    /// Play a short rumble on the gamepad, if force-feedback is available.
+    ///
+    /// Does nothing when the device was opened without rumble support or when
+    /// the effect upload failed at open time.
+    pub fn rumble(&mut self) {
+        let Some(ref rumble_file) = self.rumble_file else { return };
+        if self.rumble_effect_id < 0 { return; }
+
+        let ev = InputEvent {
+            time:    [0u8; 16],
+            ev_type: EV_FF,
+            code:    self.rumble_effect_id as u16,
+            value:   1, // play once
+        };
+        // SAFETY: `InputEvent` is `repr(C)` with no padding; the byte slice
+        // covers exactly the bytes that would be written to the kernel.
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(
+                &ev as *const InputEvent as *const u8,
+                std::mem::size_of::<InputEvent>(),
+            )
+        };
+        use std::io::Write;
+        if let Err(e) = (&*rumble_file).write_all(bytes) {
+            eprintln!("[gamepad] rumble: write failed: {}", e);
+        }
     }
 
     /// Drain all pending joystick events into `out` without blocking.
@@ -370,6 +519,79 @@ fn find_first_joystick() -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Find the `/dev/input/eventN` device that corresponds to a joystick path
+/// such as `/dev/input/js0` by inspecting the sysfs class tree.
+///
+/// Returns `None` if no matching event device is found.
+fn find_event_device_for_joystick(js_path: &std::path::Path) -> Option<PathBuf> {
+    let js_name = js_path.file_name()?.to_str()?;
+    // Enumerate /sys/class/input/<jsN>/device/ looking for eventN children.
+    let sysfs_device = format!("/sys/class/input/{}/device", js_name);
+    for entry in std::fs::read_dir(&sysfs_device).ok()?.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with("event") {
+            let event_path = PathBuf::from(format!("/dev/input/{}", name_str));
+            if event_path.exists() {
+                return Some(event_path);
+            }
+        }
+    }
+    None
+}
+
+/// Open the evdev event device corresponding to `js_path` for force-feedback
+/// and upload a rumble effect with the given duration and magnitude.
+///
+/// Returns `Some((file, effect_id))` on success, or `None` when the event
+/// device cannot be found / opened or the ioctl fails.
+fn open_rumble(
+    js_path:     &std::path::Path,
+    duration_ms: u16,
+    magnitude:   u16,
+) -> Option<(File, i16)> {
+    let event_path = find_event_device_for_joystick(js_path)?;
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&event_path)
+        .ok()?;
+
+    eprintln!("[gamepad] rumble: opened {:?}", event_path);
+
+    // Upload the rumble effect.  The kernel fills in `id` on success; we pass
+    // -1 to request a fresh slot.
+    let mut effect = FfEffect {
+        effect_type: FF_RUMBLE,
+        id:          -1,
+        direction:   0,
+        trigger:     FfTrigger  { button: 0, interval: 0 },
+        replay:      FfReplay   { length: duration_ms, delay: 0 },
+        u:           FfEffectUnion { rumble: FfRumbleEffect {
+            strong_magnitude: magnitude,
+            weak_magnitude:   magnitude,
+        }},
+    };
+
+    // SAFETY: `effect` is a valid `FfEffect`; `EVIOCSFF` is the correct ioctl
+    // for this pointer type on the event device file descriptor.
+    let ret = unsafe {
+        libc::ioctl(file.as_raw_fd(), EVIOCSFF, &mut effect as *mut FfEffect)
+    };
+
+    if ret < 0 {
+        eprintln!(
+            "[gamepad] rumble: EVIOCSFF failed: {}",
+            std::io::Error::last_os_error()
+        );
+        return None;
+    }
+
+    eprintln!("[gamepad] rumble effect id={}", effect.id);
+    Some((file, effect.id))
 }
 
 // =============================================================================
