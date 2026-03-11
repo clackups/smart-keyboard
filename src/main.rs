@@ -220,6 +220,7 @@ fn closest_lang(lang_btns: &[Button], cx: i32) -> usize {
 /// Apply a specific navigation selection, updating highlight colours.
 ///
 /// Does nothing if `new_sel` equals the current `*sel`.
+/// Returns `true` if the selection changed, `false` if it was already at `new_sel`.
 fn nav_set(
     all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
     lang_btns:  &mut Vec<Button>,
@@ -227,10 +228,10 @@ fn nav_set(
     sel:        &mut NavSel,
     mod_state:  &Rc<RefCell<ModState>>,
     new_sel:    NavSel,
-) {
+) -> bool {
     // Nothing to do when already at the target.
     if new_sel == *sel {
-        return;
+        return false;
     }
 
     // Restore the old selection's colour.
@@ -266,6 +267,7 @@ fn nav_set(
 
     *sel = new_sel;
     app::redraw();
+    true
 }
 
 /// Move the keyboard-navigation cursor and update highlight colours.
@@ -273,6 +275,9 @@ fn nav_set(
 /// Navigation clamps at all edges (no wrap-around).
 /// The cursor can move between the language-button strip and the keyboard grid;
 /// vertical transitions are pixel-centre aligned so wide keys map naturally.
+///
+/// Returns `true` if the selection actually changed, `false` if it was already
+/// at the edge in the requested direction.
 fn nav_move(
     all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
     lang_btns:  &mut Vec<Button>,
@@ -281,7 +286,7 @@ fn nav_move(
     mod_state:  &Rc<RefCell<ModState>>,
     dr:         i32,
     dc:         i32,
-) {
+) -> bool {
     let new_sel: NavSel = match *sel {
         NavSel::Lang(li) => {
             if dr < 0 {
@@ -349,7 +354,7 @@ fn nav_move(
         }
     };
 
-    nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel);
+    nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel)
 }
 
 // =============================================================================
@@ -968,12 +973,31 @@ fn main() {
         all_btns.borrow_mut().push(btn_row);
     }
 
-    // --- Initial navigation highlight at (row=0, col=0) ---
+    // --- Initial navigation highlight ---
+    // When absolute_axes is enabled the joystick covers the full axis range and
+    // starts at the physical centre, so initialise the selection at the centre
+    // of the keyboard grid.  Otherwise start at the top-left key (row 0, col 0).
+    let (init_row, init_col) = {
+        let ab = all_btns.borrow();
+        if cfg.input.gamepad.absolute_axes && !ab.is_empty() {
+            let mid_row = ab.len() / 2;
+            let mid_col = if ab[mid_row].is_empty() { 0 } else { ab[mid_row].len() / 2 };
+            (mid_row, mid_col)
+        } else {
+            (0, 0)
+        }
+    };
     {
         let mut ab = all_btns.borrow_mut();
-        ab[0][0].0.set_color(col_nav_sel());
-        let _ = ab[0][0].0.take_focus();
+        ab[init_row][init_col].0.set_color(col_nav_sel());
+        let _ = ab[init_row][init_col].0.take_focus();
     }
+    *sel.borrow_mut() = NavSel::Key(init_row, init_col);
+
+    // --- Shared gamepad cell (also used by the keyboard handler for rumble) ---
+    // Created here (before the keyboard handler closure) so both the keyboard
+    // handler and the gamepad polling timer can share the same instance.
+    let gp_cell: Rc<RefCell<Option<Gamepad>>> = Rc::new(RefCell::new(None));
 
     // --- Navigation: physical arrow keys + spacebar ---
     // super_handle_first(false) makes the Rust handler run BEFORE FLTK routes
@@ -990,6 +1014,8 @@ fn main() {
         let mut disp_c        = disp.clone();
         let hook_c            = Rc::clone(&hook);
         let active_nav_key_c  = active_nav_key.clone();
+        let gp_cell_c         = gp_cell.clone();
+        let gp_rumble         = cfg.input.gamepad.rumble;
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1012,10 +1038,17 @@ fn main() {
                                    else if k == nav_keys.down  { ( 1,  0) }
                                    else if k == nav_keys.left  { ( 0, -1) }
                                    else                        { ( 0,  1) }; // right
-                    let mut ab = all_btns_c.borrow_mut();
-                    let mut lb = lang_btns_c.borrow_mut();
-                    let mut s  = sel_c.borrow_mut();
-                    nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc);
+                    let changed = {
+                        let mut ab = all_btns_c.borrow_mut();
+                        let mut lb = lang_btns_c.borrow_mut();
+                        let mut s  = sel_c.borrow_mut();
+                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc)
+                    };
+                    if changed && gp_rumble {
+                        if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                            gp.rumble();
+                        }
+                    }
                     return true;
                 }
 
@@ -1076,8 +1109,10 @@ fn main() {
     if cfg.input.gamepad.enabled {
         // Clone config for use inside the reconnection closure.
         let gp_cfg = cfg.input.gamepad.clone();
-        // Wrap in Option so we can detect disconnection and reconnect.
-        let gp_cell = Rc::new(RefCell::new(Gamepad::open(&cfg.input.gamepad)));
+        let gp_rumble = cfg.input.gamepad.rumble;
+
+        // Open the gamepad now and store it in the shared gp_cell.
+        *gp_cell.borrow_mut() = Gamepad::open(&cfg.input.gamepad);
 
         // Update the initial gamepad icon state based on whether the device
         // was found at startup.
@@ -1099,6 +1134,7 @@ fn main() {
         let hook_c            = Rc::clone(&hook);
         let active_nav_key_c  = active_nav_key.clone();
         let mut gamepad_status_t = gamepad_status.clone();
+        let gp_cell_t         = gp_cell.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -1108,11 +1144,11 @@ fn main() {
         // the timer slows to 1 Hz and retries opening the device.
         app::add_timeout3(0.016, move |handle| {
             // Phase 1 – reconnect if currently disconnected.
-            if gp_cell.borrow().is_none() {
+            if gp_cell_t.borrow().is_none() {
                 match Gamepad::open(&gp_cfg) {
                     Some(gp) => {
                         eprintln!("[gamepad] reconnected");
-                        *gp_cell.borrow_mut() = Some(gp);
+                        *gp_cell_t.borrow_mut() = Some(gp);
                         if let Some(ref mut icon) = gamepad_status_t {
                             icon.set_label_color(col_conn_connected());
                             app::redraw();
@@ -1129,13 +1165,13 @@ fn main() {
 
             // Phase 2 – poll for events; detect disconnection.
             let still_alive = {
-                let mut opt = gp_cell.borrow_mut();
+                let mut opt = gp_cell_t.borrow_mut();
                 opt.as_mut().unwrap().poll(&mut gp_evt_buf)
             };
 
             if !still_alive {
                 eprintln!("[gamepad] disconnected");
-                *gp_cell.borrow_mut() = None;
+                *gp_cell_t.borrow_mut() = None;
                 if let Some(ref mut icon) = gamepad_status_t {
                     icon.set_label_color(col_conn_disconnected());
                     app::redraw();
@@ -1161,15 +1197,22 @@ fn main() {
                             GamepadAction::Left  => ( 0, -1),
                             _                    => ( 0,  1), // Right
                         };
-                        let mut ab = all_btns_c.borrow_mut();
-                        let mut lb = lang_btns_c.borrow_mut();
-                        let mut s  = sel_c.borrow_mut();
-                        nav_move(
-                            &mut ab, &mut lb,
-                            *layout_idx_c.borrow(),
-                            &mut s, &mod_state_c,
-                            dr, dc,
-                        );
+                        let changed = {
+                            let mut ab = all_btns_c.borrow_mut();
+                            let mut lb = lang_btns_c.borrow_mut();
+                            let mut s  = sel_c.borrow_mut();
+                            nav_move(
+                                &mut ab, &mut lb,
+                                *layout_idx_c.borrow(),
+                                &mut s, &mod_state_c,
+                                dr, dc,
+                            )
+                        };
+                        if changed && gp_rumble {
+                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                gp.rumble();
+                            }
+                        }
                     }
                     GamepadAction::Activate => {
                         if evt.pressed {
@@ -1224,22 +1267,29 @@ fn main() {
                             (row, col)
                         };
                         let new_sel = NavSel::Key(row, col);
-                        // Only update (and log) when the selection actually changes.
-                        if new_sel == *sel_c.borrow() { continue; }
                         #[cfg(debug_assertions)]
-                        eprintln!(
-                            "[gamepad] abs_pos horiz={:.3} vert={:.3} → row={} col={}",
-                            horiz, vert, row, col
-                        );
-                        let mut ab = all_btns_c.borrow_mut();
-                        let mut lb = lang_btns_c.borrow_mut();
-                        let mut s  = sel_c.borrow_mut();
-                        nav_set(
-                            &mut ab, &mut lb,
-                            *layout_idx_c.borrow(),
-                            &mut s, &mod_state_c,
-                            new_sel,
-                        );
+                        if new_sel != *sel_c.borrow() {
+                            eprintln!(
+                                "[gamepad] abs_pos horiz={:.3} vert={:.3} → row={} col={}",
+                                horiz, vert, row, col
+                            );
+                        }
+                        let changed = {
+                            let mut ab = all_btns_c.borrow_mut();
+                            let mut lb = lang_btns_c.borrow_mut();
+                            let mut s  = sel_c.borrow_mut();
+                            nav_set(
+                                &mut ab, &mut lb,
+                                *layout_idx_c.borrow(),
+                                &mut s, &mod_state_c,
+                                new_sel,
+                            )
+                        };
+                        if changed && gp_rumble {
+                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                gp.rumble();
+                            }
+                        }
                     }
                 }
             }

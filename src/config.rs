@@ -79,6 +79,10 @@ pub struct GamepadInputConfig {
     /// available rows/columns.  Default: false.
     #[serde(default)]
     pub absolute_axes: bool,
+    /// When `true`, a short force-feedback rumble is sent to the gamepad on
+    /// every change of the keyboard navigation selection.  Default: false.
+    #[serde(default)]
+    pub rumble: bool,
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
@@ -177,6 +181,7 @@ impl Default for GamepadInputConfig {
             axis_activate:            default_axis_activate(),
             axis_threshold:           default_axis_threshold(),
             absolute_axes:            false,
+            rumble:                   false,
         }
     }
 }
