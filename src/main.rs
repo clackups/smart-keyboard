@@ -1,6 +1,7 @@
 mod config;
 mod gamepad;
 mod keyboards;
+mod narrator;
 mod output;
 
 use std::cell::RefCell;
@@ -23,6 +24,7 @@ use keyboards::{
 };
 
 use gamepad::{Gamepad, GamepadAction, GamepadEvent};
+use narrator::Narrator;
 
 // =============================================================================
 // Key hooks
@@ -577,6 +579,99 @@ fn execute_action(
 }
 
 // =============================================================================
+// Audio narration slugs
+// =============================================================================
+
+/// Map a label string to a filesystem-safe slug used as the WAV filename stem.
+///
+/// * ASCII alphanumerics are kept as-is.
+/// * Known ASCII punctuation is mapped to descriptive words.
+/// * Any other character (e.g. Cyrillic) is encoded as `uXXXX`.
+fn label_to_audio_slug(label: &str) -> String {
+    label
+        .chars()
+        .map(|c| match c {
+            '`'  => "backtick".to_string(),
+            '-'  => "minus".to_string(),
+            '='  => "equals".to_string(),
+            '['  => "lbracket".to_string(),
+            ']'  => "rbracket".to_string(),
+            '\\' => "backslash".to_string(),
+            ';'  => "semicolon".to_string(),
+            '\'' => "apostrophe".to_string(),
+            ','  => "comma".to_string(),
+            '.'  => "period".to_string(),
+            '/'  => "slash".to_string(),
+            _ if c.is_ascii_alphanumeric() => c.to_string(),
+            _    => format!("u{:04x}", c as u32),
+        })
+        .collect()
+}
+
+/// Return the audio-file slug for an [`Action`] in the given layout.
+///
+/// The slug is the stem of the corresponding `.wav` file inside the audio
+/// directory.  Returns an empty string for actions that carry no narration
+/// (e.g. [`Action::Noop`]).
+fn action_audio_slug(action: Action, layout_idx: usize) -> String {
+    match action {
+        Action::Regular(slot) => {
+            let layout_name = keyboards::LAYOUTS[layout_idx].name.to_lowercase();
+            let label = keyboards::LAYOUTS[layout_idx].keys[slot].label_unshifted;
+            format!("{}_{}", layout_name, label_to_audio_slug(label))
+        }
+        Action::Backspace  => "backspace".to_string(),
+        Action::Tab        => "tab".to_string(),
+        Action::CapsLock   => "capslock".to_string(),
+        Action::Enter      => "enter".to_string(),
+        Action::LShift | Action::RShift => "shift".to_string(),
+        Action::Ctrl       => "ctrl".to_string(),
+        Action::Win        => "win".to_string(),
+        Action::Alt        => "alt".to_string(),
+        Action::AltGr      => "altgr".to_string(),
+        Action::Space      => "space".to_string(),
+        Action::Esc        => "esc".to_string(),
+        Action::F1         => "f1".to_string(),
+        Action::F2         => "f2".to_string(),
+        Action::F3         => "f3".to_string(),
+        Action::F4         => "f4".to_string(),
+        Action::F5         => "f5".to_string(),
+        Action::F6         => "f6".to_string(),
+        Action::F7         => "f7".to_string(),
+        Action::F8         => "f8".to_string(),
+        Action::F9         => "f9".to_string(),
+        Action::F10        => "f10".to_string(),
+        Action::F11        => "f11".to_string(),
+        Action::F12        => "f12".to_string(),
+        Action::Insert     => "insert".to_string(),
+        Action::Delete     => "delete".to_string(),
+        Action::Home       => "home".to_string(),
+        Action::End        => "end".to_string(),
+        Action::PageUp     => "pageup".to_string(),
+        Action::PageDown   => "pagedown".to_string(),
+        Action::ArrowUp    => "up".to_string(),
+        Action::ArrowDown  => "down".to_string(),
+        Action::ArrowLeft  => "left".to_string(),
+        Action::ArrowRight => "right".to_string(),
+        Action::Noop       => String::new(),
+    }
+}
+
+/// Return the audio-file slug for the current navigation selection.
+fn nav_audio_slug(
+    sel: NavSel,
+    layout_idx: usize,
+    all_btns: &[Vec<(Button, Action, u16, Color)>],
+) -> String {
+    match sel {
+        NavSel::Lang(li) => {
+            format!("lang_{}", keyboards::LAYOUTS[li].name.to_lowercase())
+        }
+        NavSel::Key(row, col) => action_audio_slug(all_btns[row][col].1, layout_idx),
+    }
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -589,6 +684,9 @@ fn main() {
     let cfg = config::Config::load();
     let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
     let colors = Colors::from_config(&cfg.ui.colors);
+
+    // Build the narrator early so it can be cloned into closures below.
+    let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.narrate)));
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
@@ -909,6 +1007,7 @@ fn main() {
         let all_btns_c    = all_btns.clone();
         let sel_c         = sel.clone();
         let mod_state_c   = mod_state.clone();
+        let narrator_c    = narrator.clone();
         btn.set_callback(move |_| {
             // Execute the language switch.
             *layout_idx_c.borrow_mut() = li;
@@ -948,6 +1047,9 @@ fn main() {
             lang_btns_c.borrow_mut()[li].set_color(colors.nav_sel);
             let _ = lang_btns_c.borrow_mut()[li].take_focus();
             *sel_c.borrow_mut() = NavSel::Lang(li);
+            narrator_c.borrow_mut().play(
+                &format!("lang_{}", LAYOUTS[li].name.to_lowercase())
+            );
             app::redraw();
         });
         lang_btns.borrow_mut().push(btn);
@@ -1038,6 +1140,7 @@ fn main() {
                 let mut buf_c    = buf.clone();
                 let mut disp_c   = disp.clone();
                 let hook_c       = Rc::clone(&hook);
+                let narrator_c   = narrator.clone();
                 let action       = phys.action;
                 let scancode     = phys.scancode;
                 btn.set_callback(move |_| {
@@ -1055,34 +1158,39 @@ fn main() {
                     // receives K0000 right after the press.
                     hook_c.on_key_release(scancode, &key_str);
                     // Move the amber highlight to the clicked button.
-                    let mut ab = all_btns_c.borrow_mut();
-                    let mut s  = sel_c.borrow_mut();
-                    // Restore the previously highlighted button's colour.
-                    match *s {
-                        NavSel::Key(old_r, old_c) => {
-                            let old_action = ab[old_r][old_c].1;
-                            let old_base   = ab[old_r][old_c].3;
-                            let restore = if is_modifier(old_action)
-                                && mod_state_c.borrow().is_active(old_action)
-                            {
-                                colors.mod_active
-                            } else {
-                                old_base
-                            };
-                            ab[old_r][old_c].0.set_color(restore);
+                    {
+                        let mut ab = all_btns_c.borrow_mut();
+                        let mut s  = sel_c.borrow_mut();
+                        // Restore the previously highlighted button's colour.
+                        match *s {
+                            NavSel::Key(old_r, old_c) => {
+                                let old_action = ab[old_r][old_c].1;
+                                let old_base   = ab[old_r][old_c].3;
+                                let restore = if is_modifier(old_action)
+                                    && mod_state_c.borrow().is_active(old_action)
+                                {
+                                    colors.mod_active
+                                } else {
+                                    old_base
+                                };
+                                ab[old_r][old_c].0.set_color(restore);
+                            }
+                            NavSel::Lang(li) => {
+                                let restore = if li == *layout_idx_c.borrow() {
+                                    colors.mod_active
+                                } else {
+                                    colors.lang_btn_inactive
+                                };
+                                lang_btns_c.borrow_mut()[li].set_color(restore);
+                            }
                         }
-                        NavSel::Lang(li) => {
-                            let restore = if li == *layout_idx_c.borrow() {
-                                colors.mod_active
-                            } else {
-                                colors.lang_btn_inactive
-                            };
-                            lang_btns_c.borrow_mut()[li].set_color(restore);
-                        }
+                        ab[row_i][col_i].0.set_color(colors.nav_sel);
+                        let _ = ab[row_i][col_i].0.take_focus();
+                        *s = NavSel::Key(row_i, col_i);
                     }
-                    ab[row_i][col_i].0.set_color(colors.nav_sel);
-                    let _ = ab[row_i][col_i].0.take_focus();
-                    *s = NavSel::Key(row_i, col_i);
+                    narrator_c.borrow_mut().play(
+                        &action_audio_slug(action, *layout_idx_c.borrow())
+                    );
                     app::redraw();
                 });
             }
@@ -1141,6 +1249,12 @@ fn main() {
         let _ = ab[init_row][init_col].0.take_focus();
     }
     *sel.borrow_mut() = NavSel::Key(init_row, init_col);
+    {
+        let ab = all_btns.borrow();
+        narrator.borrow_mut().play(
+            &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab)
+        );
+    }
 
     // --- Shared gamepad cell (also used by the keyboard handler for rumble) ---
     // Created here (before the keyboard handler closure) so both the keyboard
@@ -1255,6 +1369,7 @@ fn main() {
         let active_nav_key_c  = active_nav_key.clone();
         let gp_cell_c         = gp_cell.clone();
         let gp_rumble         = cfg.input.gamepad.rumble;
+        let narrator_c        = narrator.clone();
         let menu_sel_c        = menu_sel.clone();
         let menu_items_c      = menu_item_defs.clone();
         let mut menu_item_btns_c = menu_item_btns.clone();
@@ -1322,10 +1437,17 @@ fn main() {
                         let mut s  = sel_c.borrow_mut();
                         nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors)
                     };
-                    if changed && gp_rumble {
-                        if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                            gp.rumble();
+                    if changed {
+                        if gp_rumble {
+                            if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                                gp.rumble();
+                            }
                         }
+                        let sel = *sel_c.borrow();
+                        let ab  = all_btns_c.borrow();
+                        narrator_c.borrow_mut().play(
+                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab)
+                        );
                     }
                     return true;
                 }
@@ -1455,6 +1577,7 @@ fn main() {
         let active_nav_key_c  = active_nav_key.clone();
         let mut gamepad_status_t = gamepad_status.clone();
         let gp_cell_t         = gp_cell.clone();
+        let narrator_t        = narrator.clone();
         let menu_sel_gp       = menu_sel.clone();
         let menu_items_gp     = menu_item_defs.clone();
         let mut menu_item_btns_gp = menu_item_btns.clone();
@@ -1579,10 +1702,17 @@ fn main() {
                                 colors,
                             )
                         };
-                        if changed && gp_rumble {
-                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                gp.rumble();
+                        if changed {
+                            if gp_rumble {
+                                if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                    gp.rumble();
+                                }
                             }
+                            let sel = *sel_c.borrow();
+                            let ab  = all_btns_c.borrow();
+                            narrator_t.borrow_mut().play(
+                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab)
+                            );
                         }
                     }
                     GamepadAction::Activate => {
@@ -1706,10 +1836,17 @@ fn main() {
                                 colors,
                             )
                         };
-                        if changed && gp_rumble {
-                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                gp.rumble();
+                        if changed {
+                            if gp_rumble {
+                                if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                    gp.rumble();
+                                }
                             }
+                            let sel = *sel_c.borrow();
+                            let ab  = all_btns_c.borrow();
+                            narrator_t.borrow_mut().play(
+                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab)
+                            );
                         }
                     }
                 }

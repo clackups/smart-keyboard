@@ -162,6 +162,13 @@ pub struct OutputConfig {
     /// BLE dongle settings (used only when mode = "ble").
     #[serde(default)]
     pub ble: BleOutputConfig,
+    /// When `true`, play a short WAV clip naming each button on every change
+    /// of the keyboard-navigation selection.  Clips are loaded from the
+    /// directory given by `SMART_KBD_AUDIO_PATH` (env var) or from the
+    /// `audio/` sub-directory of the current working directory.
+    /// Default: `false`.
+    #[serde(default)]
+    pub narrate: bool,
 }
 
 // =============================================================================
