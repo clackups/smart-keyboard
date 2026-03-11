@@ -579,7 +579,7 @@ fn execute_action(
 }
 
 // =============================================================================
-// Audio narration slugs
+// Audio narration slugs and tone frequencies
 // =============================================================================
 
 /// Map a label string to a filesystem-safe slug used as the WAV filename stem.
@@ -671,6 +671,98 @@ fn nav_audio_slug(
     }
 }
 
+/// Return the tone frequency (Hz) for an [`Action`] in tone audio mode.
+///
+/// Key categories and their pitches:
+///
+/// 1. **All letter / punctuation keys, except F and J** → A5 (880 Hz).
+/// 2. **F and J** (the physical home-row bump keys, slots 29 & 32)
+///    → B5 (988 Hz) — a distinctive major second above the other letters.
+/// 3. **Digit keys 1–0** → ascending C-major scale C4–E5 (261–659 Hz),
+///    with 1 the lowest pitch and 0 the highest.
+/// 4. **Function keys F1–F12** → ascending A-minor pentatonic A1–B3
+///    (55–247 Hz), clearly in the bass register below the digit range.
+/// 5. **All other keys** (Space, Enter, modifiers, arrows, …) → each key
+///    has its own unique pitch chosen for pleasant distinctiveness.
+///
+/// Returns `0.0` for [`Action::Noop`] (no tone should be played).
+fn tone_freq_for_action(action: Action) -> f32 {
+    match action {
+        // --- Regular keys ---
+        Action::Regular(slot) => match slot {
+            // Digit row: slots 1-10 → 1,2,3,4,5,6,7,8,9,0
+            // Ascending C-major scale C4..E5 (pitch rises from 1 to 0).
+            1  => 261.63,  // C4
+            2  => 293.66,  // D4
+            3  => 329.63,  // E4
+            4  => 349.23,  // F4
+            5  => 392.00,  // G4
+            6  => 440.00,  // A4
+            7  => 493.88,  // B4
+            8  => 523.25,  // C5
+            9  => 587.33,  // D5
+            10 => 659.26,  // E5  (key "0")
+            // F and J – physical home-row bump keys
+            29 | 32 => 987.77,  // B5
+            // All other letter / punctuation keys
+            _ => 880.00,        // A5
+        },
+        // --- Function keys: ascending A-minor pentatonic A1..B3 ---
+        Action::F1  =>  55.00,   // A1
+        Action::F2  =>  65.41,   // C2
+        Action::F3  =>  73.42,   // D2
+        Action::F4  =>  82.41,   // E2
+        Action::F5  =>  98.00,   // G2
+        Action::F6  => 110.00,   // A2
+        Action::F7  => 130.81,   // C3
+        Action::F8  => 146.83,   // D3
+        Action::F9  => 164.81,   // E3
+        Action::F10 => 196.00,   // G3
+        Action::F11 => 220.00,   // A3
+        Action::F12 => 246.94,   // B3
+        // --- Special keys ---
+        Action::Esc        => 1760.00,  // A6 – high/urgent
+        Action::Backspace  =>  415.30,  // Ab4
+        Action::Tab        =>  369.99,  // F#4
+        Action::CapsLock   =>  932.33,  // Bb5
+        Action::Enter      =>  554.37,  // C#5
+        Action::LShift | Action::RShift => 311.13,  // Eb4
+        Action::Ctrl       =>  277.18,  // Db4
+        Action::Win        =>  174.61,  // F3
+        Action::Alt        =>  233.08,  // Bb3
+        Action::AltGr      =>  207.65,  // Ab3
+        Action::Space      => 1046.50,  // C6
+        Action::Insert     => 1318.51,  // E6
+        Action::Delete     => 1244.51,  // Eb6
+        Action::Home       => 1174.66,  // D6
+        Action::End        => 1108.73,  // Db6
+        Action::PageUp     => 1396.91,  // F6
+        Action::PageDown   => 1567.98,  // G6
+        Action::ArrowUp    =>  783.99,  // G5
+        Action::ArrowDown  =>  739.99,  // F#5
+        Action::ArrowLeft  =>  698.46,  // F5
+        Action::ArrowRight =>  622.25,  // Eb5
+        Action::Noop       =>    0.00,
+    }
+}
+
+/// Tone frequency (Hz) used for language-toggle buttons in tone mode.
+/// E4 = 329.63 Hz – a neutral, distinctive pitch in the mid register.
+const LANG_BTN_TONE_HZ: f32 = 329.63;
+
+/// Return the tone frequency (Hz) for the current navigation selection.
+///
+/// Language-toggle buttons use [`LANG_BTN_TONE_HZ`] as a neutral, distinctive tone.
+fn nav_tone_freq(
+    sel: NavSel,
+    all_btns: &[Vec<(Button, Action, u16, Color)>],
+) -> f32 {
+    match sel {
+        NavSel::Lang(_) => LANG_BTN_TONE_HZ,
+        NavSel::Key(row, col) => tone_freq_for_action(all_btns[row][col].1),
+    }
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -686,7 +778,7 @@ fn main() {
     let colors = Colors::from_config(&cfg.ui.colors);
 
     // Build the narrator early so it can be cloned into closures below.
-    let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.narrate)));
+    let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.audio.clone())));
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
@@ -1048,7 +1140,8 @@ fn main() {
             let _ = lang_btns_c.borrow_mut()[li].take_focus();
             *sel_c.borrow_mut() = NavSel::Lang(li);
             narrator_c.borrow_mut().play(
-                &format!("lang_{}", LAYOUTS[li].name.to_lowercase())
+                &format!("lang_{}", LAYOUTS[li].name.to_lowercase()),
+                LANG_BTN_TONE_HZ,
             );
             app::redraw();
         });
@@ -1189,7 +1282,8 @@ fn main() {
                         *s = NavSel::Key(row_i, col_i);
                     }
                     narrator_c.borrow_mut().play(
-                        &action_audio_slug(action, *layout_idx_c.borrow())
+                        &action_audio_slug(action, *layout_idx_c.borrow()),
+                        tone_freq_for_action(action),
                     );
                     app::redraw();
                 });
@@ -1252,7 +1346,8 @@ fn main() {
     {
         let ab = all_btns.borrow();
         narrator.borrow_mut().play(
-            &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab)
+            &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab),
+            nav_tone_freq(NavSel::Key(init_row, init_col), &ab),
         );
     }
 
@@ -1446,7 +1541,8 @@ fn main() {
                         let sel = *sel_c.borrow();
                         let ab  = all_btns_c.borrow();
                         narrator_c.borrow_mut().play(
-                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab)
+                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                            nav_tone_freq(sel, &ab),
                         );
                     }
                     return true;
@@ -1711,7 +1807,8 @@ fn main() {
                             let sel = *sel_c.borrow();
                             let ab  = all_btns_c.borrow();
                             narrator_t.borrow_mut().play(
-                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab)
+                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                nav_tone_freq(sel, &ab),
                             );
                         }
                     }
@@ -1845,7 +1942,8 @@ fn main() {
                             let sel = *sel_c.borrow();
                             let ab  = all_btns_c.borrow();
                             narrator_t.borrow_mut().play(
-                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab)
+                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                nav_tone_freq(sel, &ab),
                             );
                         }
                     }
