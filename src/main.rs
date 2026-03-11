@@ -1175,6 +1175,8 @@ fn main() {
     menu_bg.set_color(colors.status_bar_bg);
     menu_bg.set_frame(FrameType::FlatBox);
 
+    // The leading underscore suppresses the "unused variable" warning; the
+    // Frame must be kept alive so FLTK renders it as part of menu_group.
     let mut _menu_title = Frame::new(
         menu_x + menu_inner_pad,
         menu_y + menu_inner_pad,
@@ -1255,7 +1257,7 @@ fn main() {
         let gp_rumble         = cfg.input.gamepad.rumble;
         let menu_sel_c        = menu_sel.clone();
         let menu_items_c      = menu_item_defs.clone();
-        let mut menu_item_btns_c  = menu_item_btns.clone();
+        let mut menu_item_btns_c = menu_item_btns.clone();
         let mut menu_group_c  = menu_group.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
@@ -1400,6 +1402,20 @@ fn main() {
                     }
                     return true;
                 }
+            } else if ev == Event::Push {
+                // When the menu is open, block mouse clicks that land outside
+                // the menu overlay so keyboard buttons in those areas cannot
+                // fire.  Clicks inside the menu area fall through so that FLTK
+                // routes them normally to the menu item buttons or menu_bg.
+                if menu_sel_c.borrow().is_some() {
+                    let ex = app::event_x();
+                    let ey = app::event_y();
+                    if ex < menu_x || ex >= menu_x + menu_w
+                        || ey < menu_y || ey >= menu_y + menu_h
+                    {
+                        return true; // absorb the click
+                    }
+                }
             }
 
             false
@@ -1441,7 +1457,7 @@ fn main() {
         let gp_cell_t         = gp_cell.clone();
         let menu_sel_gp       = menu_sel.clone();
         let menu_items_gp     = menu_item_defs.clone();
-        let mut menu_item_btns_gp   = menu_item_btns.clone();
+        let mut menu_item_btns_gp = menu_item_btns.clone();
         let mut menu_group_gp = menu_group.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
