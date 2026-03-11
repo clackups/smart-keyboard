@@ -216,12 +216,15 @@ Controls how key events are forwarded to the host or peripheral.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `mode` | `"print"` | Output mode. `"print"` writes key events to stdout (useful for debugging). `"ble"` sends USB HID reports to the BLE dongle (`esp_hid_serial_bridge`). |
+| `audio` | `"none"` | Audio feedback mode on navigation selection changes. `"none"` is silent. `"narrate"` plays a WAV clip naming each key (clips loaded from the `audio/` directory, or the path in `SMART_KBD_AUDIO_PATH`). `"tone"` plays a short synthesised musical tone that varies by key category (letters/punctuation, home-row bump keys F/J, digits 1–0, function keys F1–F12, and special keys each have a distinct pitch). |
 
 **Example**
 
 ```toml
 [output]
 mode = "print"
+# "none" (default) | "narrate" | "tone"
+audio = "none"
 ```
 
 ---
