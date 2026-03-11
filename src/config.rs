@@ -83,13 +83,22 @@ pub struct GamepadInputConfig {
     /// every change of the keyboard navigation selection.  Default: false.
     #[serde(default)]
     pub rumble: bool,
+    /// Duration of the rumble effect in milliseconds.  Default: 50.
+    #[serde(default = "default_rumble_duration_ms")]
+    pub rumble_duration_ms: u16,
+    /// Intensity of the rumble motors (0 = silent, 65535 = maximum).
+    /// Applied to both the strong and weak motors.  Default: 0x4000 (~25 %).
+    #[serde(default = "default_rumble_magnitude")]
+    pub rumble_magnitude: u16,
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
 fn default_axis_navigate_horizontal() -> Option<u32> { Some(0) }
 fn default_axis_navigate_vertical()   -> Option<u32> { Some(1) }
 fn default_axis_activate()            -> Option<u32> { Some(0x05) }
-fn default_axis_threshold()           -> i32 { 16384 }
+fn default_axis_threshold()           -> i32  { 16384 }
+fn default_rumble_duration_ms()       -> u16  { 50 }
+fn default_rumble_magnitude()         -> u16  { 0x4000 }
 
 #[derive(Deserialize)]
 pub struct InputConfig {
@@ -182,6 +191,8 @@ impl Default for GamepadInputConfig {
             axis_threshold:           default_axis_threshold(),
             absolute_axes:            false,
             rumble:                   false,
+            rumble_duration_ms:       default_rumble_duration_ms(),
+            rumble_magnitude:         default_rumble_magnitude(),
         }
     }
 }

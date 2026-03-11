@@ -222,7 +222,7 @@ impl Gamepad {
 
         // Optionally open the corresponding evdev event device for force feedback.
         let (rumble_file, rumble_effect_id) = if cfg.rumble {
-            match open_rumble(&path) {
+            match open_rumble(&path, cfg.rumble_duration_ms, cfg.rumble_magnitude) {
                 Some((f, id)) => (Some(f), id),
                 None => {
                     eprintln!("[gamepad] rumble requested but not available on {:?}", path);
@@ -543,11 +543,15 @@ fn find_event_device_for_joystick(js_path: &std::path::Path) -> Option<PathBuf> 
 }
 
 /// Open the evdev event device corresponding to `js_path` for force-feedback
-/// and upload a short rumble effect.
+/// and upload a rumble effect with the given duration and magnitude.
 ///
 /// Returns `Some((file, effect_id))` on success, or `None` when the event
 /// device cannot be found / opened or the ioctl fails.
-fn open_rumble(js_path: &std::path::Path) -> Option<(File, i16)> {
+fn open_rumble(
+    js_path:     &std::path::Path,
+    duration_ms: u16,
+    magnitude:   u16,
+) -> Option<(File, i16)> {
     let event_path = find_event_device_for_joystick(js_path)?;
 
     let file = OpenOptions::new()
@@ -558,17 +562,17 @@ fn open_rumble(js_path: &std::path::Path) -> Option<(File, i16)> {
 
     eprintln!("[gamepad] rumble: opened {:?}", event_path);
 
-    // Upload a short (50 ms) gentle rumble effect.  The kernel fills in `id` on
-    // success; we pass -1 to request a fresh slot.
+    // Upload the rumble effect.  The kernel fills in `id` on success; we pass
+    // -1 to request a fresh slot.
     let mut effect = FfEffect {
         effect_type: FF_RUMBLE,
         id:          -1,
         direction:   0,
         trigger:     FfTrigger  { button: 0, interval: 0 },
-        replay:      FfReplay   { length: 50, delay: 0 },
+        replay:      FfReplay   { length: duration_ms, delay: 0 },
         u:           FfEffectUnion { rumble: FfRumbleEffect {
-            strong_magnitude: 0x4000,
-            weak_magnitude:   0x4000,
+            strong_magnitude: magnitude,
+            weak_magnitude:   magnitude,
         }},
     };
 

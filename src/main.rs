@@ -979,6 +979,9 @@ fn main() {
     // of the keyboard grid.  Otherwise start at the top-left key (row 0, col 0).
     let (init_row, init_col) = {
         let ab = all_btns.borrow();
+        // Integer division rounds down, so for an even number of rows this
+        // picks the upper-middle row (e.g. row 2 of 4), matching where the
+        // joystick centred on the vertical axis would land.
         let mid_row = ab.len() / 2;
         if cfg.input.gamepad.absolute_axes
             && !ab.is_empty()
