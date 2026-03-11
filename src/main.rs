@@ -123,25 +123,25 @@ fn menu_move_sel(current: usize, dir: i32, items: &[MenuItemDef]) -> usize {
     current
 }
 
-/// Refresh the background and label colours of every menu item frame to
+/// Refresh the background and label colours of every menu item button to
 /// reflect the current selection and enabled state.
 fn menu_set_item_colors(
     sel:    Option<usize>,
     items:  &[MenuItemDef],
-    frames: &mut [Frame],
+    btns:   &mut [Button],
     colors: Colors,
 ) {
-    for (i, frame) in frames.iter_mut().enumerate() {
+    for (i, btn) in btns.iter_mut().enumerate() {
         let enabled = (items[i].is_enabled)();
         if Some(i) == sel {
-            frame.set_color(colors.nav_sel);
-            frame.set_label_color(colors.key_label_normal);
+            btn.set_color(colors.nav_sel);
+            btn.set_label_color(colors.key_label_normal);
         } else if enabled {
-            frame.set_color(colors.key_mod);
-            frame.set_label_color(colors.key_label_mod);
+            btn.set_color(colors.key_mod);
+            btn.set_label_color(colors.key_label_mod);
         } else {
-            frame.set_color(colors.status_ind_bg);
-            frame.set_label_color(colors.status_ind_text);
+            btn.set_color(colors.status_ind_bg);
+            btn.set_label_color(colors.status_ind_text);
         }
     }
 }
@@ -1171,9 +1171,9 @@ fn main() {
     // The Group is the last widget added to the window so it renders on top.
     let mut menu_group = Group::new(menu_x, menu_y, menu_w, menu_h, "");
 
-    let mut _menu_bg = Frame::new(menu_x, menu_y, menu_w, menu_h, "");
-    _menu_bg.set_color(colors.status_bar_bg);
-    _menu_bg.set_frame(FrameType::FlatBox);
+    let mut menu_bg = Frame::new(menu_x, menu_y, menu_w, menu_h, "");
+    menu_bg.set_color(colors.status_bar_bg);
+    menu_bg.set_frame(FrameType::FlatBox);
 
     let mut _menu_title = Frame::new(
         menu_x + menu_inner_pad,
@@ -1187,26 +1187,53 @@ fn main() {
     _menu_title.set_frame(FrameType::FlatBox);
     _menu_title.set_label_size(lbl_size);
 
-    let mut menu_item_frames: Vec<Frame> = Vec::new();
+    // Menu item widgets are Buttons so that:
+    //   • mouse clicks fire the item's callback directly, and
+    //   • keyboard focus can be moved here so Space/Enter reach the button
+    //     callback rather than the keyboard buttons behind the overlay.
+    let mut menu_item_btns: Vec<Button> = Vec::new();
     for (i, item) in menu_item_defs.iter().enumerate() {
         let fy = menu_y + menu_inner_pad + menu_title_h + gap
             + i as i32 * (menu_item_h + gap);
-        let mut f = Frame::new(
+        let mut b = Button::new(
             menu_x + menu_inner_pad,
             fy,
             menu_w - 2 * menu_inner_pad,
             menu_item_h,
-            item.label,
+            None,
         );
-        f.set_color(colors.key_mod);
-        f.set_label_color(colors.key_label_mod);
-        f.set_frame(FrameType::FlatBox);
-        f.set_label_size(lbl_size);
-        f.set_align(Align::Inside | Align::Left);
-        menu_item_frames.push(f);
+        b.set_label(item.label);
+        b.set_color(colors.key_mod);
+        b.set_label_color(colors.key_label_mod);
+        b.set_frame(FrameType::FlatBox);
+        b.set_label_size(lbl_size);
+        b.set_align(Align::Inside | Align::Left);
+        menu_item_btns.push(b);
     }
 
     menu_group.end();
+
+    // Give the background Frame an event handler so that clicks in the title /
+    // padding area are absorbed and cannot fall through to keyboard buttons.
+    menu_bg.handle(|_, ev| {
+        matches!(ev, Event::Push | Event::Released)
+    });
+
+    // Set click callbacks on each menu item button.
+    for (i, btn) in menu_item_btns.iter_mut().enumerate() {
+        let items_c     = menu_item_defs.clone();
+        let sel_btn     = menu_sel.clone();
+        let mut grp_btn = menu_group.clone();
+        btn.set_callback(move |_| {
+            if (items_c[i].is_enabled)() {
+                (items_c[i].execute)();
+            }
+            *sel_btn.borrow_mut() = None;
+            grp_btn.hide();
+            app::redraw();
+        });
+    }
+
     menu_group.hide();
 
     // --- Navigation: physical arrow keys + spacebar ---
@@ -1228,7 +1255,7 @@ fn main() {
         let gp_rumble         = cfg.input.gamepad.rumble;
         let menu_sel_c        = menu_sel.clone();
         let menu_items_c      = menu_item_defs.clone();
-        let mut menu_item_frames_c = menu_item_frames.clone();
+        let mut menu_item_btns_c  = menu_item_btns.clone();
         let mut menu_group_c  = menu_group.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
@@ -1254,14 +1281,18 @@ fn main() {
                             *menu_sel_c.borrow_mut() = Some(next);
                             menu_set_item_colors(
                                 Some(next), &menu_items_c,
-                                &mut menu_item_frames_c, colors,
+                                &mut menu_item_btns_c, colors,
                             );
+                            let _ = menu_item_btns_c[next].take_focus();
                             app::redraw();
                         }
                     } else if k == nav_keys.activate {
-                        // Execute the selected item and close the menu.
+                        // Fallback: execute the selected item and close the menu.
+                        // (Normally the focused menu button handles Space itself.)
                         let idx = menu_sel_c.borrow().unwrap();
-                        (menu_items_c[idx].execute)();
+                        if (menu_items_c[idx].is_enabled)() {
+                            (menu_items_c[idx].execute)();
+                        }
                         *menu_sel_c.borrow_mut() = None;
                         menu_group_c.hide();
                         app::redraw();
@@ -1346,8 +1377,12 @@ fn main() {
                         *menu_sel_c.borrow_mut() = Some(first);
                         menu_set_item_colors(
                             Some(first), &menu_items_c,
-                            &mut menu_item_frames_c, colors,
+                            &mut menu_item_btns_c, colors,
                         );
+                        // Transfer keyboard focus to the first menu item button so
+                        // that Space/Enter reach the button callback rather than
+                        // the keyboard button that previously held focus.
+                        let _ = menu_item_btns_c[first].take_focus();
                         menu_group_c.show();
                         app::redraw();
                     }
@@ -1406,7 +1441,7 @@ fn main() {
         let gp_cell_t         = gp_cell.clone();
         let menu_sel_gp       = menu_sel.clone();
         let menu_items_gp     = menu_item_defs.clone();
-        let mut menu_item_frames_gp = menu_item_frames.clone();
+        let mut menu_item_btns_gp   = menu_item_btns.clone();
         let mut menu_group_gp = menu_group.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
@@ -1472,8 +1507,11 @@ fn main() {
                                 *menu_sel_gp.borrow_mut() = Some(first);
                                 menu_set_item_colors(
                                     Some(first), &menu_items_gp,
-                                    &mut menu_item_frames_gp, colors,
+                                    &mut menu_item_btns_gp, colors,
                                 );
+                                // Transfer keyboard focus so Space/Enter reach the
+                                // menu button, not the keyboard button behind it.
+                                let _ = menu_item_btns_gp[first].take_focus();
                                 menu_group_gp.show();
                                 app::redraw();
                             }
@@ -1500,8 +1538,9 @@ fn main() {
                                 *menu_sel_gp.borrow_mut() = Some(next);
                                 menu_set_item_colors(
                                     Some(next), &menu_items_gp,
-                                    &mut menu_item_frames_gp, colors,
+                                    &mut menu_item_btns_gp, colors,
                                 );
+                                let _ = menu_item_btns_gp[next].take_focus();
                                 app::redraw();
                             }
                             continue;
@@ -1535,7 +1574,9 @@ fn main() {
                         if menu_sel_gp.borrow().is_some() {
                             if evt.pressed {
                                 let idx = menu_sel_gp.borrow().unwrap();
-                                (menu_items_gp[idx].execute)();
+                                if (menu_items_gp[idx].is_enabled)() {
+                                    (menu_items_gp[idx].execute)();
+                                }
                                 *menu_sel_gp.borrow_mut() = None;
                                 menu_group_gp.hide();
                                 app::redraw();
