@@ -213,3 +213,73 @@ vid    = 0x1209
 pid    = 0xbbd1
 # serial = "your_dongle_serial_string"
 ```
+
+---
+
+### `[ui.colors]`
+
+All colours of the on-screen keyboard UI.  Every value is a **6-digit hex
+string** in `"#RRGGBB"` format.  Remove or comment out any entry to keep the
+built-in default.
+
+#### Key buttons
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `key_normal` | `"#dadade"` | Background of regular keys (letters, digits, symbols, Space). |
+| `key_mod` | `"#64646e"` | Background of modifier / function / navigation keys when inactive. |
+| `mod_active` | `"#4682b4"` | Background of a modifier key that is currently active, and of the selected language button. |
+| `nav_sel` | `"#ffc800"` | Navigation-cursor highlight (the amber outline / fill on the focused key). |
+| `key_label_normal` | `"#141414"` | Text colour on regular keys (dark text on a light background). |
+| `key_label_mod` | `"#d2d2d2"` | Text colour on modifier / function keys (light text on a dark background). |
+
+#### Language buttons
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `lang_btn_inactive` | `"#505050"` | Background of a language button that is **not** the currently active layout. |
+| `lang_btn_label` | `"#ffffff"` | Text colour of language buttons. |
+
+#### Text display
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `disp_bg` | `"#1c1c1c"` | Background of the typed-text display at the top of the keyboard. |
+| `disp_text` | `"#b4ffb4"` | Foreground (text) colour of the typed-text display. |
+
+#### Window background
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `win_bg` | `"#28282b"` | Window / keyboard-area background colour. |
+
+#### Status bar
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `status_bar_bg` | `"#19191c"` | Background of the status strip at the top of the window. |
+| `status_ind_bg` | `"#2d2d32"` | Background of each status indicator pill (CAPS, SHIFT, CTRL, …) when inactive. |
+| `status_ind_text` | `"#5a5a5f"` | Label colour of an inactive status indicator pill. |
+| `status_ind_active_text` | `"#ffffff"` | Label colour of an **active** status indicator pill (modifier is on). |
+
+#### Connectivity icons
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `conn_disconnected` | `"#dc3c3c"` | Icon colour when the BLE dongle / gamepad is **not** found (red). |
+| `conn_connecting` | `"#dc9628"` | Icon colour when the BLE dongle is open but the remote host is not yet paired (amber). |
+| `conn_connected` | `"#50dc50"` | Icon colour when the BLE link / gamepad is connected and ready (green). |
+
+**Example** — swap to a light theme for the key area
+
+```toml
+[ui.colors]
+win_bg         = "#f0f0f0"
+key_normal     = "#ffffff"
+key_mod        = "#cccccc"
+key_label_normal = "#000000"
+key_label_mod    = "#333333"
+nav_sel        = "#0078d7"
+disp_bg        = "#ffffff"
+disp_text      = "#003300"
+```

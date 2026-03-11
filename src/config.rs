@@ -152,11 +152,153 @@ pub struct OutputConfig {
     pub ble: BleOutputConfig,
 }
 
+// =============================================================================
+// UI / colour configuration
+// =============================================================================
+
+/// An RGB colour stored as a `"#RRGGBB"` hex string in the TOML file.
+///
+/// Example: `key_normal = "#dadade"`
+#[derive(Clone, Copy)]
+pub struct ColorRgb(pub u8, pub u8, pub u8);
+
+impl<'de> Deserialize<'de> for ColorRgb {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let hex = s.trim_start_matches('#');
+        if hex.len() != 6 {
+            return Err(serde::de::Error::custom(
+                "colour must be a 6-digit hex string like \"#RRGGBB\"",
+            ));
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16).map_err(serde::de::Error::custom)?;
+        let g = u8::from_str_radix(&hex[2..4], 16).map_err(serde::de::Error::custom)?;
+        let b = u8::from_str_radix(&hex[4..6], 16).map_err(serde::de::Error::custom)?;
+        Ok(ColorRgb(r, g, b))
+    }
+}
+
+fn default_col_key_normal()             -> ColorRgb { ColorRgb(218, 218, 222) }
+fn default_col_key_mod()                -> ColorRgb { ColorRgb(100, 100, 110) }
+fn default_col_mod_active()             -> ColorRgb { ColorRgb( 70, 130, 180) }
+fn default_col_nav_sel()                -> ColorRgb { ColorRgb(255, 200,   0) }
+fn default_col_status_bar_bg()          -> ColorRgb { ColorRgb( 25,  25,  28) }
+fn default_col_status_ind_bg()          -> ColorRgb { ColorRgb( 45,  45,  50) }
+fn default_col_status_ind_text()        -> ColorRgb { ColorRgb( 90,  90,  95) }
+fn default_col_status_ind_active_text() -> ColorRgb { ColorRgb(255, 255, 255) }
+fn default_col_conn_disconnected()      -> ColorRgb { ColorRgb(220,  60,  60) }
+fn default_col_conn_connecting()        -> ColorRgb { ColorRgb(220, 150,  40) }
+fn default_col_conn_connected()         -> ColorRgb { ColorRgb( 80, 220,  80) }
+fn default_col_win_bg()                 -> ColorRgb { ColorRgb( 40,  40,  43) }
+fn default_col_disp_bg()                -> ColorRgb { ColorRgb( 28,  28,  28) }
+fn default_col_disp_text()              -> ColorRgb { ColorRgb(180, 255, 180) }
+fn default_col_lang_btn_inactive()      -> ColorRgb { ColorRgb( 80,  80,  80) }
+fn default_col_lang_btn_label()         -> ColorRgb { ColorRgb(255, 255, 255) }
+fn default_col_key_label_normal()       -> ColorRgb { ColorRgb( 20,  20,  20) }
+fn default_col_key_label_mod()          -> ColorRgb { ColorRgb(210, 210, 210) }
+
+/// All configurable UI colours.  Each field defaults to the built-in palette
+/// when absent from the TOML file.
+#[derive(Deserialize, Clone)]
+pub struct ColorsConfig {
+    /// Regular key (letter / digit / symbol / Space) button background.
+    #[serde(default = "default_col_key_normal")]
+    pub key_normal:              ColorRgb,
+    /// Modifier / function / navigation key button background (inactive).
+    #[serde(default = "default_col_key_mod")]
+    pub key_mod:                 ColorRgb,
+    /// Active modifier key and selected language button background.
+    #[serde(default = "default_col_mod_active")]
+    pub mod_active:              ColorRgb,
+    /// Keyboard-navigation cursor highlight colour.
+    #[serde(default = "default_col_nav_sel")]
+    pub nav_sel:                 ColorRgb,
+    /// Status bar background strip.
+    #[serde(default = "default_col_status_bar_bg")]
+    pub status_bar_bg:           ColorRgb,
+    /// Inactive status indicator (modifier pill) background.
+    #[serde(default = "default_col_status_ind_bg")]
+    pub status_ind_bg:           ColorRgb,
+    /// Inactive status indicator label colour.
+    #[serde(default = "default_col_status_ind_text")]
+    pub status_ind_text:         ColorRgb,
+    /// Active status indicator label colour (modifier is on).
+    #[serde(default = "default_col_status_ind_active_text")]
+    pub status_ind_active_text:  ColorRgb,
+    /// BLE / gamepad icon: disconnected state.
+    #[serde(default = "default_col_conn_disconnected")]
+    pub conn_disconnected:       ColorRgb,
+    /// BLE icon: connecting state (dongle found, host not yet paired).
+    #[serde(default = "default_col_conn_connecting")]
+    pub conn_connecting:         ColorRgb,
+    /// BLE / gamepad icon: connected state.
+    #[serde(default = "default_col_conn_connected")]
+    pub conn_connected:          ColorRgb,
+    /// Window / keyboard area background.
+    #[serde(default = "default_col_win_bg")]
+    pub win_bg:                  ColorRgb,
+    /// Text display background.
+    #[serde(default = "default_col_disp_bg")]
+    pub disp_bg:                 ColorRgb,
+    /// Text display foreground (typed characters).
+    #[serde(default = "default_col_disp_text")]
+    pub disp_text:               ColorRgb,
+    /// Language button background when not the active layout.
+    #[serde(default = "default_col_lang_btn_inactive")]
+    pub lang_btn_inactive:       ColorRgb,
+    /// Language button label colour.
+    #[serde(default = "default_col_lang_btn_label")]
+    pub lang_btn_label:          ColorRgb,
+    /// Text label colour on regular keys (dark text on light background).
+    #[serde(default = "default_col_key_label_normal")]
+    pub key_label_normal:        ColorRgb,
+    /// Text label colour on modifier / function keys (light text on dark background).
+    #[serde(default = "default_col_key_label_mod")]
+    pub key_label_mod:           ColorRgb,
+}
+
+impl Default for ColorsConfig {
+    fn default() -> Self {
+        ColorsConfig {
+            key_normal:              default_col_key_normal(),
+            key_mod:                 default_col_key_mod(),
+            mod_active:              default_col_mod_active(),
+            nav_sel:                 default_col_nav_sel(),
+            status_bar_bg:           default_col_status_bar_bg(),
+            status_ind_bg:           default_col_status_ind_bg(),
+            status_ind_text:         default_col_status_ind_text(),
+            status_ind_active_text:  default_col_status_ind_active_text(),
+            conn_disconnected:       default_col_conn_disconnected(),
+            conn_connecting:         default_col_conn_connecting(),
+            conn_connected:          default_col_conn_connected(),
+            win_bg:                  default_col_win_bg(),
+            disp_bg:                 default_col_disp_bg(),
+            disp_text:               default_col_disp_text(),
+            lang_btn_inactive:       default_col_lang_btn_inactive(),
+            lang_btn_label:          default_col_lang_btn_label(),
+            key_label_normal:        default_col_key_label_normal(),
+            key_label_mod:           default_col_key_label_mod(),
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+pub struct UiConfig {
+    /// UI colour palette.
+    #[serde(default)]
+    pub colors: ColorsConfig,
+}
+
 #[derive(Deserialize)]
 pub struct Config {
     pub input: InputConfig,
     #[serde(default)]
     pub output: OutputConfig,
+    #[serde(default)]
+    pub ui: UiConfig,
 }
 
 // =============================================================================
@@ -211,6 +353,7 @@ impl Default for Config {
         Config {
             input:  InputConfig::default(),
             output: OutputConfig::default(),
+            ui:     UiConfig::default(),
         }
     }
 }
