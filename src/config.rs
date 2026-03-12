@@ -396,8 +396,10 @@ pub struct UiConfig {
     pub colors: ColorsConfig,
 }
 
+fn default_center_key() -> String { "h".to_string() }
+
 /// Navigation behaviour configuration.
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 pub struct NavigateConfig {
     /// When `true`, navigation wraps around at the edges of the keyboard.
     /// Moving past the last column brings the cursor to the first column, and
@@ -405,6 +407,23 @@ pub struct NavigateConfig {
     /// (within the keyboard grid), and vice-versa.  Default: false.
     #[serde(default)]
     pub rollover: bool,
+    /// Button label used as the center reference point.
+    ///
+    /// The `navigate_center` action moves the selection to this button.
+    /// When `absolute_axes = true`, the joystick's neutral position (centre of
+    /// the axis range) maps to this button rather than to the physical centre
+    /// of the keyboard grid.  Default: `"h"`.
+    #[serde(default = "default_center_key")]
+    pub center_key: String,
+}
+
+impl Default for NavigateConfig {
+    fn default() -> Self {
+        NavigateConfig {
+            rollover:   false,
+            center_key: default_center_key(),
+        }
+    }
 }
 
 #[derive(Deserialize)]

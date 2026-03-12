@@ -73,35 +73,37 @@ silently.
 ### `[input.keyboard]`
 
 Controls which physical keyboard keys are used to navigate the on-screen
-keyboard and activate (type) the selected key.  Values are Linux evdev scan
-codes in decimal or hexadecimal (see `/usr/include/linux/input-event-codes.h`).
+keyboard and activate (type) the selected key.  Values are FLTK key codes,
+as reported by `event_key().bits()` (and printed by the `[keyboard]` debug
+output in a debug build).  On Linux these are X11 KeySym values; for
+printable characters they equal the lowercase ASCII code.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `navigate_up` | `0x67` (`KEY_UP`) | Move selection one row up |
-| `navigate_down` | `0x6c` (`KEY_DOWN`) | Move selection one row down |
-| `navigate_left` | `0x69` (`KEY_LEFT`) | Move selection one column left |
-| `navigate_right` | `0x6a` (`KEY_RIGHT`) | Move selection one column right |
-| `activate` | `0x39` (`KEY_SPACE`) | Type the currently selected key |
-| `menu` | `0x32` (`KEY_M`) | Open the application pop-up menu |
+| `navigate_up` | `0xff52` (`Key::Up`) | Move selection one row up |
+| `navigate_down` | `0xff54` (`Key::Down`) | Move selection one row down |
+| `navigate_left` | `0xff51` (`Key::Left`) | Move selection one column left |
+| `navigate_right` | `0xff53` (`Key::Right`) | Move selection one column right |
+| `activate` | `0x20` (Space) | Type the currently selected key |
+| `menu` | `0x6d` (`'m'`) | Open the application pop-up menu |
 | `activate_shift` | *(disabled)* | Equivalent to `activate` when Shift is held. The current selection is typed as if Shift were pressed. Remove or set to `null` to disable. |
 | `activate_ctrl` | *(disabled)* | Equivalent to `activate` when Ctrl is held. Remove or set to `null` to disable. |
 | `activate_alt` | *(disabled)* | Equivalent to `activate` when Alt is held. Remove or set to `null` to disable. |
 | `activate_altgr` | *(disabled)* | Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | Produces the Enter output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | Produces the Space output regardless of which key is currently selected. Remove or set to `null` to disable. |
-| `navigate_center` | *(disabled)* | Moves the selection to the center of the keyboard (similar to a joystick in neutral position). Remove or set to `null` to disable. |
+| `navigate_center` | *(disabled)* | Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 **Example**
 
 ```toml
 [input.keyboard]
-navigate_up    = 0x67   # KEY_UP
-navigate_down  = 0x6c   # KEY_DOWN
-navigate_left  = 0x69   # KEY_LEFT
-navigate_right = 0x6a   # KEY_RIGHT
-activate       = 0x39   # KEY_SPACE
-menu           = 0x32   # KEY_M
+navigate_up    = 0xff52   # Key::Up
+navigate_down  = 0xff54   # Key::Down
+navigate_left  = 0xff51   # Key::Left
+navigate_right = 0xff53   # Key::Right
+activate       = 0x20     # Space
+menu           = 0x6d     # 'm'
 # activate_shift  = null
 # activate_ctrl   = null
 # activate_alt    = null
@@ -146,7 +148,7 @@ a key to disable that action.
 | `activate_altgr` | *(disabled)* | Button index for activate-with-AltGr. Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | Button index for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | Button index for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
-| `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the center of the keyboard (similar to a joystick in neutral position). Remove or set to `null` to disable. |
+| `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
 
@@ -162,7 +164,7 @@ a key to disable that action.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `absolute_axes` | `false` | When `true`, the horizontal and vertical axis values are treated as **absolute coordinates** that map directly to a key position, rather than directional inputs. The full axis range (−32767 … +32767) is divided evenly across the available columns/rows. This is useful for touchpad-style controllers or joysticks that report absolute position. |
+| `absolute_axes` | `false` | When `true`, the horizontal and vertical axis values are treated as **absolute coordinates** that map directly to a key position, rather than directional inputs. The mapping is piecewise-linear and centred on the key configured by `[navigate] center_key` (default: `"h"`): the joystick's neutral position maps to that key, and each half of the axis range covers the corresponding half of the keyboard grid. This is useful for touchpad-style controllers or joysticks that report absolute position. |
 
 #### Rumble (force feedback)
 
@@ -221,12 +223,14 @@ Controls navigation behaviour.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `rollover` | `false` | When `true`, navigation wraps around at the edges of the keyboard. Moving left past the first column of a row brings the cursor to the last column of that row, and vice-versa. Moving up past the top edge (language strip) wraps to the last keyboard row, and moving down past the last row wraps back to the top. |
+| `center_key` | `"h"` | Button label used as the center reference point. The `navigate_center` action moves the selection to this key. When `absolute_axes = true`, the joystick's neutral position maps to this key. The value is matched against the key's unshifted label in the current layout. |
 
 **Example**
 
 ```toml
 [navigate]
-rollover = true
+rollover   = true
+center_key = "h"
 ```
 
 ---

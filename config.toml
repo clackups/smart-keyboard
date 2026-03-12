@@ -60,6 +60,12 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # to the first row (or the language strip if present), and vice-versa.
 # rollover = false
 
+# The key label used as the center reference point (default: "h").
+#   navigate_center action – moves the selection to this button.
+#   absolute_axes mode     – the joystick's neutral position (axis centre) maps
+#                            to this button instead of the physical grid centre.
+center_key = "h"
+
 [output]
 # Output mode: "print" | "ble"
 #   print – print key events to stdout (default; no hardware output)

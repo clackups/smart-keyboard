@@ -511,41 +511,28 @@ fn nav_move(
     nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel, colors)
 }
 
-/// Compute the center `NavSel` for the current keyboard layout.
+/// Find the key matching `center_key` label in the current layout.
 ///
-/// Mirrors the `AbsolutePos { horiz: 0.5, vert: 0.5 }` logic: maps the
-/// midpoint of the normalized 0.0–1.0 coordinate space to a row / column.
-/// The language strip (if present) is included as band 0; the keyboard rows
-/// occupy the remaining bands.
-fn nav_center(
-    all_btns:  &[Vec<(Button, Action, u16, Color)>],
-    lang_btns: &[Button],
+/// Searches `all_btns` for the first key whose unshifted label (or
+/// [`special_label`]) equals `center_key` (case-sensitive).  Returns the
+/// `NavSel` for that key, or `None` if no match is found.
+fn find_center_key(
+    all_btns:   &[Vec<(Button, Action, u16, Color)>],
+    layout_idx: usize,
+    center_key: &str,
 ) -> Option<NavSel> {
-    /// Normalized coordinate for the center of the selectable area.
-    const CENTER: f32 = 0.5;
-    let num_rows = all_btns.len();
-    let num_lang = lang_btns.len();
-    if num_rows == 0 {
-        return None;
+    for (r, row) in all_btns.iter().enumerate() {
+        for (c, (_btn, action, _sc, _col)) in row.iter().enumerate() {
+            let label = match *action {
+                Action::Regular(n) => LAYOUTS[layout_idx].keys[n].label_unshifted,
+                other              => special_label(other),
+            };
+            if label == center_key {
+                return Some(NavSel::Key(r, c));
+            }
+        }
     }
-    let has_lang    = num_lang > 0;
-    let total_bands = if has_lang { 1 + num_rows } else { num_rows };
-    let band  = (CENTER * total_bands as f32)
-        .floor()
-        .clamp(0.0, total_bands as f32 - 1.0) as usize;
-    if has_lang && band == 0 {
-        let li = (CENTER * num_lang as f32)
-            .floor()
-            .clamp(0.0, num_lang as f32 - 1.0) as usize;
-        Some(NavSel::Lang(li))
-    } else {
-        let row      = if has_lang { band - 1 } else { band };
-        let num_cols = all_btns[row].len();
-        let col      = (CENTER * num_cols as f32)
-            .floor()
-            .clamp(0.0, num_cols as f32 - 1.0) as usize;
-        Some(NavSel::Key(row, col))
-    }
+    None
 }
 
 // =============================================================================
@@ -1444,19 +1431,20 @@ fn main() {
 
     // --- Initial navigation highlight ---
     // When absolute_axes is enabled the joystick covers the full axis range and
-    // starts at the physical centre, so initialise the selection at the centre
-    // of the keyboard grid.  Otherwise start at the top-left key (row 0, col 0).
+    // starts at the configured center key.  Otherwise start at the top-left key
+    // (row 0, col 0).
     let (init_row, init_col) = {
         let ab = all_btns.borrow();
-        // Integer division rounds down, so for an even number of rows this
-        // picks the upper-middle row (e.g. row 2 of 4), matching where the
-        // joystick centred on the vertical axis would land.
-        let mid_row = ab.len() / 2;
-        if cfg.input.gamepad.absolute_axes
-            && !ab.is_empty()
-            && !ab[mid_row].is_empty()
-        {
-            (mid_row, ab[mid_row].len() / 2)
+        if cfg.input.gamepad.absolute_axes && !ab.is_empty() {
+            if let Some(NavSel::Key(r, c)) =
+                find_center_key(&ab, *layout_idx.borrow(), &cfg.navigate.center_key)
+            {
+                (r, c)
+            } else {
+                // fallback: midpoint of the grid
+                let mid_row = ab.len() / 2;
+                (mid_row, ab[mid_row].len() / 2)
+            }
         } else {
             (0, 0)
         }
@@ -1595,6 +1583,7 @@ fn main() {
         let mut menu_item_btns_c = menu_item_btns.clone();
         let mut menu_group_c  = menu_group.clone();
         let rollover          = cfg.navigate.rollover;
+        let center_key_kbd    = cfg.navigate.center_key.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1737,12 +1726,11 @@ fn main() {
                     return true;
                 }
 
-                // navigate_center: move selection to the center of the keyboard.
+                // navigate_center: move selection to the configured center key.
                 if nav_keys.navigate_center.map_or(false, |nk| k == nk) {
                     if let Some(center) = {
                         let ab = all_btns_c.borrow();
-                        let lb = lang_btns_c.borrow();
-                        nav_center(&ab, &lb)
+                        find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
                     } {
                         let changed = {
                             let mut ab = all_btns_c.borrow_mut();
@@ -1921,6 +1909,7 @@ fn main() {
         let mut menu_item_btns_gp = menu_item_btns.clone();
         let mut menu_group_gp = menu_group.clone();
         let gp_rollover       = cfg.navigate.rollover;
+        let gp_center_key     = cfg.navigate.center_key.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -2197,8 +2186,7 @@ fn main() {
                         if menu_sel_gp.borrow().is_some() { continue; }
                         if let Some(center) = {
                             let ab = all_btns_c.borrow();
-                            let lb = lang_btns_c.borrow();
-                            nav_center(&ab, &lb)
+                            find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
                         } {
                             let changed = {
                                 let mut ab = all_btns_c.borrow_mut();
@@ -2234,37 +2222,61 @@ fn main() {
                         // selectable area, which consists of the language-toggle
                         // strip followed by the keyboard key rows.
                         //
-                        // The vertical range is divided into equal bands:
-                        //   band 0 (when lang buttons exist) → language strip
-                        //   remaining bands → keyboard rows (0-indexed)
-                        //
-                        // If there are no language buttons the vertical range is
-                        // divided solely across the keyboard rows.
+                        // The mapping is piecewise-linear: the configured
+                        // `center_key` maps to joystick centre (0.5, 0.5).
+                        // Each half of the axis range is mapped linearly to
+                        // the corresponding half of the grid on either side of
+                        // the center key.
                         let new_sel = {
                             let ab = all_btns_c.borrow();
                             let lb = lang_btns_c.borrow();
                             let num_rows = ab.len();
                             let num_lang = lb.len();
                             if num_rows == 0 { continue; }
-                            // Total virtual rows: 1 for the lang strip (if any)
-                            // plus one per keyboard row.
                             let has_lang = num_lang > 0;
                             let total_bands = if has_lang { 1 + num_rows } else { num_rows };
-                            let band = (vert * total_bands as f32)
+
+                            // Determine center key's band and horizontal fraction.
+                            let (center_band, center_horiz_frac) =
+                                match find_center_key(
+                                    &ab, *layout_idx_c.borrow(), &gp_center_key,
+                                ) {
+                                    Some(NavSel::Key(row, col)) => {
+                                        let band = if has_lang { row + 1 } else { row };
+                                        let frac = (col as f32 + 0.5) / ab[row].len() as f32;
+                                        (band, frac)
+                                    }
+                                    _ => (total_bands / 2, 0.5f32),
+                                };
+
+                            // Piecewise linear vertical remapping: 0.5 → center_band.
+                            let cv = (center_band as f32 + 0.5) / total_bands as f32;
+                            let mapped_vert = if vert <= 0.5 {
+                                vert * (cv / 0.5)
+                            } else {
+                                cv + (vert - 0.5) * ((1.0 - cv) / 0.5)
+                            };
+                            let band = (mapped_vert * total_bands as f32)
                                 .floor()
                                 .clamp(0.0, total_bands as f32 - 1.0) as usize;
+
+                            // Piecewise linear horizontal remapping: 0.5 → center_horiz_frac.
+                            let ch = center_horiz_frac;
+                            let mapped_horiz = if horiz <= 0.5 {
+                                horiz * (ch / 0.5)
+                            } else {
+                                ch + (horiz - 0.5) * ((1.0 - ch) / 0.5)
+                            };
+
                             if has_lang && band == 0 {
-                                // Language strip: map horiz across lang buttons.
-                                let li = (horiz * num_lang as f32)
+                                let li = (mapped_horiz * num_lang as f32)
                                     .floor()
                                     .clamp(0.0, num_lang as f32 - 1.0) as usize;
                                 NavSel::Lang(li)
                             } else {
-                                // Keyboard row: subtract 1 for the lang strip
-                                // band when it exists.
                                 let row = if has_lang { band - 1 } else { band };
                                 let num_cols = ab[row].len();
-                                let col = (horiz * num_cols as f32)
+                                let col = (mapped_horiz * num_cols as f32)
                                     .floor()
                                     .clamp(0.0, num_cols as f32 - 1.0) as usize;
                                 NavSel::Key(row, col)
