@@ -511,6 +511,43 @@ fn nav_move(
     nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel, colors)
 }
 
+/// Compute the center `NavSel` for the current keyboard layout.
+///
+/// Mirrors the `AbsolutePos { horiz: 0.5, vert: 0.5 }` logic: maps the
+/// midpoint of the normalized 0.0–1.0 coordinate space to a row / column.
+/// The language strip (if present) is included as band 0; the keyboard rows
+/// occupy the remaining bands.
+fn nav_center(
+    all_btns:  &[Vec<(Button, Action, u16, Color)>],
+    lang_btns: &[Button],
+) -> Option<NavSel> {
+    /// Normalized coordinate for the center of the selectable area.
+    const CENTER: f32 = 0.5;
+    let num_rows = all_btns.len();
+    let num_lang = lang_btns.len();
+    if num_rows == 0 {
+        return None;
+    }
+    let has_lang    = num_lang > 0;
+    let total_bands = if has_lang { 1 + num_rows } else { num_rows };
+    let band  = (CENTER * total_bands as f32)
+        .floor()
+        .clamp(0.0, total_bands as f32 - 1.0) as usize;
+    if has_lang && band == 0 {
+        let li = (CENTER * num_lang as f32)
+            .floor()
+            .clamp(0.0, num_lang as f32 - 1.0) as usize;
+        Some(NavSel::Lang(li))
+    } else {
+        let row      = if has_lang { band - 1 } else { band };
+        let num_cols = all_btns[row].len();
+        let col      = (CENTER * num_cols as f32)
+            .floor()
+            .clamp(0.0, num_cols as f32 - 1.0) as usize;
+        Some(NavSel::Key(row, col))
+    }
+}
+
 // =============================================================================
 // Action execution
 // =============================================================================
@@ -1698,6 +1735,36 @@ fn main() {
                     return true;
                 }
 
+                // navigate_center: move selection to the center of the keyboard.
+                if nav_keys.navigate_center.map_or(false, |nk| k == nk) {
+                    if let Some(center) = {
+                        let ab = all_btns_c.borrow();
+                        let lb = lang_btns_c.borrow();
+                        nav_center(&ab, &lb)
+                    } {
+                        let changed = {
+                            let mut ab = all_btns_c.borrow_mut();
+                            let mut lb = lang_btns_c.borrow_mut();
+                            let mut s  = sel_c.borrow_mut();
+                            nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                        };
+                        if changed {
+                            if gp_rumble {
+                                if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                                    gp.rumble();
+                                }
+                            }
+                            let sel = *sel_c.borrow();
+                            let ab  = all_btns_c.borrow();
+                            narrator_c.borrow_mut().play(
+                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                nav_tone_freq(sel, &ab, &audio_mode_c),
+                            );
+                        }
+                    }
+                    return true;
+                }
+
                 // activate_enter: directly produce the Enter output.
                 if nav_keys.activate_enter.map_or(false, |ak| k == ak) {
                     let key_str = execute_action(
@@ -2118,6 +2185,43 @@ fn main() {
                         } else {
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::NavigateCenter => {
+                        // Only act on button press; ignore release.
+                        if !evt.pressed { continue; }
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            let lb = lang_btns_c.borrow();
+                            nav_center(&ab, &lb)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(
+                                    &mut ab, &mut lb,
+                                    *layout_idx_c.borrow(),
+                                    &mut s, &mod_state_c,
+                                    center,
+                                    colors,
+                                )
+                            };
+                            if changed {
+                                if gp_rumble {
+                                    if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                        gp.rumble();
+                                    }
+                                }
+                                let sel = *sel_c.borrow();
+                                let ab  = all_btns_c.borrow();
+                                narrator_t.borrow_mut().play(
+                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                    nav_tone_freq(sel, &ab, &audio_mode_t),
+                                );
                             }
                         }
                     }

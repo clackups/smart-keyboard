@@ -90,6 +90,7 @@ codes in decimal or hexadecimal (see `/usr/include/linux/input-event-codes.h`).
 | `activate_altgr` | *(disabled)* | Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | Produces the Enter output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | Produces the Space output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `navigate_center` | *(disabled)* | Moves the selection to the center of the keyboard (similar to a joystick in neutral position). Remove or set to `null` to disable. |
 
 **Example**
 
@@ -101,12 +102,13 @@ navigate_left  = 0x69   # KEY_LEFT
 navigate_right = 0x6a   # KEY_RIGHT
 activate       = 0x39   # KEY_SPACE
 menu           = 0x32   # KEY_M
-# activate_shift = null
-# activate_ctrl  = null
-# activate_alt   = null
-# activate_altgr = null
-# activate_enter = null
-# activate_space = null
+# activate_shift  = null
+# activate_ctrl   = null
+# activate_alt    = null
+# activate_altgr  = null
+# activate_enter  = null
+# activate_space  = null
+# navigate_center = null
 ```
 
 ---
@@ -144,6 +146,7 @@ a key to disable that action.
 | `activate_altgr` | *(disabled)* | Button index for activate-with-AltGr. Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | Button index for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | Button index for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
+| `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the center of the keyboard (similar to a joystick in neutral position). Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
 
@@ -185,12 +188,13 @@ activate = 0x05   # A/South button
 menu     = 0x08   # Start/Menu button
 
 # Activate-with-modifier buttons (comment out to disable)
-# activate_shift = null
-# activate_ctrl  = null
-# activate_alt   = null
-# activate_altgr = null
-# activate_enter = null
-# activate_space = null
+# activate_shift  = null
+# activate_ctrl   = null
+# activate_alt    = null
+# activate_altgr  = null
+# activate_enter  = null
+# activate_space  = null
+# navigate_center = null
 
 # Analog stick navigation
 # axis_navigate_horizontal = 0

@@ -12,6 +12,7 @@ menu           = 0x32   # KEY_M
 # activate_altgr = null  # equivalent to activate when AltGr is held; null/absent = disabled
 # activate_enter = null  # produces the Enter output regardless of selection; null/absent = disabled
 # activate_space = null  # produces the Space output regardless of selection; null/absent = disabled
+# navigate_center = null # moves selection to center of keyboard; null/absent = disabled
 
 [input.gamepad]
 enabled = true
@@ -29,6 +30,7 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_altgr = null   # equivalent to activate when AltGr is held; null/absent = disabled
 # activate_enter = null   # produces the Enter output regardless of selection; null/absent = disabled
 # activate_space = null   # produces the Space output regardless of selection; null/absent = disabled
+# navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
 # axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down

@@ -50,6 +50,8 @@ pub enum GamepadAction {
     ActivateEnter,
     /// Produce the Space output directly.
     ActivateSpace,
+    /// Move the selection to the center of the keyboard.
+    NavigateCenter,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
     /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
     /// value) … `1.0` (max axis value).
@@ -199,6 +201,7 @@ pub struct Gamepad {
     activate_altgr: Option<u32>,
     activate_enter: Option<u32>,
     activate_space: Option<u32>,
+    navigate_center: Option<u32>,
     // Axis configuration
     axis_horizontal: Option<u32>,         // axis index for left/right (None = disabled)
     axis_vertical:   Option<u32>,         // axis index for up/down (None = disabled)
@@ -269,6 +272,7 @@ impl Gamepad {
             activate_altgr: cfg.activate_altgr,
             activate_enter: cfg.activate_enter,
             activate_space: cfg.activate_space,
+            navigate_center: cfg.navigate_center,
             axis_horizontal: cfg.axis_navigate_horizontal,
             axis_vertical:   cfg.axis_navigate_vertical,
             axis_activate:   cfg.axis_activate,
@@ -418,8 +422,9 @@ impl Gamepad {
         if self.activate_ctrl  == Some(code) { return Some(GamepadAction::ActivateCtrl);  }
         if self.activate_alt   == Some(code) { return Some(GamepadAction::ActivateAlt);   }
         if self.activate_altgr == Some(code) { return Some(GamepadAction::ActivateAltGr); }
-        if self.activate_enter == Some(code) { return Some(GamepadAction::ActivateEnter); }
-        if self.activate_space == Some(code) { return Some(GamepadAction::ActivateSpace); }
+        if self.activate_enter  == Some(code) { return Some(GamepadAction::ActivateEnter);   }
+        if self.activate_space  == Some(code) { return Some(GamepadAction::ActivateSpace);   }
+        if self.navigate_center == Some(code) { return Some(GamepadAction::NavigateCenter);  }
         None
     }
 

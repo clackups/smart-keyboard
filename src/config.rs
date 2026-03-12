@@ -53,6 +53,10 @@ pub struct KeyboardInputConfig {
     /// Produces the Space output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_space: Option<u32>,
+    /// Linux evdev scan code for "navigate center" (default: None / disabled).
+    /// Moves the selection to the center of the keyboard.
+    #[serde(default)]
+    pub navigate_center: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -143,6 +147,10 @@ pub struct GamepadInputConfig {
     /// Button index for "activate Space"; absent / `null` means disabled.
     #[serde(default)]
     pub activate_space: Option<u32>,
+    /// Button index for "navigate center"; absent / `null` means disabled.
+    /// Moves the selection to the center of the keyboard.
+    #[serde(default)]
+    pub navigate_center: Option<u32>,
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
@@ -419,6 +427,7 @@ impl Default for KeyboardInputConfig {
             activate_altgr: None,
             activate_enter: None,
             activate_space: None,
+            navigate_center: None,
         }
     }
 }
@@ -449,6 +458,7 @@ impl Default for GamepadInputConfig {
             activate_altgr:           None,
             activate_enter:           None,
             activate_space:           None,
+            navigate_center:          None,
         }
     }
 }
@@ -562,6 +572,8 @@ pub struct NavKeys {
     pub activate_enter: Option<Key>,
     /// Key that produces the Space output directly (None = disabled).
     pub activate_space: Option<Key>,
+    /// Key that moves the selection to the center of the keyboard (None = disabled).
+    pub navigate_center: Option<Key>,
 }
 
 impl NavKeys {
@@ -575,12 +587,13 @@ impl NavKeys {
             right:    evdev_to_fltk_key(cfg.navigate_right) .unwrap_or(Key::Right),
             activate: evdev_to_fltk_key(cfg.activate)       .unwrap_or(Key::from_char(' ')),
             menu:     evdev_to_fltk_key(cfg.menu)           .unwrap_or(Key::from_char('m')),
-            activate_shift: cfg.activate_shift.and_then(evdev_to_fltk_key),
-            activate_ctrl:  cfg.activate_ctrl .and_then(evdev_to_fltk_key),
-            activate_alt:   cfg.activate_alt  .and_then(evdev_to_fltk_key),
-            activate_altgr: cfg.activate_altgr.and_then(evdev_to_fltk_key),
-            activate_enter: cfg.activate_enter.and_then(evdev_to_fltk_key),
-            activate_space: cfg.activate_space.and_then(evdev_to_fltk_key),
+            activate_shift:  cfg.activate_shift .and_then(evdev_to_fltk_key),
+            activate_ctrl:   cfg.activate_ctrl  .and_then(evdev_to_fltk_key),
+            activate_alt:    cfg.activate_alt   .and_then(evdev_to_fltk_key),
+            activate_altgr:  cfg.activate_altgr .and_then(evdev_to_fltk_key),
+            activate_enter:  cfg.activate_enter .and_then(evdev_to_fltk_key),
+            activate_space:  cfg.activate_space .and_then(evdev_to_fltk_key),
+            navigate_center: cfg.navigate_center.and_then(evdev_to_fltk_key),
         }
     }
 }
