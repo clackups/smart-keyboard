@@ -434,8 +434,18 @@ fn nav_move(
                 let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
                 *preferred_cx = cx;
                 if !lang_btns.is_empty() {
-                    // Up from the top keyboard row → lang strip, pixel-aligned.
-                    NavSel::Lang(closest_lang(lang_btns, cx))
+                    // Up from the top keyboard row → lang strip, but only if
+                    // cx is within a lang button's pixel range.  Keys like F2-F12
+                    // extend beyond the two lang buttons; without this guard they
+                    // would all jump to the UA button (the closest one), even
+                    // though no lang button sits directly above them.
+                    let li = closest_lang(lang_btns, cx);
+                    let lb = &lang_btns[li];
+                    if cx >= lb.x() && cx < lb.x() + lb.w() {
+                        NavSel::Lang(li)
+                    } else {
+                        NavSel::Key(row, col) // clamp – nothing directly above
+                    }
                 } else if rollover {
                     // No lang strip: wrap to the last keyboard row.
                     let rows = all_btns.len();
@@ -457,12 +467,12 @@ fn nav_move(
                     *preferred_cx = c;
                     c
                 };
-                // Scan rows in direction dr, skipping any row where no button
-                // is close to cx.  This makes navigation skip rows that have no
-                // keys in the nav cluster (e.g. the home row has no nav-cluster
-                // buttons, so Down from End should pass over it and land on ↑).
-                // "Close enough" = the nearest edge of the best button in that
-                // row is within one button-width of cx.
+                // Scan rows in direction dr, stopping when cx falls within a
+                // button's pixel range (dist == 0).  Rows where no button
+                // covers cx are skipped, so e.g. End↓ skips the home row
+                // and lands directly on ArrowUp.  Using strict containment
+                // (not a distance tolerance) prevents cross-column jumps such
+                // as Bksp↑→F12 or Enter↓→RShift.
                 let mut scan     = row;
                 let mut dest_row = row; // will be updated when we find a close row
                 loop {
@@ -494,11 +504,11 @@ fn nav_move(
                     } else {
                         cx - (btn.x() + btn.w())
                     };
-                    if dist <= btn.w() {
+                    if dist == 0 {
                         dest_row = scan;
                         break;
                     }
-                    // Too far – keep scanning.
+                    // cx not within any button in this row – keep scanning.
                 }
                 if dest_row == rows {
                     // Sentinel: wrap to lang strip.  When rolling over from the
