@@ -1579,12 +1579,17 @@ fn main() {
     }
 
     // --- Initial navigation highlight ---
-    // When absolute_axes is enabled the joystick covers the full axis range and
-    // starts at the configured center key.  Otherwise start at the top-left key
-    // (row 0, col 0).
+    // Start at the configured center key when:
+    //   • absolute_axes is enabled (joystick covers the full axis range and
+    //     must start at the physical centre of the grid), or
+    //   • center_after_activate is enabled (every activation returns to center,
+    //     so it is natural to also begin there).
+    // Otherwise start at the top-left key (row 0, col 0).
     let (init_row, init_col) = {
         let ab = all_btns.borrow();
-        if cfg.input.gamepad.absolute_axes && !ab.is_empty() {
+        if (cfg.input.gamepad.absolute_axes || cfg.navigate.center_after_activate)
+            && !ab.is_empty()
+        {
             if let Some(NavSel::Key(r, c)) =
                 find_center_key(&ab, *layout_idx.borrow(), &cfg.navigate.center_key)
             {
