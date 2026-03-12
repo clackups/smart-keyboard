@@ -443,6 +443,21 @@ fn nav_move(
                     let lb = &lang_btns[li];
                     if cx >= lb.x() && cx < lb.x() + lb.w() {
                         NavSel::Lang(li)
+                    } else if rollover {
+                        // cx is not within any lang button (e.g. F2-F12).
+                        // Wrap: scan from the last keyboard row upward and land
+                        // on the first row whose button pixel range covers cx.
+                        let rows = all_btns.len();
+                        let mut found = NavSel::Key(row, col); // fallback: stay
+                        for scan in (0..rows).rev() {
+                            let best = closest_col(&all_btns[scan], cx);
+                            let btn  = &all_btns[scan][best].0;
+                            if cx >= btn.x() && cx < btn.x() + btn.w() {
+                                found = NavSel::Key(scan, best);
+                                break;
+                            }
+                        }
+                        found
                     } else {
                         NavSel::Key(row, col) // clamp – nothing directly above
                     }
@@ -511,13 +526,33 @@ fn nav_move(
                     // cx not within any button in this row – keep scanning.
                 }
                 if dest_row == rows {
-                    // Sentinel: wrap to lang strip.  When rolling over from the
-                    // Spacebar, skip the lang strip and land on the F-key row
-                    // (row 0) instead, using the remembered preferred column.
+                    // Sentinel: wrap to lang strip (if cx falls within a lang
+                    // button) or further to row 0 scanning downward.
+                    // When rolling over from the Spacebar, skip the lang strip
+                    // entirely and land on the F-key row (row 0) using the
+                    // remembered preferred column.
                     if all_btns[row][col].1 == Action::Space {
                         NavSel::Key(0, closest_col(&all_btns[0], cx))
                     } else {
-                        NavSel::Lang(closest_lang(lang_btns, cx))
+                        let li = closest_lang(lang_btns, cx);
+                        let lb = &lang_btns[li];
+                        if cx >= lb.x() && cx < lb.x() + lb.w() {
+                            NavSel::Lang(li)
+                        } else {
+                            // cx is not within any lang button (e.g. Enter,
+                            // RShift).  Wrap: scan from row 0 downward and land
+                            // on the first row whose button pixel range covers cx.
+                            let mut found = NavSel::Key(row, col); // fallback: stay
+                            for scan in 0..rows {
+                                let best = closest_col(&all_btns[scan], cx);
+                                let btn  = &all_btns[scan][best].0;
+                                if cx >= btn.x() && cx < btn.x() + btn.w() {
+                                    found = NavSel::Key(scan, best);
+                                    break;
+                                }
+                            }
+                            found
+                        }
                     }
                 } else if dest_row == rows + 1 {
                     // Sentinel: wrap to first row.
