@@ -3,14 +3,18 @@
 // Audio feedback for keyboard-navigation selection changes.
 //
 // The mode is configured via `audio` in the [output] section of config.toml:
-//   "none"    – silent (default)
-//   "narrate" – play a WAV clip naming each focused button; clips are loaded
-//               from the directory given by SMART_KBD_AUDIO_PATH (env var)
-//               or from the `audio/` sub-directory of the current working
-//               directory.  Playback is delegated to `aplay` (ALSA utils).
-//   "tone"    – play a short synthesised musical tone whose pitch is
-//               determined by the key category (see `play`).  A PCM WAV is
-//               generated in memory and fed to `aplay` via its stdin pipe.
+//   "none"       – silent (default)
+//   "narrate"    – play a WAV clip naming each focused button; clips are loaded
+//                  from the directory given by SMART_KBD_AUDIO_PATH (env var)
+//                  or from the `audio/` sub-directory of the current working
+//                  directory.  Playback is delegated to `aplay` (ALSA utils).
+//   "tone"       – play a short synthesised musical tone whose pitch is
+//                  determined by the key category (see `play`).  A PCM WAV is
+//                  generated in memory and fed to `aplay` via its stdin pipe.
+//   "tone_hint"  – like "tone" but all letter and punctuation keys are silent
+//                  except for F and J (the home-row bump keys).  The caller
+//                  passes 0.0 for silent keys; this module plays a tone for
+//                  any tone_hz > 0, exactly as in "tone" mode.
 //
 // All errors are silently ignored so that a missing `aplay` binary or missing
 // audio files do not affect normal keyboard operation.
@@ -39,8 +43,8 @@ impl Narrator {
     ///
     /// * In `Narrate` mode, `slug` is used to locate `<audio_dir>/<slug>.wav`
     ///   which is played via `aplay`.  An empty `slug` is a no-op.
-    /// * In `Tone` mode, `tone_hz` is the frequency (Hz) of the sine-wave
-    ///   tone to synthesise and play.  A value ≤ 0 is a no-op.
+    /// * In `Tone` and `ToneHint` modes, `tone_hz` is the frequency (Hz) of
+    ///   the sine-wave tone to synthesise and play.  A value ≤ 0 is a no-op.
     /// * In `None` mode the call is always a no-op.
     ///
     /// Any clip/tone that is still playing is stopped first so that rapid
@@ -63,7 +67,7 @@ impl Narrator {
                     self.child = Some(child);
                 }
             }
-            AudioMode::Tone => {
+            AudioMode::Tone | AudioMode::ToneHint => {
                 if tone_hz <= 0.0 { return; }
                 self.kill_current();
                 // 100 ms gives ~5–6 sine-wave cycles even at the lowest tone

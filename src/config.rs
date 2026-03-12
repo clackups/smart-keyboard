@@ -135,7 +135,7 @@ pub enum OutputMode {
 
 /// Audio feedback mode for keyboard-navigation selection changes.
 #[derive(Deserialize, Clone, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum AudioMode {
     /// No audio feedback (default).
     #[default]
@@ -150,6 +150,11 @@ pub enum AudioMode {
     /// function keys (F1–F12) play a lower ascending scale; all other
     /// special keys have their own unique tones.
     Tone,
+    /// Like `Tone`, but all letter and punctuation keys are silent except
+    /// for F and J (the physical home-row bump keys), which play a
+    /// distinctive tone.  Digit keys and all special keys (Space, Enter,
+    /// arrows, …) still play their tones as in `Tone` mode.
+    ToneHint,
 }
 
 /// USB identification for the BLE dongle (esp_hid_serial_bridge).
@@ -182,9 +187,11 @@ pub struct OutputConfig {
     #[serde(default)]
     pub ble: BleOutputConfig,
     /// Audio feedback mode for keyboard-navigation selection changes.
-    /// "none"    – silent (default)
-    /// "narrate" – play a WAV clip naming each button
-    /// "tone"    – play a short musical tone that varies by key category
+    /// "none"       – silent (default)
+    /// "narrate"    – play a WAV clip naming each button
+    /// "tone"       – play a short musical tone that varies by key category
+    /// "tone_hint"  – like "tone" but only F and J produce a tone; all other
+    ///                letter/punctuation keys are silent
     #[serde(default)]
     pub audio: AudioMode,
 }

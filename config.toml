@@ -42,16 +42,20 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 #   ble   – send keyboard HID reports to the BLE dongle (esp_hid_serial_bridge)
 mode = "print"
 # Audio feedback on keyboard-navigation selection changes.
-#   "none"    – silent (default)
-#   "narrate" – play a WAV clip naming each button; clips are loaded from the
-#               `audio/` sub-directory of the current working directory, or
-#               from the path given by the SMART_KBD_AUDIO_PATH environment
-#               variable.
-#   "tone"    – play a short musical tone that varies by key category:
-#               letter/punctuation keys share one pitch; F and J have a
-#               distinctive pitch; digit keys 1–0 play an ascending scale;
-#               function keys F1–F12 play a lower ascending scale; each
-#               special key (Space, Enter, arrows, …) has its own tone.
+#   "none"       – silent (default)
+#   "narrate"    – play a WAV clip naming each button; clips are loaded from the
+#                  `audio/` sub-directory of the current working directory, or
+#                  from the path given by the SMART_KBD_AUDIO_PATH environment
+#                  variable.
+#   "tone"       – play a short musical tone that varies by key category:
+#                  letter/punctuation keys share one pitch; F and J have a
+#                  distinctive pitch; digit keys 1–0 play an ascending scale;
+#                  function keys F1–F12 play a lower ascending scale; each
+#                  special key (Space, Enter, arrows, …) has its own tone.
+#   "tone_hint"  – like "tone" but all letter and punctuation keys are silent
+#                  except for F and J (the physical home-row bump keys), which
+#                  play a distinctive tone.  Digit keys and special keys still
+#                  play their tones as in "tone" mode.
 # audio = "none"
 
 [output.ble]
