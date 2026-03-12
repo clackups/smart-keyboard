@@ -384,15 +384,16 @@ fn nav_set(
 /// Returns `true` if the selection actually changed, `false` if it was already
 /// at the edge in the requested direction (only possible when rollover is false).
 fn nav_move(
-    all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
-    lang_btns:  &mut Vec<Button>,
-    layout_idx: usize,
-    sel:        &mut NavSel,
-    mod_state:  &Rc<RefCell<ModState>>,
-    dr:         i32,
-    dc:         i32,
-    colors:     Colors,
-    rollover:   bool,
+    all_btns:     &mut Vec<Vec<(Button, Action, u16, Color)>>,
+    lang_btns:    &mut Vec<Button>,
+    layout_idx:   usize,
+    sel:          &mut NavSel,
+    mod_state:    &Rc<RefCell<ModState>>,
+    dr:           i32,
+    dc:           i32,
+    colors:       Colors,
+    rollover:     bool,
+    preferred_cx: &mut i32,
 ) -> bool {
     let new_sel: NavSel = match *sel {
         NavSel::Lang(li) => {
@@ -404,6 +405,7 @@ fn nav_move(
                         NavSel::Lang(li)
                     } else {
                         let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
+                        *preferred_cx = cx;
                         NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
                     }
                 } else {
@@ -413,6 +415,7 @@ fn nav_move(
             } else if dr > 0 {
                 // Down into the first keyboard row, pixel-aligned.
                 let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
+                *preferred_cx = cx;
                 NavSel::Key(0, closest_col(&all_btns[0], cx))
             } else {
                 // Left / right within the lang strip.
@@ -426,21 +429,34 @@ fn nav_move(
         }
         NavSel::Key(row, col) => {
             if dr < 0 && row == 0 {
+                // Compute cx from the current key (row 0 is the F-key row, never a
+                // wide Space, so no special case needed here).
+                let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                *preferred_cx = cx;
                 if !lang_btns.is_empty() {
                     // Up from the top keyboard row → lang strip, pixel-aligned.
-                    let cx = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
                     NavSel::Lang(closest_lang(lang_btns, cx))
                 } else if rollover {
                     // No lang strip: wrap to the last keyboard row.
                     let rows = all_btns.len();
-                    let cx   = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
                     NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
                 } else {
                     NavSel::Key(row, col)
                 }
             } else if dr != 0 {
                 let rows = all_btns.len();
-                let cx   = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                // When the current key is the Spacebar (a wide key), use the stored
+                // preferred column position so the cursor returns to the same column
+                // the user navigated from, rather than drifting to the Spacebar's
+                // wide centre.  For all other keys, update preferred_cx so that
+                // subsequent Spacebar navigation remembers this column.
+                let cx = if all_btns[row][col].1 == Action::Space {
+                    *preferred_cx
+                } else {
+                    let c = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                    *preferred_cx = c;
+                    c
+                };
                 // Scan rows in direction dr, skipping any row where no button
                 // is close to cx.  This makes navigation skip rows that have no
                 // keys in the nav cluster (e.g. the home row has no nav-cluster
@@ -497,13 +513,17 @@ fn nav_move(
                 }
             } else {
                 // Left / right within the current keyboard row.
-                let rl = all_btns[row].len();
-                if rollover {
-                    NavSel::Key(row, (col as i32 + dc).rem_euclid(rl as i32) as usize)
+                let rl      = all_btns[row].len();
+                let new_col = if rollover {
+                    (col as i32 + dc).rem_euclid(rl as i32) as usize
                 } else {
-                    let new_col = (col as i32 + dc).clamp(0, rl as i32 - 1) as usize;
-                    NavSel::Key(row, new_col)
-                }
+                    (col as i32 + dc).clamp(0, rl as i32 - 1) as usize
+                };
+                // Update preferred_cx so that a subsequent vertical navigation from
+                // the new key's column is used correctly even if the user later moves
+                // onto the Spacebar.
+                *preferred_cx = all_btns[row][new_col].0.x() + all_btns[row][new_col].0.w() / 2;
+                NavSel::Key(row, new_col)
             }
         }
     };
@@ -1195,6 +1215,12 @@ fn main() {
         Rc::new(RefCell::new(Vec::new()));
     // Navigation cursor: starts on the first keyboard key.
     let sel: Rc<RefCell<NavSel>> = Rc::new(RefCell::new(NavSel::Key(0, 0)));
+    // Preferred horizontal pixel position for vertical navigation.
+    // Updated whenever the cursor moves to a regular (non-Spacebar) key, or
+    // horizontally to any key.  Used as the column reference when navigating
+    // away from the Spacebar, whose wide centre would otherwise cause the
+    // selection to drift from the column the user came from.
+    let preferred_cx: Rc<RefCell<i32>> = Rc::new(RefCell::new(0));
 
     for (li, def) in LAYOUTS.iter().enumerate() {
         let btn_x = pad_left + li as i32 * (lang_w + gap);
@@ -1584,6 +1610,7 @@ fn main() {
         let mut menu_group_c  = menu_group.clone();
         let rollover          = cfg.navigate.rollover;
         let center_key_kbd    = cfg.navigate.center_key.clone();
+        let preferred_cx_c    = preferred_cx.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1647,7 +1674,7 @@ fn main() {
                         let mut ab = all_btns_c.borrow_mut();
                         let mut lb = lang_btns_c.borrow_mut();
                         let mut s  = sel_c.borrow_mut();
-                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors, rollover)
+                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors, rollover, &mut *preferred_cx_c.borrow_mut())
                     };
                     if changed {
                         if gp_rumble {
@@ -1910,6 +1937,7 @@ fn main() {
         let mut menu_group_gp = menu_group.clone();
         let gp_rollover       = cfg.navigate.rollover;
         let gp_center_key     = cfg.navigate.center_key.clone();
+        let preferred_cx_gp   = preferred_cx.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -2029,6 +2057,7 @@ fn main() {
                                 dr, dc,
                                 colors,
                                 gp_rollover,
+                                &mut *preferred_cx_gp.borrow_mut(),
                             )
                         };
                         if changed {
