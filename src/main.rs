@@ -495,16 +495,20 @@ fn nav_move(
                     // Check if we've gone past the edge.
                     if next_raw < 0 || next_raw >= rows as i32 {
                         if rollover {
-                            // Wrap: going down past last row → lang strip (if any) or stay.
-                            // Going up past row 0 is already handled above (row == 0 case).
-                            // This branch handles dr > 0 past last row.
                             if dr > 0 {
+                                // Wrap: going down past last row → lang strip (if any).
                                 if !lang_btns.is_empty() {
                                     dest_row = rows; // sentinel: means "go to lang strip"
                                 } else {
                                     // Wrap to first row.
                                     dest_row = rows + 1; // sentinel: means "wrap to row 0"
                                 }
+                            } else {
+                                // dr < 0: went up past row 0 without cx landing in any
+                                // row-0 button (e.g. Bksp, Ins, Home, PgUp whose pixel
+                                // range lies beyond the F-key row).  Apply the same wrap
+                                // as the dr < 0 && row == 0 case.
+                                dest_row = rows + 2; // sentinel: means "roll over upward"
                             }
                         }
                         break;
@@ -557,6 +561,32 @@ fn nav_move(
                 } else if dest_row == rows + 1 {
                     // Sentinel: wrap to first row.
                     NavSel::Key(0, closest_col(&all_btns[0], cx))
+                } else if dest_row == rows + 2 {
+                    // Sentinel: went up past row 0 with cx not covered by any
+                    // row-0 button (e.g. Bksp, Ins, Home, PgUp).  Mirror the
+                    // dr < 0 && row == 0 rollover logic: check lang strip first,
+                    // then scan from the last keyboard row upward.
+                    if !lang_btns.is_empty() {
+                        let li = closest_lang(lang_btns, cx);
+                        let lb = &lang_btns[li];
+                        if cx >= lb.x() && cx < lb.x() + lb.w() {
+                            NavSel::Lang(li)
+                        } else {
+                            let mut found = NavSel::Key(row, col); // fallback: stay
+                            for scan in (0..rows).rev() {
+                                let best = closest_col(&all_btns[scan], cx);
+                                let btn  = &all_btns[scan][best].0;
+                                if cx >= btn.x() && cx < btn.x() + btn.w() {
+                                    found = NavSel::Key(scan, best);
+                                    break;
+                                }
+                            }
+                            found
+                        }
+                    } else {
+                        // No lang strip: wrap to last row.
+                        NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
+                    }
                 } else if dest_row == row {
                     NavSel::Key(row, col) // clamped at edge
                 } else {
