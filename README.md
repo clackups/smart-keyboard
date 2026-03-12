@@ -84,6 +84,12 @@ codes in decimal or hexadecimal (see `/usr/include/linux/input-event-codes.h`).
 | `navigate_right` | `0x6a` (`KEY_RIGHT`) | Move selection one column right |
 | `activate` | `0x39` (`KEY_SPACE`) | Type the currently selected key |
 | `menu` | `0x32` (`KEY_M`) | Open the application pop-up menu |
+| `activate_shift` | *(disabled)* | Equivalent to `activate` when Shift is held. The current selection is typed as if Shift were pressed. Remove or set to `null` to disable. |
+| `activate_ctrl` | *(disabled)* | Equivalent to `activate` when Ctrl is held. Remove or set to `null` to disable. |
+| `activate_alt` | *(disabled)* | Equivalent to `activate` when Alt is held. Remove or set to `null` to disable. |
+| `activate_altgr` | *(disabled)* | Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
+| `activate_enter` | *(disabled)* | Produces the Enter output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_space` | *(disabled)* | Produces the Space output regardless of which key is currently selected. Remove or set to `null` to disable. |
 
 **Example**
 
@@ -95,6 +101,12 @@ navigate_left  = 0x69   # KEY_LEFT
 navigate_right = 0x6a   # KEY_RIGHT
 activate       = 0x39   # KEY_SPACE
 menu           = 0x32   # KEY_M
+# activate_shift = null
+# activate_ctrl  = null
+# activate_alt   = null
+# activate_altgr = null
+# activate_enter = null
+# activate_space = null
 ```
 
 ---
@@ -126,6 +138,12 @@ a key to disable that action.
 | `navigate_right` | *(disabled)* | Button index for move-right |
 | `activate` | `0x05` | Button index for activate (type selected key). `0x05` is the A/South button on most gamepads. |
 | `menu` | `0x08` | Button index for opening the application pop-up menu. `0x08` is typically the Start/Menu button. Remove or set to `null` to disable. |
+| `activate_shift` | *(disabled)* | Button index for activate-with-Shift. Equivalent to `activate` when Shift is held. Remove or set to `null` to disable. |
+| `activate_ctrl` | *(disabled)* | Button index for activate-with-Ctrl. Equivalent to `activate` when Ctrl is held. Remove or set to `null` to disable. |
+| `activate_alt` | *(disabled)* | Button index for activate-with-Alt. Equivalent to `activate` when Alt is held. Remove or set to `null` to disable. |
+| `activate_altgr` | *(disabled)* | Button index for activate-with-AltGr. Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
+| `activate_enter` | *(disabled)* | Button index for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_space` | *(disabled)* | Button index for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
 
@@ -166,6 +184,14 @@ device  = "auto"
 activate = 0x05   # A/South button
 menu     = 0x08   # Start/Menu button
 
+# Activate-with-modifier buttons (comment out to disable)
+# activate_shift = null
+# activate_ctrl  = null
+# activate_alt   = null
+# activate_altgr = null
+# activate_enter = null
+# activate_space = null
+
 # Analog stick navigation
 # axis_navigate_horizontal = 0
 # axis_navigate_vertical   = 1
@@ -180,6 +206,23 @@ axis_activate = 0x05
 # rumble             = false
 # rumble_duration_ms = 50
 # rumble_magnitude   = 16384
+```
+
+---
+
+### `[navigate]`
+
+Controls navigation behaviour.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `rollover` | `false` | When `true`, navigation wraps around at the edges of the keyboard. Moving left past the first column of a row brings the cursor to the last column of that row, and vice-versa. Moving up past the top edge (language strip) wraps to the last keyboard row, and moving down past the last row wraps back to the top. |
+
+**Example**
+
+```toml
+[navigate]
+rollover = true
 ```
 
 ---

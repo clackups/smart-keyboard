@@ -29,6 +29,30 @@ pub struct KeyboardInputConfig {
     pub activate: u32,
     /// Linux evdev scan code for "menu" (default: 0x32 KEY_M).
     pub menu: u32,
+    /// Linux evdev scan code for "activate with Shift" (default: None / disabled).
+    /// Equivalent to activate when Shift is held.
+    #[serde(default)]
+    pub activate_shift: Option<u32>,
+    /// Linux evdev scan code for "activate with Ctrl" (default: None / disabled).
+    /// Equivalent to activate when Ctrl is held.
+    #[serde(default)]
+    pub activate_ctrl: Option<u32>,
+    /// Linux evdev scan code for "activate with Alt" (default: None / disabled).
+    /// Equivalent to activate when Alt is held.
+    #[serde(default)]
+    pub activate_alt: Option<u32>,
+    /// Linux evdev scan code for "activate with AltGr" (default: None / disabled).
+    /// Equivalent to activate when AltGr is held.
+    #[serde(default)]
+    pub activate_altgr: Option<u32>,
+    /// Linux evdev scan code for "activate Enter" (default: None / disabled).
+    /// Produces the Enter output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_enter: Option<u32>,
+    /// Linux evdev scan code for "activate Space" (default: None / disabled).
+    /// Produces the Space output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_space: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -101,6 +125,24 @@ pub struct GamepadInputConfig {
     /// Applied to both the strong and weak motors.  Default: 0x4000 (~25 %).
     #[serde(default = "default_rumble_magnitude")]
     pub rumble_magnitude: u16,
+    /// Button index for "activate with Shift"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_shift: Option<u32>,
+    /// Button index for "activate with Ctrl"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_ctrl: Option<u32>,
+    /// Button index for "activate with Alt"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_alt: Option<u32>,
+    /// Button index for "activate with AltGr"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_altgr: Option<u32>,
+    /// Button index for "activate Enter"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_enter: Option<u32>,
+    /// Button index for "activate Space"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_space: Option<u32>,
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
@@ -336,6 +378,17 @@ pub struct UiConfig {
     pub colors: ColorsConfig,
 }
 
+/// Navigation behaviour configuration.
+#[derive(Deserialize, Default)]
+pub struct NavigateConfig {
+    /// When `true`, navigation wraps around at the edges of the keyboard.
+    /// Moving past the last column brings the cursor to the first column, and
+    /// vice-versa; moving past the last row brings the cursor to the first row
+    /// (within the keyboard grid), and vice-versa.  Default: false.
+    #[serde(default)]
+    pub rollover: bool,
+}
+
 #[derive(Deserialize)]
 pub struct Config {
     pub input: InputConfig,
@@ -343,6 +396,8 @@ pub struct Config {
     pub output: OutputConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub navigate: NavigateConfig,
 }
 
 // =============================================================================
@@ -358,6 +413,12 @@ impl Default for KeyboardInputConfig {
             navigate_right: 0x6a,
             activate:       0x39,
             menu:           0x32,
+            activate_shift: None,
+            activate_ctrl:  None,
+            activate_alt:   None,
+            activate_altgr: None,
+            activate_enter: None,
+            activate_space: None,
         }
     }
 }
@@ -382,6 +443,12 @@ impl Default for GamepadInputConfig {
             rumble:                   false,
             rumble_duration_ms:       default_rumble_duration_ms(),
             rumble_magnitude:         default_rumble_magnitude(),
+            activate_shift:           None,
+            activate_ctrl:            None,
+            activate_alt:             None,
+            activate_altgr:           None,
+            activate_enter:           None,
+            activate_space:           None,
         }
     }
 }
@@ -398,9 +465,10 @@ impl Default for InputConfig {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            input:  InputConfig::default(),
-            output: OutputConfig::default(),
-            ui:     UiConfig::default(),
+            input:    InputConfig::default(),
+            output:   OutputConfig::default(),
+            ui:       UiConfig::default(),
+            navigate: NavigateConfig::default(),
         }
     }
 }
@@ -482,6 +550,18 @@ pub struct NavKeys {
     pub right: Key,
     pub activate: Key,
     pub menu: Key,
+    /// Key that activates the current selection with Shift held (None = disabled).
+    pub activate_shift: Option<Key>,
+    /// Key that activates the current selection with Ctrl held (None = disabled).
+    pub activate_ctrl:  Option<Key>,
+    /// Key that activates the current selection with Alt held (None = disabled).
+    pub activate_alt:   Option<Key>,
+    /// Key that activates the current selection with AltGr held (None = disabled).
+    pub activate_altgr: Option<Key>,
+    /// Key that produces the Enter output directly (None = disabled).
+    pub activate_enter: Option<Key>,
+    /// Key that produces the Space output directly (None = disabled).
+    pub activate_space: Option<Key>,
 }
 
 impl NavKeys {
@@ -495,6 +575,12 @@ impl NavKeys {
             right:    evdev_to_fltk_key(cfg.navigate_right) .unwrap_or(Key::Right),
             activate: evdev_to_fltk_key(cfg.activate)       .unwrap_or(Key::from_char(' ')),
             menu:     evdev_to_fltk_key(cfg.menu)           .unwrap_or(Key::from_char('m')),
+            activate_shift: cfg.activate_shift.and_then(evdev_to_fltk_key),
+            activate_ctrl:  cfg.activate_ctrl .and_then(evdev_to_fltk_key),
+            activate_alt:   cfg.activate_alt  .and_then(evdev_to_fltk_key),
+            activate_altgr: cfg.activate_altgr.and_then(evdev_to_fltk_key),
+            activate_enter: cfg.activate_enter.and_then(evdev_to_fltk_key),
+            activate_space: cfg.activate_space.and_then(evdev_to_fltk_key),
         }
     }
 }

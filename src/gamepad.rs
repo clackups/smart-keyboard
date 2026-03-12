@@ -38,6 +38,18 @@ pub enum GamepadAction {
     Right,
     Activate,
     Menu,
+    /// Activate the current selection with Shift held.
+    ActivateShift,
+    /// Activate the current selection with Ctrl held.
+    ActivateCtrl,
+    /// Activate the current selection with Alt held.
+    ActivateAlt,
+    /// Activate the current selection with AltGr held.
+    ActivateAltGr,
+    /// Produce the Enter output directly.
+    ActivateEnter,
+    /// Produce the Space output directly.
+    ActivateSpace,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
     /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
     /// value) … `1.0` (max axis value).
@@ -181,6 +193,12 @@ pub struct Gamepad {
     navigate_right: Option<u32>,
     activate:       Option<u32>,
     menu:           Option<u32>,
+    activate_shift: Option<u32>,
+    activate_ctrl:  Option<u32>,
+    activate_alt:   Option<u32>,
+    activate_altgr: Option<u32>,
+    activate_enter: Option<u32>,
+    activate_space: Option<u32>,
     // Axis configuration
     axis_horizontal: Option<u32>,         // axis index for left/right (None = disabled)
     axis_vertical:   Option<u32>,         // axis index for up/down (None = disabled)
@@ -245,6 +263,12 @@ impl Gamepad {
             navigate_right: cfg.navigate_right,
             activate:       cfg.activate,
             menu:           cfg.menu,
+            activate_shift: cfg.activate_shift,
+            activate_ctrl:  cfg.activate_ctrl,
+            activate_alt:   cfg.activate_alt,
+            activate_altgr: cfg.activate_altgr,
+            activate_enter: cfg.activate_enter,
+            activate_space: cfg.activate_space,
             axis_horizontal: cfg.axis_navigate_horizontal,
             axis_vertical:   cfg.axis_navigate_vertical,
             axis_activate:   cfg.axis_activate,
@@ -384,12 +408,18 @@ impl Gamepad {
 
     /// Map a raw button index to a `GamepadAction`, or `None` if unconfigured.
     fn map_button(&self, code: u32) -> Option<GamepadAction> {
-        if self.navigate_up    == Some(code) { return Some(GamepadAction::Up);       }
-        if self.navigate_down  == Some(code) { return Some(GamepadAction::Down);     }
-        if self.navigate_left  == Some(code) { return Some(GamepadAction::Left);     }
-        if self.navigate_right == Some(code) { return Some(GamepadAction::Right);    }
-        if self.activate       == Some(code) { return Some(GamepadAction::Activate); }
-        if self.menu           == Some(code) { return Some(GamepadAction::Menu);     }
+        if self.navigate_up    == Some(code) { return Some(GamepadAction::Up);            }
+        if self.navigate_down  == Some(code) { return Some(GamepadAction::Down);          }
+        if self.navigate_left  == Some(code) { return Some(GamepadAction::Left);          }
+        if self.navigate_right == Some(code) { return Some(GamepadAction::Right);         }
+        if self.activate       == Some(code) { return Some(GamepadAction::Activate);      }
+        if self.menu           == Some(code) { return Some(GamepadAction::Menu);          }
+        if self.activate_shift == Some(code) { return Some(GamepadAction::ActivateShift); }
+        if self.activate_ctrl  == Some(code) { return Some(GamepadAction::ActivateCtrl);  }
+        if self.activate_alt   == Some(code) { return Some(GamepadAction::ActivateAlt);   }
+        if self.activate_altgr == Some(code) { return Some(GamepadAction::ActivateAltGr); }
+        if self.activate_enter == Some(code) { return Some(GamepadAction::ActivateEnter); }
+        if self.activate_space == Some(code) { return Some(GamepadAction::ActivateSpace); }
         None
     }
 

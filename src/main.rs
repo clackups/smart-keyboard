@@ -375,12 +375,14 @@ fn nav_set(
 
 /// Move the keyboard-navigation cursor and update highlight colours.
 ///
-/// Navigation clamps at all edges (no wrap-around).
+/// When `rollover` is `false`, navigation clamps at all edges (no wrap-around).
+/// When `rollover` is `true`, moving past the edge of the keyboard wraps the
+/// selection to the opposite edge.
 /// The cursor can move between the language-button strip and the keyboard grid;
 /// vertical transitions are pixel-centre aligned so wide keys map naturally.
 ///
 /// Returns `true` if the selection actually changed, `false` if it was already
-/// at the edge in the requested direction.
+/// at the edge in the requested direction (only possible when rollover is false).
 fn nav_move(
     all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
     lang_btns:  &mut Vec<Button>,
@@ -390,27 +392,52 @@ fn nav_move(
     dr:         i32,
     dc:         i32,
     colors:     Colors,
+    rollover:   bool,
 ) -> bool {
     let new_sel: NavSel = match *sel {
         NavSel::Lang(li) => {
             if dr < 0 {
-                // Already at the top edge.
-                NavSel::Lang(li)
+                if rollover {
+                    // Up from the lang strip wraps to the last keyboard row.
+                    let rows = all_btns.len();
+                    if rows == 0 {
+                        NavSel::Lang(li)
+                    } else {
+                        let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
+                        NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
+                    }
+                } else {
+                    // Already at the top edge.
+                    NavSel::Lang(li)
+                }
             } else if dr > 0 {
                 // Down into the first keyboard row, pixel-aligned.
                 let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
                 NavSel::Key(0, closest_col(&all_btns[0], cx))
             } else {
-                // Left / right within the lang strip, clamped.
+                // Left / right within the lang strip.
                 let lc = lang_btns.len();
-                NavSel::Lang((li as i32 + dc).clamp(0, lc as i32 - 1) as usize)
+                if rollover {
+                    NavSel::Lang((li as i32 + dc).rem_euclid(lc as i32) as usize)
+                } else {
+                    NavSel::Lang((li as i32 + dc).clamp(0, lc as i32 - 1) as usize)
+                }
             }
         }
         NavSel::Key(row, col) => {
             if dr < 0 && row == 0 {
-                // Up from the top keyboard row → lang strip, pixel-aligned.
-                let cx = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
-                NavSel::Lang(closest_lang(lang_btns, cx))
+                if !lang_btns.is_empty() {
+                    // Up from the top keyboard row → lang strip, pixel-aligned.
+                    let cx = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
+                    NavSel::Lang(closest_lang(lang_btns, cx))
+                } else if rollover {
+                    // No lang strip: wrap to the last keyboard row.
+                    let rows = all_btns.len();
+                    let cx   = all_btns[0][col].0.x() + all_btns[0][col].0.w() / 2;
+                    NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
+                } else {
+                    NavSel::Key(row, col)
+                }
             } else if dr != 0 {
                 let rows = all_btns.len();
                 let cx   = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
@@ -423,12 +450,25 @@ fn nav_move(
                 let mut scan     = row;
                 let mut dest_row = row; // will be updated when we find a close row
                 loop {
-                    let next = (scan as i32 + dr).clamp(0, rows as i32 - 1) as usize;
-                    if next == scan {
-                        // Hit the edge without finding a close row; stay put.
+                    let next_raw = scan as i32 + dr;
+                    // Check if we've gone past the edge.
+                    if next_raw < 0 || next_raw >= rows as i32 {
+                        if rollover {
+                            // Wrap: going down past last row → lang strip (if any) or stay.
+                            // Going up past row 0 is already handled above (row == 0 case).
+                            // This branch handles dr > 0 past last row.
+                            if dr > 0 {
+                                if !lang_btns.is_empty() {
+                                    dest_row = rows; // sentinel: means "go to lang strip"
+                                } else {
+                                    // Wrap to first row.
+                                    dest_row = rows + 1; // sentinel: means "wrap to row 0"
+                                }
+                            }
+                        }
                         break;
                     }
-                    scan = next;
+                    scan = next_raw as usize;
                     let best_col = closest_col(&all_btns[scan], cx);
                     let btn      = &all_btns[scan][best_col].0;
                     let dist = if cx >= btn.x() && cx < btn.x() + btn.w() {
@@ -444,16 +484,26 @@ fn nav_move(
                     }
                     // Too far – keep scanning.
                 }
-                if dest_row == row {
+                if dest_row == rows {
+                    // Sentinel: wrap to lang strip.
+                    NavSel::Lang(closest_lang(lang_btns, cx))
+                } else if dest_row == rows + 1 {
+                    // Sentinel: wrap to first row.
+                    NavSel::Key(0, closest_col(&all_btns[0], cx))
+                } else if dest_row == row {
                     NavSel::Key(row, col) // clamped at edge
                 } else {
                     NavSel::Key(dest_row, closest_col(&all_btns[dest_row], cx))
                 }
             } else {
-                // Left / right within the current keyboard row, clamped.
-                let rl      = all_btns[row].len();
-                let new_col = (col as i32 + dc).clamp(0, rl as i32 - 1) as usize;
-                NavSel::Key(row, new_col)
+                // Left / right within the current keyboard row.
+                let rl = all_btns[row].len();
+                if rollover {
+                    NavSel::Key(row, (col as i32 + dc).rem_euclid(rl as i32) as usize)
+                } else {
+                    let new_col = (col as i32 + dc).clamp(0, rl as i32 - 1) as usize;
+                    NavSel::Key(row, new_col)
+                }
             }
         }
     };
@@ -1507,6 +1557,7 @@ fn main() {
         let menu_items_c      = menu_item_defs.clone();
         let mut menu_item_btns_c = menu_item_btns.clone();
         let mut menu_group_c  = menu_group.clone();
+        let rollover          = cfg.navigate.rollover;
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1568,7 +1619,7 @@ fn main() {
                         let mut ab = all_btns_c.borrow_mut();
                         let mut lb = lang_btns_c.borrow_mut();
                         let mut s  = sel_c.borrow_mut();
-                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors)
+                        nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors, rollover)
                     };
                     if changed {
                         if gp_rumble {
@@ -1646,6 +1697,75 @@ fn main() {
                     }
                     return true;
                 }
+
+                // activate_enter: directly produce the Enter output.
+                if nav_keys.activate_enter.map_or(false, |ak| k == ak) {
+                    let key_str = execute_action(
+                        Action::Enter, 0x1c,
+                        *layout_idx_c.borrow(),
+                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mod_state_c, &mod_btns_c.borrow(), colors,
+                    );
+                    *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
+                    return true;
+                }
+
+                // activate_space: directly produce the Space output.
+                if nav_keys.activate_space.map_or(false, |ak| k == ak) {
+                    let key_str = execute_action(
+                        Action::Space, 0x39,
+                        *layout_idx_c.borrow(),
+                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mod_state_c, &mod_btns_c.borrow(), colors,
+                    );
+                    *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                    return true;
+                }
+
+                // activate_shift / ctrl / alt / altgr: force the modifier on,
+                // then activate the currently selected key as if that modifier
+                // were already held.  The modifier is auto-released by
+                // execute_action after the key fires.
+                let which_mod: Option<u8> =
+                    if      nav_keys.activate_shift .map_or(false, |ak| k == ak) { Some(0) }
+                    else if nav_keys.activate_ctrl  .map_or(false, |ak| k == ak) { Some(1) }
+                    else if nav_keys.activate_alt   .map_or(false, |ak| k == ak) { Some(2) }
+                    else if nav_keys.activate_altgr .map_or(false, |ak| k == ak) { Some(3) }
+                    else { None };
+
+                if let Some(m) = which_mod {
+                    {
+                        let mut ms = mod_state_c.borrow_mut();
+                        match m {
+                            0 => ms.lshift = true,
+                            1 => ms.ctrl   = true,
+                            2 => ms.alt    = true,
+                            _ => ms.altgr  = true,
+                        }
+                    }
+                    let cur_sel = *sel_c.borrow();
+                    match cur_sel {
+                        NavSel::Lang(li) => {
+                            lang_btns_c.borrow_mut()[li].do_callback();
+                            *active_nav_key_c.borrow_mut() = None;
+                        }
+                        NavSel::Key(row, col) => {
+                            let (action, scancode) = {
+                                let ab = all_btns_c.borrow();
+                                (ab[row][col].1, ab[row][col].2)
+                            };
+                            let key_str = execute_action(
+                                action, scancode,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((scancode, key_str));
+                            all_btns_c.borrow_mut()[row][col].0.set_color(colors.nav_sel);
+                        }
+                    }
+                    return true;
+                }
             } else if ev == Event::KeyUp {
                 // When the menu is open, consume key-up events silently.
                 if menu_sel_c.borrow().is_some() {
@@ -1653,6 +1773,20 @@ fn main() {
                 }
                 // Activation key released: send the key-release event.
                 if k == nav_keys.activate {
+                    if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                        hook_c.on_key_release(sc, &ks);
+                    }
+                    return true;
+                }
+                // Release any activate_* variant key similarly.
+                let is_activate_variant =
+                    nav_keys.activate_shift .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_ctrl  .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_alt   .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_altgr .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_enter .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_space .map_or(false, |ak| k == ak);
+                if is_activate_variant {
                     if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                         hook_c.on_key_release(sc, &ks);
                     }
@@ -1717,6 +1851,7 @@ fn main() {
         let menu_items_gp     = menu_item_defs.clone();
         let mut menu_item_btns_gp = menu_item_btns.clone();
         let mut menu_group_gp = menu_group.clone();
+        let gp_rollover       = cfg.navigate.rollover;
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -1835,6 +1970,7 @@ fn main() {
                                 &mut s, &mod_state_c,
                                 dr, dc,
                                 colors,
+                                gp_rollover,
                             )
                         };
                         if changed {
@@ -1897,6 +2033,89 @@ fn main() {
                             }
                         } else {
                             // Button released: send the key-release event.
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::ActivateEnter => {
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                Action::Enter, 0x1c,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::ActivateSpace => {
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                Action::Space, 0x39,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::ActivateShift
+                    | GamepadAction::ActivateCtrl
+                    | GamepadAction::ActivateAlt
+                    | GamepadAction::ActivateAltGr => {
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            // Force-activate the relevant modifier, then run the
+                            // same logic as the regular Activate button.
+                            {
+                                let mut ms = mod_state_c.borrow_mut();
+                                match evt.action {
+                                    GamepadAction::ActivateShift => ms.lshift = true,
+                                    GamepadAction::ActivateCtrl  => ms.ctrl   = true,
+                                    GamepadAction::ActivateAlt   => ms.alt    = true,
+                                    _                            => ms.altgr  = true,
+                                }
+                            }
+                            let cur_sel = *sel_c.borrow();
+                            match cur_sel {
+                                NavSel::Lang(li) => {
+                                    lang_btns_c.borrow_mut()[li].do_callback();
+                                    *active_nav_key_c.borrow_mut() = None;
+                                }
+                                NavSel::Key(row, col) => {
+                                    let (action, scancode) = {
+                                        let ab = all_btns_c.borrow();
+                                        (ab[row][col].1, ab[row][col].2)
+                                    };
+                                    let key_str = execute_action(
+                                        action, scancode,
+                                        *layout_idx_c.borrow(),
+                                        &mut buf_c, &mut disp_c, &hook_c,
+                                        &mod_state_c,
+                                        &mod_btns_c.borrow(),
+                                        colors,
+                                    );
+                                    *active_nav_key_c.borrow_mut() =
+                                        Some((scancode, key_str));
+                                    all_btns_c.borrow_mut()[row][col]
+                                        .0.set_color(colors.nav_sel);
+                                }
+                            }
+                        } else {
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
