@@ -1236,6 +1236,15 @@ fn main() {
         }
     }
 
+    // "Quit Smart Keyboard": always enabled; terminates the application.
+    menu_item_defs.push(MenuItemDef {
+        label:      "Quit Smart Keyboard",
+        is_enabled: Box::new(|| true),
+        execute:    Box::new(|| {
+            app::quit();
+        }),
+    });
+
     let menu_item_defs: Rc<Vec<MenuItemDef>> = Rc::new(menu_item_defs);
 
     // --- Text display (read-only) ---
