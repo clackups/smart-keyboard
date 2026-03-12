@@ -54,7 +54,7 @@ pub enum GamepadAction {
     NavigateCenter,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
     /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
-    /// value) … `1.0` (max axis value).
+    /// value) ... `1.0` (max axis value).
     AbsolutePos { horiz: f32, vert: f32 },
 }
 
@@ -228,7 +228,7 @@ pub struct Gamepad {
 impl Gamepad {
     /// Open the configured gamepad device.
     ///
-    /// If `cfg.device == "auto"` the first available `/dev/input/jsN` (N = 0–7)
+    /// If `cfg.device == "auto"` the first available `/dev/input/jsN` (N = 0-7)
     /// is used.  Returns `None` if no device can be opened.
     pub fn open(cfg: &GamepadInputConfig) -> Option<Self> {
         let path = if cfg.device == "auto" {
@@ -330,10 +330,10 @@ impl Gamepad {
     pub fn poll(&mut self, out: &mut Vec<GamepadEvent>) -> bool {
         out.clear();
         // js_event is exactly 8 bytes (little-endian):
-        //   [0..4]  u32  time    – milliseconds since driver start
-        //   [4..6]  i16  value   – axis/button value
-        //   [6]     u8   type    – JS_EVENT_BUTTON | JS_EVENT_AXIS | JS_EVENT_INIT
-        //   [7]     u8   number  – button/axis index
+        //   [0..4]  u32  time    - milliseconds since driver start
+        //   [4..6]  i16  value   - axis/button value
+        //   [6]     u8   type    - JS_EVENT_BUTTON | JS_EVENT_AXIS | JS_EVENT_INIT
+        //   [7]     u8   number  - button/axis index
         let mut buf = [0u8; 8];
         loop {
             match self.file.read(&mut buf) {
@@ -364,11 +364,11 @@ impl Gamepad {
                         self.handle_axis(number, value, out);
                     }
                 }
-                // Partial read – should not occur with 8-byte structs, skip.
+                // Partial read - should not occur with 8-byte structs, skip.
                 Ok(_) => break,
                 // No more events available right now.
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                // Any other error (device disconnected, etc.) – signal disconnection.
+                // Any other error (device disconnected, etc.) - signal disconnection.
                 Err(_) => return false,
             }
         }
@@ -432,12 +432,12 @@ impl Gamepad {
     /// `out` whenever the axis crosses the configured threshold.
     ///
     /// Each configured axis has a remembered active direction (`horiz_dir`,
-    /// `vert_dir`, `act_active`).  A transition from neutral → active emits a
-    /// *press* event; active → neutral emits a *release* event.
+    /// `vert_dir`, `act_active`).  A transition from neutral -> active emits a
+    /// *press* event; active -> neutral emits a *release* event.
     ///
     /// When `axis_absolute` is `true` the horizontal and vertical axes instead
     /// emit a [`GamepadAction::AbsolutePos`] event whose `horiz` / `vert`
-    /// values are normalised to `0.0 … 1.0`.  The event is only emitted when
+    /// values are normalised to `0.0 ... 1.0`.  The event is only emitted when
     /// the raw axis value changes, so that `main` can update the selection only
     /// on actual movement.
     fn handle_axis(&mut self, axis: u32, value: i16, out: &mut Vec<GamepadEvent>) {
@@ -544,7 +544,7 @@ impl Gamepad {
             }
         } else if self.axis_activate == Some(axis) {
             // Activate uses positive values only; this matches the physical
-            // behaviour of analog triggers (range 0 → +32767).
+            // behaviour of analog triggers (range 0 -> +32767).
             let active = v > self.axis_threshold;
             if active != self.act_active {
                 out.push(GamepadEvent {
@@ -571,7 +571,7 @@ impl Gamepad {
 // Device discovery
 // =============================================================================
 
-/// Return the path of the first available `/dev/input/jsN` (N = 0–MAX-1), or
+/// Return the path of the first available `/dev/input/jsN` (N = 0-MAX-1), or
 /// `None` if no joystick device is present.
 fn find_first_joystick() -> Option<PathBuf> {
     for i in 0..MAX_JOYSTICK_DEVICES {
@@ -664,7 +664,7 @@ fn open_rumble(
 ///
 /// Returns `Positive` when `value > threshold`, `Negative` when
 /// `value < -threshold`, and `None` when the value is within the deadzone.
-/// `threshold` must be in the range 0–32767.
+/// `threshold` must be in the range 0-32767.
 fn axis_dir(value: i32, threshold: i32) -> Option<AxisDir> {
     if value > threshold       { Some(AxisDir::Positive) }
     else if value < -threshold { Some(AxisDir::Negative) }
@@ -673,12 +673,12 @@ fn axis_dir(value: i32, threshold: i32) -> Option<AxisDir> {
 
 /// Full span of the symmetric i16 axis range used for normalisation.
 ///
-/// Maps the range `−32767 … +32767` (width = 65534) to `0.0 … 1.0`.
+/// Maps the range `-32767 ... +32767` (width = 65534) to `0.0 ... 1.0`.
 const AXIS_FULL_SPAN: f32 = 65534.0;
 
-/// Normalise a raw i16 axis value to the range `0.0 … 1.0`.
+/// Normalise a raw i16 axis value to the range `0.0 ... 1.0`.
 ///
-/// The symmetric axis range `−32767 … +32767` maps to `0.0 … 1.0`.
+/// The symmetric axis range `-32767 ... +32767` maps to `0.0 ... 1.0`.
 /// Values outside that range are clamped first.
 fn raw_to_frac(v: i16) -> f32 {
     let clamped = (v as i32).clamp(-32767, 32767);

@@ -68,6 +68,13 @@ SMART_KBD_CONFIG_PATH=/etc/smart-keyboard/config.toml cargo run --release
 If the file is missing or cannot be parsed, built-in defaults are used
 silently.
 
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SMART_KBD_CONFIG_PATH` | `config.toml` | Path to the TOML configuration file. If unset, `config.toml` in the current working directory is used. If the file is absent or unparseable, built-in defaults are used silently. |
+| `SMART_KBD_AUDIO_PATH` | `audio` | Directory that contains the WAV narration clips used by `audio = "narrate"` mode. Each clip is named `<layout>_<key>.wav` (e.g. `us_a.wav`, `ua_u0430.wav`) or `<action>.wav` (e.g. `enter.wav`, `backspace.wav`). If unset, the `audio/` sub-directory of the current working directory is used. |
+
 ---
 
 ### `[input.keyboard]`

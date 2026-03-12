@@ -38,14 +38,14 @@ use narrator::Narrator;
 ///
 /// There are two kinds of notifications:
 ///
-/// * **Raw events** – `on_key_press` / `on_key_release` fire for every GUI
+/// * **Raw events** - `on_key_press` / `on_key_release` fire for every GUI
 ///   push/release event (mouse button down, mouse button up).  They may fire
 ///   twice per logical key action when the keyboard is operated by mouse or
 ///   touch (once from the widget's raw event handler and once from the
 ///   action-execution callback).  These are provided for hooks that need
 ///   immediate, low-latency feedback (e.g. audio click).
 ///
-/// * **Action events** – `on_key_action` fires exactly once per logical key
+/// * **Action events** - `on_key_action` fires exactly once per logical key
 ///   action, after modifier state has been resolved.  `modifier_bits` carries
 ///   the USB HID modifier byte that was active at the time of the action:
 ///     bit 0 (0x01) = LEFTCTRL
@@ -53,7 +53,7 @@ use narrator::Narrator;
 ///     bit 2 (0x04) = LEFTALT
 ///     bit 5 (0x20) = RIGHTSHIFT
 ///     bit 6 (0x40) = RIGHTALT (AltGr)
-///   This is the correct callback to use for hardware output (uinput, BLE, …).
+///   This is the correct callback to use for hardware output (uinput, BLE, ...).
 ///
 /// The default implementation of `on_key_action` calls `on_key_press` followed
 /// by `on_key_release`, preserving backwards compatibility for hooks that only
@@ -434,7 +434,7 @@ fn nav_move(
                 let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
                 *preferred_cx = cx;
                 if !lang_btns.is_empty() {
-                    // Up from the top keyboard row → lang strip, but only if
+                    // Up from the top keyboard row -> lang strip, but only if
                     // cx is within a lang button's pixel range.  Keys like F2-F12
                     // extend beyond the two lang buttons; without this guard they
                     // would all jump to the UA button (the closest one), even
@@ -459,7 +459,7 @@ fn nav_move(
                         }
                         found
                     } else {
-                        NavSel::Key(row, col) // clamp – nothing directly above
+                        NavSel::Key(row, col) // clamp - nothing directly above
                     }
                 } else if rollover {
                     // No lang strip: wrap to the last keyboard row.
@@ -484,10 +484,10 @@ fn nav_move(
                 };
                 // Scan rows in direction dr, stopping when cx falls within a
                 // button's pixel range (dist == 0).  Rows where no button
-                // covers cx are skipped, so e.g. End↓ skips the home row
+                // covers cx are skipped, so e.g. End-down skips the home row
                 // and lands directly on ArrowUp.  Using strict containment
                 // (not a distance tolerance) prevents cross-column jumps such
-                // as Bksp↑→F12 or Enter↓→RShift.
+                // as Bksp-up->F12 or Enter-down->RShift.
                 let mut scan     = row;
                 let mut dest_row = row; // will be updated when we find a close row
                 loop {
@@ -496,7 +496,7 @@ fn nav_move(
                     if next_raw < 0 || next_raw >= rows as i32 {
                         if rollover {
                             if dr > 0 {
-                                // Wrap: going down past last row → lang strip (if any).
+                                // Wrap: going down past last row -> lang strip (if any).
                                 if !lang_btns.is_empty() {
                                     dest_row = rows; // sentinel: means "go to lang strip"
                                 } else {
@@ -527,7 +527,7 @@ fn nav_move(
                         dest_row = scan;
                         break;
                     }
-                    // cx not within any button in this row – keep scanning.
+                    // cx not within any button in this row - keep scanning.
                 }
                 if dest_row == rows {
                     // Sentinel: wrap to lang strip (if cx falls within a lang
@@ -850,14 +850,14 @@ fn nav_audio_slug(
 ///
 /// Key categories and their pitches:
 ///
-/// 1. **All letter / punctuation keys, except F and J** → A5 (880 Hz).
+/// 1. **All letter / punctuation keys, except F and J** -> A5 (880 Hz).
 /// 2. **F and J** (the physical home-row bump keys, slots 29 & 32)
-///    → B5 (988 Hz) — a distinctive major second above the other letters.
-/// 3. **Digit keys 1–0** → ascending C-major scale C4–E5 (261–659 Hz),
+///    -> B5 (988 Hz) - a distinctive major second above the other letters.
+/// 3. **Digit keys 1-0** -> ascending C-major scale C4-E5 (261-659 Hz),
 ///    with 1 the lowest pitch and 0 the highest.
-/// 4. **Function keys F1–F12** → ascending A-minor pentatonic A1–B3
-///    (55–247 Hz), clearly in the bass register below the digit range.
-/// 5. **All other keys** (Space, Enter, modifiers, arrows, …) → each key
+/// 4. **Function keys F1-F12** -> ascending A-minor pentatonic A1-B3
+///    (55-247 Hz), clearly in the bass register below the digit range.
+/// 5. **All other keys** (Space, Enter, modifiers, arrows, ...) -> each key
 ///    has its own unique pitch chosen for pleasant distinctiveness.
 ///
 /// Returns `0.0` for [`Action::Noop`] (no tone should be played).
@@ -865,7 +865,7 @@ fn tone_freq_for_action(action: Action) -> f32 {
     match action {
         // --- Regular keys ---
         Action::Regular(slot) => match slot {
-            // Digit row: slots 1-10 → 1,2,3,4,5,6,7,8,9,0
+            // Digit row: slots 1-10 -> 1,2,3,4,5,6,7,8,9,0
             // Ascending C-major scale C4..E5 (pitch rises from 1 to 0).
             1  => 261.63,  // C4
             2  => 293.66,  // D4
@@ -877,7 +877,7 @@ fn tone_freq_for_action(action: Action) -> f32 {
             8  => 523.25,  // C5
             9  => 587.33,  // D5
             10 => 659.26,  // E5  (key "0")
-            // F and J – physical home-row bump keys
+            // F and J - physical home-row bump keys
             29 | 32 => 987.77,  // B5
             // All other letter / punctuation keys
             _ => 880.00,        // A5
@@ -896,7 +896,7 @@ fn tone_freq_for_action(action: Action) -> f32 {
         Action::F11 => 220.00,   // A3
         Action::F12 => 246.94,   // B3
         // --- Special keys ---
-        Action::Esc        => 1760.00,  // A6 – high/urgent
+        Action::Esc        => 1760.00,  // A6 - high/urgent
         Action::Backspace  =>  415.30,  // Ab4
         Action::Tab        =>  369.99,  // F#4
         Action::CapsLock   =>  932.33,  // Bb5
@@ -926,14 +926,14 @@ fn tone_freq_for_action(action: Action) -> f32 {
 /// Identical to [`tone_freq_for_action`] except that all letter and punctuation
 /// keys are silent (0.0 Hz), with the exception of **F** (slot 29) and **J**
 /// (slot 32) which retain their distinctive B5 (987.77 Hz) pitch as a home-row
-/// position hint.  Digit keys (slots 1–10) and all non-`Regular` actions keep
+/// position hint.  Digit keys (slots 1-10) and all non-`Regular` actions keep
 /// their pitches unchanged.
 fn tone_hint_freq_for_action(action: Action) -> f32 {
     match action {
         Action::Regular(slot) => match slot {
             // Digit keys: same ascending scale as in tone mode.
             1..=10 => tone_freq_for_action(action),
-            // F and J – home-row bump keys: play a distinctive tone.
+            // F and J - home-row bump keys: play a distinctive tone.
             29 | 32 => 987.77,  // B5
             // All other letter / punctuation keys: silent.
             _ => 0.0,
@@ -955,7 +955,7 @@ fn action_tone_hz(action: Action, mode: &config::AudioMode) -> f32 {
 }
 
 /// Tone frequency (Hz) used for language-toggle buttons in tone mode.
-/// E4 = 329.63 Hz – a neutral, distinctive pitch in the mid register.
+/// E4 = 329.63 Hz - a neutral, distinctive pitch in the mid register.
 const LANG_BTN_TONE_HZ: f32 = 329.63;
 
 /// Return the tone frequency (Hz) for the current navigation selection.
@@ -970,6 +970,37 @@ fn nav_tone_freq(
         NavSel::Lang(_) => LANG_BTN_TONE_HZ,
         NavSel::Key(row, col) => action_tone_hz(all_btns[row][col].1, mode),
     }
+}
+
+/// Called after a navigation selection change.
+///
+/// When `changed` is `true`:
+/// * If `do_rumble` is set and a gamepad is connected, triggers a short rumble.
+/// * Plays the audio cue (narration clip or tone) for the new selection.
+///
+/// Does nothing when `changed` is `false`.
+fn on_nav_changed(
+    changed:    bool,
+    do_rumble:  bool,
+    gp_cell:    &Rc<RefCell<Option<Gamepad>>>,
+    sel:        &Rc<RefCell<NavSel>>,
+    all_btns:   &Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>>,
+    layout_idx: usize,
+    narrator:   &Rc<RefCell<Narrator>>,
+    audio_mode: &config::AudioMode,
+) {
+    if !changed { return; }
+    if do_rumble {
+        if let Some(ref mut gp) = *gp_cell.borrow_mut() {
+            gp.rumble();
+        }
+    }
+    let cur_sel = *sel.borrow();
+    let ab = all_btns.borrow();
+    narrator.borrow_mut().play(
+        &nav_audio_slug(cur_sel, layout_idx, &ab),
+        nav_tone_freq(cur_sel, &ab, audio_mode),
+    );
 }
 
 // =============================================================================
@@ -1027,9 +1058,9 @@ fn main() {
 
     // Ortholinear: every key is key_w wide.
     // The widest rows (number row and QWERTY row) are 18 slots wide:
-    //   14 main keys + 1 Spacer + 3 nav keys → 17*(key_w+gap) - gap = avail_w
+    //   14 main keys + 1 Spacer + 3 nav keys -> 17*(key_w+gap) - gap = avail_w
     //   key_w = (avail_w - 17*gap) / 17
-    // Bottom row: Ctrl Win Alt [Space] AltGr Ctrl Spacer ← ↓ → = 9 non-Space slots
+    // Bottom row: Ctrl Win Alt [Space] AltGr Ctrl Spacer <- v -> = 9 non-Space slots
     //   Space spans exactly 6 grid columns: space_w = 6*key_w + 5*gap
     //   (Pinning to exact grid avoids integer-division remainder bleeding into the
     //   spacebar width; the row may be a few pixels narrower than avail_w.)
@@ -1096,9 +1127,9 @@ fn main() {
     //   Red   "G" = gamepad device not found / disconnected.
     let ble_mode = matches!(cfg.output.mode, config::OutputMode::Ble);
 
-    // BLE connectivity icon – rightmost, only shown when output mode is BLE.
+    // BLE connectivity icon - rightmost, only shown when output mode is BLE.
     let conn_x = sw - ind_gap - ind_w;
-    let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "●");
+    let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "\u{25CF}");
     conn_status.set_color(colors.status_ind_bg);
     conn_status.set_label_color(colors.conn_disconnected); // initial: disconnected
     conn_status.set_frame(FrameType::FlatBox);
@@ -1107,7 +1138,7 @@ fn main() {
         conn_status.hide();
     }
 
-    // Gamepad icon – left of BLE icon when BLE is shown, otherwise rightmost.
+    // Gamepad icon - left of BLE icon when BLE is shown, otherwise rightmost.
     // Only created when gamepad input is enabled in config.
     let gp_icon_x = if ble_mode { conn_x - ind_gap - ind_w } else { conn_x };
     let mut gamepad_status: Option<Frame> = if cfg.input.gamepad.enabled {
@@ -1159,16 +1190,16 @@ fn main() {
             // Timer that manages the BLE connection life-cycle:
             //
             //  * When disconnected: try to connect once per second.
-            //    – On success → amber icon (connected, status not yet checked);
+            //    - On success -> amber icon (connected, status not yet checked);
             //      schedule status check in 1 s.
-            //    – On failure → red icon; retry in 1 s.
+            //    - On failure -> red icon; retry in 1 s.
             //
             //  * When connected: send the "S" command every 1 s.
-            //    – STATUS:CONNECTED:xxxx  → green icon; re-check in 1 s.
-            //    – STATUS:NOTCONNECTED    → amber icon; log disconnect if
+            //    - STATUS:CONNECTED:xxxx  -> green icon; re-check in 1 s.
+            //    - STATUS:NOTCONNECTED    -> amber icon; log disconnect if
             //      previously connected; re-check in 1 s.
-            //    – Other response / no response → amber icon; re-check in 1 s.
-            //    – Write failure (connection lost) → red icon; retry in 1 s.
+            //    - Other response / no response -> amber icon; re-check in 1 s.
+            //    - Write failure (connection lost) -> red icon; retry in 1 s.
             //
             // State changes between Disconnected and Connected are printed to
             // stdout.  When the host MAC address is available it is included in
@@ -1196,7 +1227,7 @@ fn main() {
                 } else {
                     match ble_conn_t.borrow_mut().check_status() {
                         Err(()) => {
-                            // Write failed → connection lost.
+                            // Write failed -> connection lost.
                             if *ble_state.borrow() != BleState::Disconnected {
                                 println!("BLE disconnected");
                             }
@@ -1292,7 +1323,7 @@ fn main() {
     let lang_y = pad_top + display_h + gap;
     // Language buttons snap to the keyboard grid: each button is exactly one
     // grid column wide (key_w) and placed at pad + li*(key_w+gap), aligning
-    // with grid columns 0, 1, 2 …
+    // with grid columns 0, 1, 2 ...
     let lang_w = key_w;
 
     let lang_btns:   Rc<RefCell<Vec<Button>>>          = Rc::new(RefCell::new(Vec::new()));
@@ -1475,7 +1506,7 @@ fn main() {
                         colors,
                     );
                     // For mouse/touch clicks the Released event fires before this
-                    // callback, so the key press command was sent in execute_action →
+                    // callback, so the key press command was sent in execute_action ->
                     // on_key_action.  Send the release immediately so the BLE dongle
                     // receives K0000 right after the press.
                     hook_c.on_key_release(scancode, &key_str);
@@ -1580,9 +1611,9 @@ fn main() {
 
     // --- Initial navigation highlight ---
     // Start at the configured center key when:
-    //   • absolute_axes is enabled (joystick covers the full axis range and
+    //   * absolute_axes is enabled (joystick covers the full axis range and
     //     must start at the physical centre of the grid), or
-    //   • center_after_activate is enabled (every activation returns to center,
+    //   * center_after_activate is enabled (every activation returns to center,
     //     so it is natural to also begin there).
     // Otherwise start at the top-left key (row 0, col 0).
     let (init_row, init_col) = {
@@ -1665,8 +1696,8 @@ fn main() {
     _menu_title.set_label_size(lbl_size);
 
     // Menu item widgets are Buttons so that:
-    //   • mouse clicks fire the item's callback directly, and
-    //   • keyboard focus can be moved here so Space/Enter reach the button
+    //   * mouse clicks fire the item's callback directly, and
+    //   * keyboard focus can be moved here so Space/Enter reach the button
     //     callback rather than the keyboard buttons behind the overlay.
     let mut menu_item_btns: Vec<Button> = Vec::new();
     for (i, item) in menu_item_defs.iter().enumerate() {
@@ -1751,7 +1782,7 @@ fn main() {
             if ev == Event::KeyDown {
                 #[cfg(debug_assertions)]
                 eprintln!("[keyboard] key=0x{:04x}", k.bits());
-                // ── Menu open: route all key events to menu navigation ─────
+                // -- Menu open: route all key events to menu navigation -----
                 if menu_sel_c.borrow().is_some() {
                     if k == Key::Escape || k == nav_keys.menu {
                         // Close the menu without taking any action.
@@ -1805,19 +1836,10 @@ fn main() {
                         let mut s  = sel_c.borrow_mut();
                         nav_move(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, dr, dc, colors, rollover, &mut *preferred_cx_c.borrow_mut())
                     };
-                    if changed {
-                        if gp_rumble {
-                            if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                                gp.rumble();
-                            }
-                        }
-                        let sel = *sel_c.borrow();
-                        let ab  = all_btns_c.borrow();
-                        narrator_c.borrow_mut().play(
-                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                            nav_tone_freq(sel, &ab, &audio_mode_c),
-                        );
-                    }
+                    on_nav_changed(
+                        changed, gp_rumble, &gp_cell_c, &sel_c,
+                        &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                    );
                     return true;
                 }
 
@@ -1867,19 +1889,10 @@ fn main() {
                                 let mut s  = sel_c.borrow_mut();
                                 nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                             };
-                            if changed {
-                                if gp_rumble {
-                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                                        gp.rumble();
-                                    }
-                                }
-                                let sel = *sel_c.borrow();
-                                let ab  = all_btns_c.borrow();
-                                narrator_c.borrow_mut().play(
-                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                    nav_tone_freq(sel, &ab, &audio_mode_c),
-                                );
-                            }
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            );
                         }
                     }
                     return true;
@@ -1920,19 +1933,10 @@ fn main() {
                             let mut s  = sel_c.borrow_mut();
                             nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                         };
-                        if changed {
-                            if gp_rumble {
-                                if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                                    gp.rumble();
-                                }
-                            }
-                            let sel = *sel_c.borrow();
-                            let ab  = all_btns_c.borrow();
-                            narrator_c.borrow_mut().play(
-                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                nav_tone_freq(sel, &ab, &audio_mode_c),
-                            );
-                        }
+                        on_nav_changed(
+                            changed, gp_rumble, &gp_cell_c, &sel_c,
+                            &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                        );
                     }
                     return true;
                 }
@@ -1957,19 +1961,10 @@ fn main() {
                                 let mut s  = sel_c.borrow_mut();
                                 nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                             };
-                            if changed {
-                                if gp_rumble {
-                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                                        gp.rumble();
-                                    }
-                                }
-                                let sel = *sel_c.borrow();
-                                let ab  = all_btns_c.borrow();
-                                narrator_c.borrow_mut().play(
-                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                    nav_tone_freq(sel, &ab, &audio_mode_c),
-                                );
-                            }
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            );
                         }
                     }
                     return true;
@@ -1995,19 +1990,10 @@ fn main() {
                                 let mut s  = sel_c.borrow_mut();
                                 nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                             };
-                            if changed {
-                                if gp_rumble {
-                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                                        gp.rumble();
-                                    }
-                                }
-                                let sel = *sel_c.borrow();
-                                let ab  = all_btns_c.borrow();
-                                narrator_c.borrow_mut().play(
-                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                    nav_tone_freq(sel, &ab, &audio_mode_c),
-                                );
-                            }
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            );
                         }
                     }
                     return true;
@@ -2066,19 +2052,10 @@ fn main() {
                                 let mut s  = sel_c.borrow_mut();
                                 nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                             };
-                            if changed {
-                                if gp_rumble {
-                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
-                                        gp.rumble();
-                                    }
-                                }
-                                let sel = *sel_c.borrow();
-                                let ab  = all_btns_c.borrow();
-                                narrator_c.borrow_mut().play(
-                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                    nav_tone_freq(sel, &ab, &audio_mode_c),
-                                );
-                            }
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            );
                         }
                     }
                     return true;
@@ -2180,7 +2157,7 @@ fn main() {
         // the way an idle callback would.  When the gamepad is disconnected
         // the timer slows to 1 Hz and retries opening the device.
         app::add_timeout3(0.016, move |handle| {
-            // Phase 1 – reconnect if currently disconnected.
+            // Phase 1 - reconnect if currently disconnected.
             if gp_cell_t.borrow().is_none() {
                 match Gamepad::open(&gp_cfg) {
                     Some(gp) => {
@@ -2200,7 +2177,7 @@ fn main() {
                 }
             }
 
-            // Phase 2 – poll for events; detect disconnection.
+            // Phase 2 - poll for events; detect disconnection.
             let still_alive = {
                 let mut opt = gp_cell_t.borrow_mut();
                 opt.as_mut().unwrap().poll(&mut gp_evt_buf)
@@ -2217,7 +2194,7 @@ fn main() {
                 return;
             }
 
-            // Phase 3 – process the events collected in Phase 2.
+            // Phase 3 - process the events collected in Phase 2.
             for evt in gp_evt_buf.iter() {
                 match evt.action {
                     GamepadAction::Menu => {
@@ -2294,19 +2271,10 @@ fn main() {
                                 &mut *preferred_cx_gp.borrow_mut(),
                             )
                         };
-                        if changed {
-                            if gp_rumble {
-                                if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                    gp.rumble();
-                                }
-                            }
-                            let sel = *sel_c.borrow();
-                            let ab  = all_btns_c.borrow();
-                            narrator_t.borrow_mut().play(
-                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                nav_tone_freq(sel, &ab, &audio_mode_t),
-                            );
-                        }
+                        on_nav_changed(
+                            changed, gp_rumble, &gp_cell_t, &sel_c,
+                            &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                        );
                     }
                     GamepadAction::Activate => {
                         // When menu is open, Activate executes the selected item.
@@ -2363,19 +2331,10 @@ fn main() {
                                         let mut s  = sel_c.borrow_mut();
                                         nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                                     };
-                                    if changed {
-                                        if gp_rumble {
-                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                                gp.rumble();
-                                            }
-                                        }
-                                        let sel = *sel_c.borrow();
-                                        let ab  = all_btns_c.borrow();
-                                        narrator_t.borrow_mut().play(
-                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                            nav_tone_freq(sel, &ab, &audio_mode_t),
-                                        );
-                                    }
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
                                 }
                             }
                         } else {
@@ -2407,19 +2366,10 @@ fn main() {
                                         let mut s  = sel_c.borrow_mut();
                                         nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                                     };
-                                    if changed {
-                                        if gp_rumble {
-                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                                gp.rumble();
-                                            }
-                                        }
-                                        let sel = *sel_c.borrow();
-                                        let ab  = all_btns_c.borrow();
-                                        narrator_t.borrow_mut().play(
-                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                            nav_tone_freq(sel, &ab, &audio_mode_t),
-                                        );
-                                    }
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
                                 }
                             }
                         } else {
@@ -2450,19 +2400,10 @@ fn main() {
                                         let mut s  = sel_c.borrow_mut();
                                         nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                                     };
-                                    if changed {
-                                        if gp_rumble {
-                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                                gp.rumble();
-                                            }
-                                        }
-                                        let sel = *sel_c.borrow();
-                                        let ab  = all_btns_c.borrow();
-                                        narrator_t.borrow_mut().play(
-                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                            nav_tone_freq(sel, &ab, &audio_mode_t),
-                                        );
-                                    }
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
                                 }
                             }
                         } else {
@@ -2525,19 +2466,10 @@ fn main() {
                                         let mut s  = sel_c.borrow_mut();
                                         nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
                                     };
-                                    if changed {
-                                        if gp_rumble {
-                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                                gp.rumble();
-                                            }
-                                        }
-                                        let sel = *sel_c.borrow();
-                                        let ab  = all_btns_c.borrow();
-                                        narrator_t.borrow_mut().play(
-                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                            nav_tone_freq(sel, &ab, &audio_mode_t),
-                                        );
-                                    }
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
                                 }
                             }
                         } else {
@@ -2567,25 +2499,16 @@ fn main() {
                                     colors,
                                 )
                             };
-                            if changed {
-                                if gp_rumble {
-                                    if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                        gp.rumble();
-                                    }
-                                }
-                                let sel = *sel_c.borrow();
-                                let ab  = all_btns_c.borrow();
-                                narrator_t.borrow_mut().play(
-                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                    nav_tone_freq(sel, &ab, &audio_mode_t),
-                                );
-                            }
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_t, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                            );
                         }
                     }
                     GamepadAction::AbsolutePos { horiz, vert } => {
                         // Ignore absolute-position events while menu is open.
                         if menu_sel_gp.borrow().is_some() { continue; }
-                        // Map normalised 0.0…1.0 coordinates to the full
+                        // Map normalised 0.0...1.0 coordinates to the full
                         // selectable area, which consists of the language-toggle
                         // strip followed by the keyboard key rows.
                         //
@@ -2616,7 +2539,7 @@ fn main() {
                                     _ => (total_bands / 2, 0.5f32),
                                 };
 
-                            // Piecewise linear vertical remapping: 0.5 → center_band.
+                            // Piecewise linear vertical remapping: 0.5 -> center_band.
                             let cv = (center_band as f32 + 0.5) / total_bands as f32;
                             let mapped_vert = if vert <= 0.5 {
                                 vert * (cv / 0.5)
@@ -2627,7 +2550,7 @@ fn main() {
                                 .floor()
                                 .clamp(0.0, total_bands as f32 - 1.0) as usize;
 
-                            // Piecewise linear horizontal remapping: 0.5 → center_horiz_frac.
+                            // Piecewise linear horizontal remapping: 0.5 -> center_horiz_frac.
                             let ch = center_horiz_frac;
                             let mapped_horiz = if horiz <= 0.5 {
                                 horiz * (ch / 0.5)
@@ -2654,12 +2577,12 @@ fn main() {
                             match new_sel {
                                 NavSel::Lang(li) =>
                                     eprintln!(
-                                        "[gamepad] abs_pos horiz={:.3} vert={:.3} → lang={}",
+                                        "[gamepad] abs_pos horiz={:.3} vert={:.3} -> lang={}",
                                         horiz, vert, li
                                     ),
                                 NavSel::Key(row, col) =>
                                     eprintln!(
-                                        "[gamepad] abs_pos horiz={:.3} vert={:.3} → row={} col={}",
+                                        "[gamepad] abs_pos horiz={:.3} vert={:.3} -> row={} col={}",
                                         horiz, vert, row, col
                                     ),
                             }
@@ -2676,19 +2599,10 @@ fn main() {
                                 colors,
                             )
                         };
-                        if changed {
-                            if gp_rumble {
-                                if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
-                                    gp.rumble();
-                                }
-                            }
-                            let sel = *sel_c.borrow();
-                            let ab  = all_btns_c.borrow();
-                            narrator_t.borrow_mut().play(
-                                &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                nav_tone_freq(sel, &ab, &audio_mode_t),
-                            );
-                        }
+                        on_nav_changed(
+                            changed, gp_rumble, &gp_cell_t, &sel_c,
+                            &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                        );
                     }
                 }
             }
