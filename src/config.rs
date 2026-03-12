@@ -513,13 +513,55 @@ impl Config {
 /// Returns `None` for scan codes not covered by the table.
 pub fn evdev_to_fltk_key(evdev: u32) -> Option<Key> {
     // FLTK uses X11 KeySym values on Linux.
+    // For printable ASCII characters the KeySym equals the ASCII code.
     let fltk_bits: i32 = match evdev {
+        // Special / control keys
         0x01 => 0xff1b,       // KEY_ESC        → Key::Escape
         0x0e => 0xff08,       // KEY_BACKSPACE   → Key::BackSpace
         0x0f => 0xff09,       // KEY_TAB         → Key::Tab
         0x1c => 0xff0d,       // KEY_ENTER       → Key::Enter
-        0x32 => 0x6d,         // KEY_M           → 'm' (ASCII)
-        0x39 => 0x20,         // KEY_SPACE       → space (ASCII)
+        0x39 => 0x20,         // KEY_SPACE       → ' ' (ASCII 0x20)
+        // Digit row (evdev 0x02–0x0b → ASCII '1'–'9','0')
+        0x02 => 0x31,         // KEY_1  → '1'
+        0x03 => 0x32,         // KEY_2  → '2'
+        0x04 => 0x33,         // KEY_3  → '3'
+        0x05 => 0x34,         // KEY_4  → '4'
+        0x06 => 0x35,         // KEY_5  → '5'
+        0x07 => 0x36,         // KEY_6  → '6'
+        0x08 => 0x37,         // KEY_7  → '7'
+        0x09 => 0x38,         // KEY_8  → '8'
+        0x0a => 0x39,         // KEY_9  → '9'
+        0x0b => 0x30,         // KEY_0  → '0'
+        // Top row  (Q W E R T Y U I O P)
+        0x10 => 0x71,         // KEY_Q  → 'q'
+        0x11 => 0x77,         // KEY_W  → 'w'
+        0x12 => 0x65,         // KEY_E  → 'e'
+        0x13 => 0x72,         // KEY_R  → 'r'
+        0x14 => 0x74,         // KEY_T  → 't'
+        0x15 => 0x79,         // KEY_Y  → 'y'
+        0x16 => 0x75,         // KEY_U  → 'u'
+        0x17 => 0x69,         // KEY_I  → 'i'
+        0x18 => 0x6f,         // KEY_O  → 'o'
+        0x19 => 0x70,         // KEY_P  → 'p'
+        // Home row (A S D F G H J K L)
+        0x1e => 0x61,         // KEY_A  → 'a'
+        0x1f => 0x73,         // KEY_S  → 's'
+        0x20 => 0x64,         // KEY_D  → 'd'
+        0x21 => 0x66,         // KEY_F  → 'f'
+        0x22 => 0x67,         // KEY_G  → 'g'
+        0x23 => 0x68,         // KEY_H  → 'h'
+        0x24 => 0x6a,         // KEY_J  → 'j'
+        0x25 => 0x6b,         // KEY_K  → 'k'
+        0x26 => 0x6c,         // KEY_L  → 'l'
+        // Bottom row (Z X C V B N M)
+        0x2c => 0x7a,         // KEY_Z  → 'z'
+        0x2d => 0x78,         // KEY_X  → 'x'
+        0x2e => 0x63,         // KEY_C  → 'c'
+        0x2f => 0x76,         // KEY_V  → 'v'
+        0x30 => 0x62,         // KEY_B  → 'b'
+        0x31 => 0x6e,         // KEY_N  → 'n'
+        0x32 => 0x6d,         // KEY_M  → 'm'
+        // Navigation / editing cluster
         0x67 => 0xff52,       // KEY_UP          → Key::Up
         0x6c => 0xff54,       // KEY_DOWN        → Key::Down
         0x69 => 0xff51,       // KEY_LEFT        → Key::Left
@@ -530,6 +572,7 @@ pub fn evdev_to_fltk_key(evdev: u32) -> Option<Key> {
         0x6d => 0xff56,       // KEY_PAGEDOWN    → Key::PageDown
         0x6e => 0xff63,       // KEY_INSERT      → Key::Insert
         0x6f => 0xffff,       // KEY_DELETE      → Key::Delete
+        // Function keys
         0x3b => 0xffbe,       // KEY_F1          → Key::F1
         0x3c => 0xffbf,       // KEY_F2          → Key::F2
         0x3d => 0xffc0,       // KEY_F3          → Key::F3

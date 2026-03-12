@@ -1604,6 +1604,8 @@ fn main() {
             let k = app::event_key();
 
             if ev == Event::KeyDown {
+                #[cfg(debug_assertions)]
+                eprintln!("[keyboard] key=0x{:04x}", k.bits());
                 // ── Menu open: route all key events to menu navigation ─────
                 if menu_sel_c.borrow().is_some() {
                     if k == Key::Escape || k == nav_keys.menu {
