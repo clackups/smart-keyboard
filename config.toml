@@ -1,11 +1,13 @@
 [input.keyboard]
-# Linux evdev scan codes (hexadecimal, linux/input-event-codes.h)
-navigate_up    = 0x67   # KEY_UP
-navigate_down  = 0x6c   # KEY_DOWN
-navigate_left  = 0x69   # KEY_LEFT
-navigate_right = 0x6a   # KEY_RIGHT
-activate       = 0x39   # KEY_SPACE
-menu           = 0x32   # KEY_M
+# FLTK key codes, as printed by the [keyboard] debug output (hexadecimal).
+# On Linux these are X11 KeySym values; for printable characters they equal
+# the lowercase ASCII code (e.g. 'c' = 0x63, 'm' = 0x6d, space = 0x20).
+navigate_up    = 0xff52   # Key::Up
+navigate_down  = 0xff54   # Key::Down
+navigate_left  = 0xff51   # Key::Left
+navigate_right = 0xff53   # Key::Right
+activate       = 0x20     # Space
+menu           = 0x6d     # 'm'
 # activate_shift = null  # equivalent to activate when Shift is held; null/absent = disabled
 # activate_ctrl  = null  # equivalent to activate when Ctrl is held; null/absent = disabled
 # activate_alt   = null  # equivalent to activate when Alt is held; null/absent = disabled
@@ -13,6 +15,7 @@ menu           = 0x32   # KEY_M
 # activate_enter = null  # produces the Enter output regardless of selection; null/absent = disabled
 # activate_space = null  # produces the Space output regardless of selection; null/absent = disabled
 # navigate_center = null # moves selection to center of keyboard; null/absent = disabled
+# Example: navigate_center = 0x63  # 'c'
 
 [input.gamepad]
 enabled = true

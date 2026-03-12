@@ -11,49 +11,59 @@ use std::fs;
 use fltk::enums::Key;
 use serde::Deserialize;
 
+// FLTK key code constants (X11 KeySym values) used as defaults.
+// These match the values returned by `fltk::app::event_key().bits()`.
+const FLTK_KEY_UP:    i32 = 0xff52;
+const FLTK_KEY_DOWN:  i32 = 0xff54;
+const FLTK_KEY_LEFT:  i32 = 0xff51;
+const FLTK_KEY_RIGHT: i32 = 0xff53;
+const FLTK_KEY_SPACE: i32 = 0x20;
+const FLTK_KEY_M:     i32 = 0x6d;
+
 // =============================================================================
 // TOML-deserializable structs
 // =============================================================================
 
 #[derive(Deserialize)]
 pub struct KeyboardInputConfig {
-    /// Linux evdev scan code for "navigate up" (default: 0x67 KEY_UP).
+    /// FLTK key code for "navigate up" (as returned by `event_key().bits()`).
+    /// Default: 0xff52 (Key::Up).
     pub navigate_up: u32,
-    /// Linux evdev scan code for "navigate down" (default: 0x6c KEY_DOWN).
+    /// FLTK key code for "navigate down". Default: 0xff54 (Key::Down).
     pub navigate_down: u32,
-    /// Linux evdev scan code for "navigate left" (default: 0x69 KEY_LEFT).
+    /// FLTK key code for "navigate left". Default: 0xff51 (Key::Left).
     pub navigate_left: u32,
-    /// Linux evdev scan code for "navigate right" (default: 0x6a KEY_RIGHT).
+    /// FLTK key code for "navigate right". Default: 0xff53 (Key::Right).
     pub navigate_right: u32,
-    /// Linux evdev scan code for "activate" (default: 0x39 KEY_SPACE).
+    /// FLTK key code for "activate". Default: 0x20 (Space).
     pub activate: u32,
-    /// Linux evdev scan code for "menu" (default: 0x32 KEY_M).
+    /// FLTK key code for "menu". Default: 0x6d ('m').
     pub menu: u32,
-    /// Linux evdev scan code for "activate with Shift" (default: None / disabled).
+    /// FLTK key code for "activate with Shift" (default: None / disabled).
     /// Equivalent to activate when Shift is held.
     #[serde(default)]
     pub activate_shift: Option<u32>,
-    /// Linux evdev scan code for "activate with Ctrl" (default: None / disabled).
+    /// FLTK key code for "activate with Ctrl" (default: None / disabled).
     /// Equivalent to activate when Ctrl is held.
     #[serde(default)]
     pub activate_ctrl: Option<u32>,
-    /// Linux evdev scan code for "activate with Alt" (default: None / disabled).
+    /// FLTK key code for "activate with Alt" (default: None / disabled).
     /// Equivalent to activate when Alt is held.
     #[serde(default)]
     pub activate_alt: Option<u32>,
-    /// Linux evdev scan code for "activate with AltGr" (default: None / disabled).
+    /// FLTK key code for "activate with AltGr" (default: None / disabled).
     /// Equivalent to activate when AltGr is held.
     #[serde(default)]
     pub activate_altgr: Option<u32>,
-    /// Linux evdev scan code for "activate Enter" (default: None / disabled).
+    /// FLTK key code for "activate Enter" (default: None / disabled).
     /// Produces the Enter output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_enter: Option<u32>,
-    /// Linux evdev scan code for "activate Space" (default: None / disabled).
+    /// FLTK key code for "activate Space" (default: None / disabled).
     /// Produces the Space output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_space: Option<u32>,
-    /// Linux evdev scan code for "navigate center" (default: None / disabled).
+    /// FLTK key code for "navigate center" (default: None / disabled).
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
     pub navigate_center: Option<u32>,
@@ -415,12 +425,12 @@ pub struct Config {
 impl Default for KeyboardInputConfig {
     fn default() -> Self {
         KeyboardInputConfig {
-            navigate_up:    0x67,
-            navigate_down:  0x6c,
-            navigate_left:  0x69,
-            navigate_right: 0x6a,
-            activate:       0x39,
-            menu:           0x32,
+            navigate_up:    FLTK_KEY_UP    as u32,
+            navigate_down:  FLTK_KEY_DOWN  as u32,
+            navigate_left:  FLTK_KEY_LEFT  as u32,
+            navigate_right: FLTK_KEY_RIGHT as u32,
+            activate:       FLTK_KEY_SPACE as u32,
+            menu:           FLTK_KEY_M     as u32,
             activate_shift: None,
             activate_ctrl:  None,
             activate_alt:   None,
@@ -504,93 +514,6 @@ impl Config {
 }
 
 // =============================================================================
-// evdev scan-code → FLTK Key conversion
-// =============================================================================
-
-/// Convert a Linux evdev scan code (linux/input-event-codes.h) to the
-/// corresponding FLTK [`Key`] value used by [`fltk::app::event_key`].
-///
-/// Returns `None` for scan codes not covered by the table.
-pub fn evdev_to_fltk_key(evdev: u32) -> Option<Key> {
-    // FLTK uses X11 KeySym values on Linux.
-    // For printable ASCII characters the KeySym equals the ASCII code.
-    let fltk_bits: i32 = match evdev {
-        // Special / control keys
-        0x01 => 0xff1b,       // KEY_ESC        → Key::Escape
-        0x0e => 0xff08,       // KEY_BACKSPACE   → Key::BackSpace
-        0x0f => 0xff09,       // KEY_TAB         → Key::Tab
-        0x1c => 0xff0d,       // KEY_ENTER       → Key::Enter
-        0x39 => 0x20,         // KEY_SPACE       → ' ' (ASCII 0x20)
-        // Digit row (evdev 0x02–0x0b → ASCII '1'–'9','0')
-        0x02 => 0x31,         // KEY_1  → '1'
-        0x03 => 0x32,         // KEY_2  → '2'
-        0x04 => 0x33,         // KEY_3  → '3'
-        0x05 => 0x34,         // KEY_4  → '4'
-        0x06 => 0x35,         // KEY_5  → '5'
-        0x07 => 0x36,         // KEY_6  → '6'
-        0x08 => 0x37,         // KEY_7  → '7'
-        0x09 => 0x38,         // KEY_8  → '8'
-        0x0a => 0x39,         // KEY_9  → '9'
-        0x0b => 0x30,         // KEY_0  → '0'
-        // Top row  (Q W E R T Y U I O P)
-        0x10 => 0x71,         // KEY_Q  → 'q'
-        0x11 => 0x77,         // KEY_W  → 'w'
-        0x12 => 0x65,         // KEY_E  → 'e'
-        0x13 => 0x72,         // KEY_R  → 'r'
-        0x14 => 0x74,         // KEY_T  → 't'
-        0x15 => 0x79,         // KEY_Y  → 'y'
-        0x16 => 0x75,         // KEY_U  → 'u'
-        0x17 => 0x69,         // KEY_I  → 'i'
-        0x18 => 0x6f,         // KEY_O  → 'o'
-        0x19 => 0x70,         // KEY_P  → 'p'
-        // Home row (A S D F G H J K L)
-        0x1e => 0x61,         // KEY_A  → 'a'
-        0x1f => 0x73,         // KEY_S  → 's'
-        0x20 => 0x64,         // KEY_D  → 'd'
-        0x21 => 0x66,         // KEY_F  → 'f'
-        0x22 => 0x67,         // KEY_G  → 'g'
-        0x23 => 0x68,         // KEY_H  → 'h'
-        0x24 => 0x6a,         // KEY_J  → 'j'
-        0x25 => 0x6b,         // KEY_K  → 'k'
-        0x26 => 0x6c,         // KEY_L  → 'l'
-        // Bottom row (Z X C V B N M)
-        0x2c => 0x7a,         // KEY_Z  → 'z'
-        0x2d => 0x78,         // KEY_X  → 'x'
-        0x2e => 0x63,         // KEY_C  → 'c'
-        0x2f => 0x76,         // KEY_V  → 'v'
-        0x30 => 0x62,         // KEY_B  → 'b'
-        0x31 => 0x6e,         // KEY_N  → 'n'
-        0x32 => 0x6d,         // KEY_M  → 'm'
-        // Navigation / editing cluster
-        0x67 => 0xff52,       // KEY_UP          → Key::Up
-        0x6c => 0xff54,       // KEY_DOWN        → Key::Down
-        0x69 => 0xff51,       // KEY_LEFT        → Key::Left
-        0x6a => 0xff53,       // KEY_RIGHT       → Key::Right
-        0x66 => 0xff50,       // KEY_HOME        → Key::Home
-        0x6b => 0xff57,       // KEY_END         → Key::End
-        0x68 => 0xff55,       // KEY_PAGEUP      → Key::PageUp
-        0x6d => 0xff56,       // KEY_PAGEDOWN    → Key::PageDown
-        0x6e => 0xff63,       // KEY_INSERT      → Key::Insert
-        0x6f => 0xffff,       // KEY_DELETE      → Key::Delete
-        // Function keys
-        0x3b => 0xffbe,       // KEY_F1          → Key::F1
-        0x3c => 0xffbf,       // KEY_F2          → Key::F2
-        0x3d => 0xffc0,       // KEY_F3          → Key::F3
-        0x3e => 0xffc1,       // KEY_F4          → Key::F4
-        0x3f => 0xffc2,       // KEY_F5          → Key::F5
-        0x40 => 0xffc3,       // KEY_F6          → Key::F6
-        0x41 => 0xffc4,       // KEY_F7          → Key::F7
-        0x42 => 0xffc5,       // KEY_F8          → Key::F8
-        0x43 => 0xffc6,       // KEY_F9          → Key::F9
-        0x44 => 0xffc7,       // KEY_F10         → Key::F10
-        0x57 => 0xffc8,       // KEY_F11         → Key::F11
-        0x58 => 0xffc9,       // KEY_F12         → Key::F12
-        _ => return None,
-    };
-    Some(Key::from_i32(fltk_bits))
-}
-
-// =============================================================================
 // Resolved navigation keys (FLTK Key values)
 // =============================================================================
 
@@ -620,23 +543,24 @@ pub struct NavKeys {
 }
 
 impl NavKeys {
-    /// Build from the keyboard config, substituting defaults for any scan code
-    /// that cannot be mapped to a FLTK Key.
+    /// Build from the keyboard config.  Each field is a FLTK key code
+    /// (the integer returned by `event_key().bits()`), stored directly in
+    /// the config without any translation layer.
     pub fn from_config(cfg: &KeyboardInputConfig) -> Self {
         NavKeys {
-            up:       evdev_to_fltk_key(cfg.navigate_up)    .unwrap_or(Key::Up),
-            down:     evdev_to_fltk_key(cfg.navigate_down)  .unwrap_or(Key::Down),
-            left:     evdev_to_fltk_key(cfg.navigate_left)  .unwrap_or(Key::Left),
-            right:    evdev_to_fltk_key(cfg.navigate_right) .unwrap_or(Key::Right),
-            activate: evdev_to_fltk_key(cfg.activate)       .unwrap_or(Key::from_char(' ')),
-            menu:     evdev_to_fltk_key(cfg.menu)           .unwrap_or(Key::from_char('m')),
-            activate_shift:  cfg.activate_shift .and_then(evdev_to_fltk_key),
-            activate_ctrl:   cfg.activate_ctrl  .and_then(evdev_to_fltk_key),
-            activate_alt:    cfg.activate_alt   .and_then(evdev_to_fltk_key),
-            activate_altgr:  cfg.activate_altgr .and_then(evdev_to_fltk_key),
-            activate_enter:  cfg.activate_enter .and_then(evdev_to_fltk_key),
-            activate_space:  cfg.activate_space .and_then(evdev_to_fltk_key),
-            navigate_center: cfg.navigate_center.and_then(evdev_to_fltk_key),
+            up:       Key::from_i32(cfg.navigate_up    as i32),
+            down:     Key::from_i32(cfg.navigate_down  as i32),
+            left:     Key::from_i32(cfg.navigate_left  as i32),
+            right:    Key::from_i32(cfg.navigate_right as i32),
+            activate: Key::from_i32(cfg.activate       as i32),
+            menu:     Key::from_i32(cfg.menu           as i32),
+            activate_shift:  cfg.activate_shift .map(|v| Key::from_i32(v as i32)),
+            activate_ctrl:   cfg.activate_ctrl  .map(|v| Key::from_i32(v as i32)),
+            activate_alt:    cfg.activate_alt   .map(|v| Key::from_i32(v as i32)),
+            activate_altgr:  cfg.activate_altgr .map(|v| Key::from_i32(v as i32)),
+            activate_enter:  cfg.activate_enter .map(|v| Key::from_i32(v as i32)),
+            activate_space:  cfg.activate_space .map(|v| Key::from_i32(v as i32)),
+            navigate_center: cfg.navigate_center.map(|v| Key::from_i32(v as i32)),
         }
     }
 }
