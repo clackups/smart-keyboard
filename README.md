@@ -224,13 +224,15 @@ Controls navigation behaviour.
 |-----|---------|-------------|
 | `rollover` | `false` | When `true`, navigation wraps around at the edges of the keyboard. Moving left past the first column of a row brings the cursor to the last column of that row, and vice-versa. Moving up past the top edge (language strip) wraps to the last keyboard row, and moving down past the last row wraps back to the top. |
 | `center_key` | `"h"` | Button label used as the center reference point. The `navigate_center` action moves the selection to this key. When `absolute_axes = true`, the joystick's neutral position maps to this key. The value is matched against the key's unshifted label in the current layout. |
+| `center_after_activate` | `false` | When `true`, the navigation selection jumps to the center button (defined by `center_key`) immediately after any activate action (including all `activate_*` variants). |
 
 **Example**
 
 ```toml
 [navigate]
-rollover   = true
-center_key = "h"
+rollover              = true
+center_key            = "h"
+center_after_activate = true
 ```
 
 ---

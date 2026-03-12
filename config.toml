@@ -66,6 +66,11 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 #                            to this button instead of the physical grid centre.
 center_key = "h"
 
+# When center_after_activate = true, the navigation selection jumps to the
+# center button (defined by center_key) immediately after any activate action
+# (including all activate_* variants).  Default: false.
+# center_after_activate = false
+
 [output]
 # Output mode: "print" | "ble"
 #   print – print key events to stdout (default; no hardware output)

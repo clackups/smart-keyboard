@@ -1698,9 +1698,10 @@ fn main() {
         let menu_items_c      = menu_item_defs.clone();
         let mut menu_item_btns_c = menu_item_btns.clone();
         let mut menu_group_c  = menu_group.clone();
-        let rollover          = cfg.navigate.rollover;
-        let center_key_kbd    = cfg.navigate.center_key.clone();
-        let preferred_cx_c    = preferred_cx.clone();
+        let rollover              = cfg.navigate.rollover;
+        let center_key_kbd        = cfg.navigate.center_key.clone();
+        let center_after_activate = cfg.navigate.center_after_activate;
+        let preferred_cx_c        = preferred_cx.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1817,6 +1818,32 @@ fn main() {
                             all_btns_c.borrow_mut()[row][col].0.set_color(colors.nav_sel);
                         }
                     }
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            if changed {
+                                if gp_rumble {
+                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                                        gp.rumble();
+                                    }
+                                }
+                                let sel = *sel_c.borrow();
+                                let ab  = all_btns_c.borrow();
+                                narrator_c.borrow_mut().play(
+                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                    nav_tone_freq(sel, &ab, &audio_mode_c),
+                                );
+                            }
+                        }
+                    }
                     return true;
                 }
 
@@ -1881,6 +1908,32 @@ fn main() {
                         &mod_state_c, &mod_btns_c.borrow(), colors,
                     );
                     *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            if changed {
+                                if gp_rumble {
+                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                                        gp.rumble();
+                                    }
+                                }
+                                let sel = *sel_c.borrow();
+                                let ab  = all_btns_c.borrow();
+                                narrator_c.borrow_mut().play(
+                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                    nav_tone_freq(sel, &ab, &audio_mode_c),
+                                );
+                            }
+                        }
+                    }
                     return true;
                 }
 
@@ -1893,6 +1946,32 @@ fn main() {
                         &mod_state_c, &mod_btns_c.borrow(), colors,
                     );
                     *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            if changed {
+                                if gp_rumble {
+                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                                        gp.rumble();
+                                    }
+                                }
+                                let sel = *sel_c.borrow();
+                                let ab  = all_btns_c.borrow();
+                                narrator_c.borrow_mut().play(
+                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                    nav_tone_freq(sel, &ab, &audio_mode_c),
+                                );
+                            }
+                        }
+                    }
                     return true;
                 }
 
@@ -1936,6 +2015,32 @@ fn main() {
                             );
                             *active_nav_key_c.borrow_mut() = Some((scancode, key_str));
                             all_btns_c.borrow_mut()[row][col].0.set_color(colors.nav_sel);
+                        }
+                    }
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            if changed {
+                                if gp_rumble {
+                                    if let Some(ref mut gp) = *gp_cell_c.borrow_mut() {
+                                        gp.rumble();
+                                    }
+                                }
+                                let sel = *sel_c.borrow();
+                                let ab  = all_btns_c.borrow();
+                                narrator_c.borrow_mut().play(
+                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                    nav_tone_freq(sel, &ab, &audio_mode_c),
+                                );
+                            }
                         }
                     }
                     return true;
@@ -2025,9 +2130,10 @@ fn main() {
         let menu_items_gp     = menu_item_defs.clone();
         let mut menu_item_btns_gp = menu_item_btns.clone();
         let mut menu_group_gp = menu_group.clone();
-        let gp_rollover       = cfg.navigate.rollover;
-        let gp_center_key     = cfg.navigate.center_key.clone();
-        let preferred_cx_gp   = preferred_cx.clone();
+        let gp_rollover             = cfg.navigate.rollover;
+        let gp_center_key           = cfg.navigate.center_key.clone();
+        let gp_center_after_activate = cfg.navigate.center_after_activate;
+        let preferred_cx_gp         = preferred_cx.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -2208,6 +2314,32 @@ fn main() {
                                         .0.set_color(colors.nav_sel);
                                 }
                             }
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    if changed {
+                                        if gp_rumble {
+                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                                gp.rumble();
+                                            }
+                                        }
+                                        let sel = *sel_c.borrow();
+                                        let ab  = all_btns_c.borrow();
+                                        narrator_t.borrow_mut().play(
+                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                            nav_tone_freq(sel, &ab, &audio_mode_t),
+                                        );
+                                    }
+                                }
+                            }
                         } else {
                             // Button released: send the key-release event.
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
@@ -2226,6 +2358,32 @@ fn main() {
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    if changed {
+                                        if gp_rumble {
+                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                                gp.rumble();
+                                            }
+                                        }
+                                        let sel = *sel_c.borrow();
+                                        let ab  = all_btns_c.borrow();
+                                        narrator_t.borrow_mut().play(
+                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                            nav_tone_freq(sel, &ab, &audio_mode_t),
+                                        );
+                                    }
+                                }
+                            }
                         } else {
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
@@ -2243,6 +2401,32 @@ fn main() {
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    if changed {
+                                        if gp_rumble {
+                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                                gp.rumble();
+                                            }
+                                        }
+                                        let sel = *sel_c.borrow();
+                                        let ab  = all_btns_c.borrow();
+                                        narrator_t.borrow_mut().play(
+                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                            nav_tone_freq(sel, &ab, &audio_mode_t),
+                                        );
+                                    }
+                                }
+                            }
                         } else {
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
@@ -2290,6 +2474,32 @@ fn main() {
                                         Some((scancode, key_str));
                                     all_btns_c.borrow_mut()[row][col]
                                         .0.set_color(colors.nav_sel);
+                                }
+                            }
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    if changed {
+                                        if gp_rumble {
+                                            if let Some(ref mut gp) = *gp_cell_t.borrow_mut() {
+                                                gp.rumble();
+                                            }
+                                        }
+                                        let sel = *sel_c.borrow();
+                                        let ab  = all_btns_c.borrow();
+                                        narrator_t.borrow_mut().play(
+                                            &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                            nav_tone_freq(sel, &ab, &audio_mode_t),
+                                        );
+                                    }
                                 }
                             }
                         } else {

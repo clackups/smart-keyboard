@@ -415,13 +415,19 @@ pub struct NavigateConfig {
     /// of the keyboard grid.  Default: `"h"`.
     #[serde(default = "default_center_key")]
     pub center_key: String,
+    /// When `true`, the navigation selection jumps to the center button
+    /// (defined by `center_key`) immediately after any activate action
+    /// (including all `activate_*` variants).  Default: false.
+    #[serde(default)]
+    pub center_after_activate: bool,
 }
 
 impl Default for NavigateConfig {
     fn default() -> Self {
         NavigateConfig {
-            rollover:   false,
-            center_key: default_center_key(),
+            rollover:             false,
+            center_key:           default_center_key(),
+            center_after_activate: false,
         }
     }
 }
