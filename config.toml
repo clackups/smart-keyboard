@@ -37,12 +37,12 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
 # axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
-# axis_threshold            = 16384  # minimum |value| to register (0–32767)
+# axis_threshold            = 16384  # minimum |value| to register (0-32767)
 axis_activate             = 0x05  # axis index for Activate (positive only); comment out or remove to disable
 # axis_menu                 = null   # axis index for Menu (positive only); comment out or remove to disable
 # When absolute_axes = true the raw horizontal/vertical axis values are mapped
 # directly to keyboard positions rather than being treated as directional inputs.
-# The full axis range (−32767 … +32767) is divided evenly across the available
+# The full axis range (-32767 ... +32767) is divided evenly across the available
 # rows / columns.  Useful with touchpad-style controllers.
 # absolute_axes = false
 # When rumble = true, a short force-feedback rumble is sent to the gamepad on
@@ -50,7 +50,7 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # rumble = false
 # Duration of the rumble effect in milliseconds (default: 50).
 # rumble_duration_ms = 50
-# Intensity of both rumble motors: 0 = silent, 65535 = maximum (default: 16384 = 0x4000 ≈ 25 %).
+# Intensity of both rumble motors: 0 = silent, 65535 = maximum (default: 16384 = 0x4000 ~= 25 %).
 # rumble_magnitude = 16384
 
 [navigate]
@@ -61,8 +61,8 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # rollover = false
 
 # The key label used as the center reference point (default: "h").
-#   navigate_center action – moves the selection to this button.
-#   absolute_axes mode     – the joystick's neutral position (axis centre) maps
+#   navigate_center action - moves the selection to this button.
+#   absolute_axes mode     - the joystick's neutral position (axis centre) maps
 #                            to this button instead of the physical grid centre.
 center_key = "h"
 
@@ -73,21 +73,21 @@ center_key = "h"
 
 [output]
 # Output mode: "print" | "ble"
-#   print – print key events to stdout (default; no hardware output)
-#   ble   – send keyboard HID reports to the BLE dongle (esp_hid_serial_bridge)
+#   print - print key events to stdout (default; no hardware output)
+#   ble   - send keyboard HID reports to the BLE dongle (esp_hid_serial_bridge)
 mode = "print"
 # Audio feedback on keyboard-navigation selection changes.
-#   "none"       – silent (default)
-#   "narrate"    – play a WAV clip naming each button; clips are loaded from the
+#   "none"       - silent (default)
+#   "narrate"    - play a WAV clip naming each button; clips are loaded from the
 #                  `audio/` sub-directory of the current working directory, or
 #                  from the path given by the SMART_KBD_AUDIO_PATH environment
 #                  variable.
-#   "tone"       – play a short musical tone that varies by key category:
+#   "tone"       - play a short musical tone that varies by key category:
 #                  letter/punctuation keys share one pitch; F and J have a
-#                  distinctive pitch; digit keys 1–0 play an ascending scale;
-#                  function keys F1–F12 play a lower ascending scale; each
-#                  special key (Space, Enter, arrows, …) has its own tone.
-#   "tone_hint"  – like "tone" but all letter and punctuation keys are silent
+#                  distinctive pitch; digit keys 1-0 play an ascending scale;
+#                  function keys F1-F12 play a lower ascending scale; each
+#                  special key (Space, Enter, arrows, ...) has its own tone.
+#   "tone_hint"  - like "tone" but all letter and punctuation keys are silent
 #                  except for F and J (the physical home-row bump keys), which
 #                  play a distinctive tone.  Digit keys and special keys still
 #                  play their tones as in "tone" mode.
@@ -126,7 +126,7 @@ pid = 0xbbd1
 
 # BLE / gamepad icon: disconnected state (red).
 # conn_disconnected     = "#dc3c3c"
-# BLE icon: connecting state – dongle found, host not yet paired (amber).
+# BLE icon: connecting state - dongle found, host not yet paired (amber).
 # conn_connecting       = "#dc9628"
 # BLE / gamepad icon: connected state (green).
 # conn_connected        = "#50dc50"

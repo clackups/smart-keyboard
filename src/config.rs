@@ -94,13 +94,13 @@ pub struct GamepadInputConfig {
     #[serde(default = "default_menu")]
     pub menu: Option<u32>,
     /// Axis index used for left/right navigation.
-    /// Negative axis values → Left, positive → Right.
+    /// Negative axis values -> Left, positive -> Right.
     /// Absent / `null` means disabled.
     /// Default: 0 (left stick X on most gamepads).
     #[serde(default = "default_axis_navigate_horizontal")]
     pub axis_navigate_horizontal: Option<u32>,
     /// Axis index used for up/down navigation.
-    /// Negative axis values → Up, positive → Down.
+    /// Negative axis values -> Up, positive -> Down.
     /// Absent / `null` means disabled.
     /// Default: 1 (left stick Y on most gamepads).
     #[serde(default = "default_axis_navigate_vertical")]
@@ -116,7 +116,7 @@ pub struct GamepadInputConfig {
     /// Absent / `null` means disabled.
     #[serde(default)]
     pub axis_menu: Option<u32>,
-    /// Minimum absolute axis value (0–32767) needed to register as active.
+    /// Minimum absolute axis value (0-32767) needed to register as active.
     /// Compared as `|value| > axis_threshold` against the raw i16 axis value.
     /// Default: 16384 (half of the maximum i16 range).
     #[serde(default = "default_axis_threshold")]
@@ -124,7 +124,7 @@ pub struct GamepadInputConfig {
     /// When `true`, the raw values of `axis_navigate_horizontal` and
     /// `axis_navigate_vertical` are treated as absolute coordinates that map
     /// directly to a keyboard key position rather than as directional inputs.
-    /// The full axis range (−32767 … +32767) is divided evenly across the
+    /// The full axis range (-32767 ... +32767) is divided evenly across the
     /// available rows/columns.  Default: false.
     #[serde(default)]
     pub absolute_axes: bool,
@@ -207,13 +207,13 @@ pub enum AudioMode {
     /// Play a short musical tone whose pitch varies by key category:
     /// letter/punctuation keys share one tone; F and J have a distinctive
     /// tone; digit keys play an ascending scale (1 = lowest, 0 = highest);
-    /// function keys (F1–F12) play a lower ascending scale; all other
+    /// function keys (F1-F12) play a lower ascending scale; all other
     /// special keys have their own unique tones.
     Tone,
     /// Like `Tone`, but all letter and punctuation keys are silent except
     /// for F and J (the physical home-row bump keys), which play a
     /// distinctive tone.  Digit keys and all special keys (Space, Enter,
-    /// arrows, …) still play their tones as in `Tone` mode.
+    /// arrows, ...) still play their tones as in `Tone` mode.
     ToneHint,
 }
 
@@ -247,10 +247,10 @@ pub struct OutputConfig {
     #[serde(default)]
     pub ble: BleOutputConfig,
     /// Audio feedback mode for keyboard-navigation selection changes.
-    /// "none"       – silent (default)
-    /// "narrate"    – play a WAV clip naming each button
-    /// "tone"       – play a short musical tone that varies by key category
-    /// "tone_hint"  – like "tone" but only F and J produce a tone; all other
+    /// "none"       - silent (default)
+    /// "narrate"    - play a WAV clip naming each button
+    /// "tone"       - play a short musical tone that varies by key category
+    /// "tone_hint"  - like "tone" but only F and J produce a tone; all other
     ///                letter/punctuation keys are silent
     #[serde(default)]
     pub audio: AudioMode,

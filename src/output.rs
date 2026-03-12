@@ -2,8 +2,8 @@
 //
 // Concrete KeyHook implementations for the two configurable output modes:
 //
-//   PrintKeyHook  – prints key actions to stdout (mode = "print")
-//   BleKeyHook    – sends USB HID keyboard reports to the esp_hid_serial_bridge
+//   PrintKeyHook  - prints key actions to stdout (mode = "print")
+//   BleKeyHook    - sends USB HID keyboard reports to the esp_hid_serial_bridge
 //                   BLE dongle over a USB-serial connection (mode = "ble")
 
 use std::cell::RefCell;
@@ -137,7 +137,7 @@ impl BleConnection {
         self.send(&cmd);
     }
 
-    /// Send the key-release report (`K0000`) – releases all keys on the dongle.
+    /// Send the key-release report (`K0000`) - releases all keys on the dongle.
     pub fn send_key_release(&mut self) {
         self.send("K0000\n");
     }
@@ -154,11 +154,11 @@ impl BleConnection {
     /// Send the `S` status command and read the dongle's response.
     ///
     /// Returns:
-    /// * `Err(())` – the write failed; the connection has been closed
+    /// * `Err(())` - the write failed; the connection has been closed
     ///   (caller should revert to retry mode).
-    /// * `Ok(Some(response))` – a non-empty response was received; if it
+    /// * `Ok(Some(response))` - a non-empty response was received; if it
     ///   starts with `"STATUS:CONNECTED:"` the dongle is ready.
-    /// * `Ok(None)` – the write succeeded but the read timed out or returned
+    /// * `Ok(None)` - the write succeeded but the read timed out or returned
     ///   an empty buffer (dongle connected but remote host not yet paired).
     pub fn check_status(&mut self) -> Result<Option<String>, ()> {
         if !self.send("S\n") {
@@ -226,7 +226,7 @@ impl KeyHook for BleKeyHook {
 
         // Convert the Linux evdev scancode to a USB HID keyboard usage code.
         let Some(hid_code) = evdev_to_hid(scancode) else {
-            // No HID mapping (e.g. Win key alone without a keycode) – skip.
+            // No HID mapping (e.g. Win key alone without a keycode) - skip.
             return;
         };
 
@@ -235,9 +235,9 @@ impl KeyHook for BleKeyHook {
         // the remote host types the correct uppercase character regardless of its
         // own CapsLock state.
         let mut hid_modifier = ble_modifier_byte(modifier_bits);
-        // 0x22 = LEFTSHIFT (0x02) | RIGHTSHIFT (0x20) – check if any shift is active.
+        // 0x22 = LEFTSHIFT (0x02) | RIGHTSHIFT (0x20) - check if any shift is active.
         if (hid_modifier & 0x22) == 0 {
-            // No shift in modifier_bits → check if key_str implies uppercase.
+            // No shift in modifier_bits -> check if key_str implies uppercase.
             if is_uppercase_letter(key_str) {
                 hid_modifier |= 0x02; // add LEFTSHIFT
             }
@@ -279,7 +279,7 @@ fn is_modifier_key_str(key_str: &str) -> bool {
 ///   bit 5 (0x20) = RIGHTSHIFT
 ///   bit 6 (0x40) = RIGHTALT
 fn ble_modifier_byte(modifier_bits: u8) -> u8 {
-    // The bit layout is already aligned with USB HID – pass through as-is.
+    // The bit layout is already aligned with USB HID - pass through as-is.
     modifier_bits
 }
 
@@ -327,7 +327,7 @@ fn evdev_to_hid(evdev: u16) -> Option<u8> {
         0x1a => 0x2f, // KEY_LEFTBRACE
         0x1b => 0x30, // KEY_RIGHTBRACE
         0x1c => 0x28, // KEY_ENTER
-        // 0x1d = KEY_LEFTCTRL  → modifier, no keycode
+        // 0x1d = KEY_LEFTCTRL  -> modifier, no keycode
         0x1e => 0x04, // KEY_A
         0x1f => 0x16, // KEY_S
         0x20 => 0x07, // KEY_D
@@ -340,7 +340,7 @@ fn evdev_to_hid(evdev: u16) -> Option<u8> {
         0x27 => 0x33, // KEY_SEMICOLON
         0x28 => 0x34, // KEY_APOSTROPHE
         0x29 => 0x35, // KEY_GRAVE
-        // 0x2a = KEY_LEFTSHIFT  → modifier, no keycode
+        // 0x2a = KEY_LEFTSHIFT  -> modifier, no keycode
         0x2b => 0x31, // KEY_BACKSLASH
         0x2c => 0x1d, // KEY_Z
         0x2d => 0x1b, // KEY_X
@@ -352,8 +352,8 @@ fn evdev_to_hid(evdev: u16) -> Option<u8> {
         0x33 => 0x36, // KEY_COMMA
         0x34 => 0x37, // KEY_DOT
         0x35 => 0x38, // KEY_SLASH
-        // 0x36 = KEY_RIGHTSHIFT → modifier, no keycode
-        // 0x38 = KEY_LEFTALT    → modifier, no keycode
+        // 0x36 = KEY_RIGHTSHIFT -> modifier, no keycode
+        // 0x38 = KEY_LEFTALT    -> modifier, no keycode
         0x39 => 0x2c, // KEY_SPACE
         0x3a => 0x39, // KEY_CAPSLOCK
         0x3b => 0x3a, // KEY_F1
@@ -368,8 +368,8 @@ fn evdev_to_hid(evdev: u16) -> Option<u8> {
         0x44 => 0x43, // KEY_F10
         0x57 => 0x44, // KEY_F11
         0x58 => 0x45, // KEY_F12
-        // 0x61 = KEY_RIGHTCTRL  → modifier, no keycode
-        // 0x64 = KEY_RIGHTALT   → modifier, no keycode
+        // 0x61 = KEY_RIGHTCTRL  -> modifier, no keycode
+        // 0x64 = KEY_RIGHTALT   -> modifier, no keycode
         0x66 => 0x4a, // KEY_HOME
         0x67 => 0x52, // KEY_UP
         0x68 => 0x4b, // KEY_PAGEUP
