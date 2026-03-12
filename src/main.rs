@@ -1450,19 +1450,21 @@ fn main() {
 
             // --- Click callback: text insertion + modifier toggling ---
             {
-                let layout_idx_c = layout_idx.clone();
-                let mod_state_c  = mod_state.clone();
-                let mod_btns_c   = mod_btns.clone();
-                let all_btns_c   = all_btns.clone();
-                let lang_btns_c  = lang_btns.clone();
-                let sel_c        = sel.clone();
-                let mut buf_c    = buf.clone();
-                let mut disp_c   = disp.clone();
-                let hook_c       = Rc::clone(&hook);
-                let narrator_c   = narrator.clone();
-                let audio_mode_c = audio_mode.clone();
-                let action       = phys.action;
-                let scancode     = phys.scancode;
+                let layout_idx_c          = layout_idx.clone();
+                let mod_state_c           = mod_state.clone();
+                let mod_btns_c            = mod_btns.clone();
+                let all_btns_c            = all_btns.clone();
+                let lang_btns_c           = lang_btns.clone();
+                let sel_c                 = sel.clone();
+                let mut buf_c             = buf.clone();
+                let mut disp_c            = disp.clone();
+                let hook_c                = Rc::clone(&hook);
+                let narrator_c            = narrator.clone();
+                let audio_mode_c          = audio_mode.clone();
+                let center_after_activate = cfg.navigate.center_after_activate;
+                let center_key_c          = cfg.navigate.center_key.clone();
+                let action                = phys.action;
+                let scancode              = phys.scancode;
                 btn.set_callback(move |_| {
                     let key_str = execute_action(
                         action, scancode,
@@ -1508,10 +1510,41 @@ fn main() {
                         let _ = ab[row_i][col_i].0.take_focus();
                         *s = NavSel::Key(row_i, col_i);
                     }
-                    narrator_c.borrow_mut().play(
-                        &action_audio_slug(action, *layout_idx_c.borrow()),
-                        action_tone_hz(action, &audio_mode_c),
-                    );
+                    // If center_after_activate is set, jump selection to center key
+                    // and narrate the new position.  Otherwise narrate the activated
+                    // button itself (existing behaviour).
+                    let jumped = if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_c)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            if changed {
+                                let sel = *sel_c.borrow();
+                                let ab  = all_btns_c.borrow();
+                                narrator_c.borrow_mut().play(
+                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                    nav_tone_freq(sel, &ab, &audio_mode_c),
+                                );
+                            }
+                            changed
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !jumped {
+                        narrator_c.borrow_mut().play(
+                            &action_audio_slug(action, *layout_idx_c.borrow()),
+                            action_tone_hz(action, &audio_mode_c),
+                        );
+                    }
                     app::redraw();
                 });
             }
