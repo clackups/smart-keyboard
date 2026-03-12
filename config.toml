@@ -1,11 +1,21 @@
 [input.keyboard]
-# Linux evdev scan codes (hexadecimal, linux/input-event-codes.h)
-navigate_up    = 0x67   # KEY_UP
-navigate_down  = 0x6c   # KEY_DOWN
-navigate_left  = 0x69   # KEY_LEFT
-navigate_right = 0x6a   # KEY_RIGHT
-activate       = 0x39   # KEY_SPACE
-menu           = 0x32   # KEY_M
+# FLTK key codes, as printed by the [keyboard] debug output (hexadecimal).
+# On Linux these are X11 KeySym values; for printable characters they equal
+# the lowercase ASCII code (e.g. 'c' = 0x63, 'm' = 0x6d, space = 0x20).
+navigate_up    = 0xff52   # Key::Up
+navigate_down  = 0xff54   # Key::Down
+navigate_left  = 0xff51   # Key::Left
+navigate_right = 0xff53   # Key::Right
+activate       = 0x20     # Space
+menu           = 0x6d     # 'm'
+# activate_shift = null  # equivalent to activate when Shift is held; null/absent = disabled
+# activate_ctrl  = null  # equivalent to activate when Ctrl is held; null/absent = disabled
+# activate_alt   = null  # equivalent to activate when Alt is held; null/absent = disabled
+# activate_altgr = null  # equivalent to activate when AltGr is held; null/absent = disabled
+# activate_enter = null  # produces the Enter output regardless of selection; null/absent = disabled
+# activate_space = null  # produces the Space output regardless of selection; null/absent = disabled
+# navigate_center = null # moves selection to center of keyboard; null/absent = disabled
+# Example: navigate_center = 0x63  # 'c'
 
 [input.gamepad]
 enabled = true
@@ -17,6 +27,13 @@ device  = "auto"        # Auto-detect first connected gamepad
 # navigate_right = 0x03
 activate       = 0x05   # A/South button; comment out or remove to disable
 menu           = 0x08   # Menu/Start button; comment out or remove to disable
+# activate_shift = null   # equivalent to activate when Shift is held; null/absent = disabled
+# activate_ctrl  = null   # equivalent to activate when Ctrl is held; null/absent = disabled
+# activate_alt   = null   # equivalent to activate when Alt is held; null/absent = disabled
+# activate_altgr = null   # equivalent to activate when AltGr is held; null/absent = disabled
+# activate_enter = null   # produces the Enter output regardless of selection; null/absent = disabled
+# activate_space = null   # produces the Space output regardless of selection; null/absent = disabled
+# navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
 # axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
@@ -35,6 +52,19 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # rumble_duration_ms = 50
 # Intensity of both rumble motors: 0 = silent, 65535 = maximum (default: 16384 = 0x4000 ≈ 25 %).
 # rumble_magnitude = 16384
+
+[navigate]
+# When rollover = true, navigation wraps around at the edges of the keyboard:
+# moving left past the first column brings the cursor to the last column of the
+# same row, and vice-versa; moving down past the last row brings the cursor back
+# to the first row (or the language strip if present), and vice-versa.
+# rollover = false
+
+# The key label used as the center reference point (default: "h").
+#   navigate_center action – moves the selection to this button.
+#   absolute_axes mode     – the joystick's neutral position (axis centre) maps
+#                            to this button instead of the physical grid centre.
+center_key = "h"
 
 [output]
 # Output mode: "print" | "ble"
