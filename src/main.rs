@@ -746,6 +746,39 @@ fn tone_freq_for_action(action: Action) -> f32 {
     }
 }
 
+/// Return the tone frequency (Hz) for an [`Action`] in `tone_hint` audio mode.
+///
+/// Identical to [`tone_freq_for_action`] except that all letter and punctuation
+/// keys are silent (0.0 Hz), with the exception of **F** (slot 29) and **J**
+/// (slot 32) which retain their distinctive B5 (987.77 Hz) pitch as a home-row
+/// position hint.  Digit keys (slots 1–10) and all non-`Regular` actions keep
+/// their pitches unchanged.
+fn tone_hint_freq_for_action(action: Action) -> f32 {
+    match action {
+        Action::Regular(slot) => match slot {
+            // Digit keys: same ascending scale as in tone mode.
+            1..=10 => tone_freq_for_action(action),
+            // F and J – home-row bump keys: play a distinctive tone.
+            29 | 32 => 987.77,  // B5
+            // All other letter / punctuation keys: silent.
+            _ => 0.0,
+        },
+        // Function keys and all special keys: unchanged from tone mode.
+        _ => tone_freq_for_action(action),
+    }
+}
+
+/// Return the tone frequency (Hz) for `action` under the given [`AudioMode`].
+///
+/// Delegates to [`tone_hint_freq_for_action`] for [`AudioMode::ToneHint`] and
+/// to [`tone_freq_for_action`] for all other modes.
+fn action_tone_hz(action: Action, mode: &config::AudioMode) -> f32 {
+    match mode {
+        config::AudioMode::ToneHint => tone_hint_freq_for_action(action),
+        _ => tone_freq_for_action(action),
+    }
+}
+
 /// Tone frequency (Hz) used for language-toggle buttons in tone mode.
 /// E4 = 329.63 Hz – a neutral, distinctive pitch in the mid register.
 const LANG_BTN_TONE_HZ: f32 = 329.63;
@@ -756,10 +789,11 @@ const LANG_BTN_TONE_HZ: f32 = 329.63;
 fn nav_tone_freq(
     sel: NavSel,
     all_btns: &[Vec<(Button, Action, u16, Color)>],
+    mode: &config::AudioMode,
 ) -> f32 {
     match sel {
         NavSel::Lang(_) => LANG_BTN_TONE_HZ,
-        NavSel::Key(row, col) => tone_freq_for_action(all_btns[row][col].1),
+        NavSel::Key(row, col) => action_tone_hz(all_btns[row][col].1, mode),
     }
 }
 
@@ -779,6 +813,8 @@ fn main() {
 
     // Build the narrator early so it can be cloned into closures below.
     let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.audio.clone())));
+    // Clone the audio mode so it can be captured independently by closures.
+    let audio_mode = cfg.output.audio.clone();
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
@@ -1234,6 +1270,7 @@ fn main() {
                 let mut disp_c   = disp.clone();
                 let hook_c       = Rc::clone(&hook);
                 let narrator_c   = narrator.clone();
+                let audio_mode_c = audio_mode.clone();
                 let action       = phys.action;
                 let scancode     = phys.scancode;
                 btn.set_callback(move |_| {
@@ -1283,7 +1320,7 @@ fn main() {
                     }
                     narrator_c.borrow_mut().play(
                         &action_audio_slug(action, *layout_idx_c.borrow()),
-                        tone_freq_for_action(action),
+                        action_tone_hz(action, &audio_mode_c),
                     );
                     app::redraw();
                 });
@@ -1347,7 +1384,7 @@ fn main() {
         let ab = all_btns.borrow();
         narrator.borrow_mut().play(
             &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab),
-            nav_tone_freq(NavSel::Key(init_row, init_col), &ab),
+            nav_tone_freq(NavSel::Key(init_row, init_col), &ab, &audio_mode),
         );
     }
 
@@ -1465,6 +1502,7 @@ fn main() {
         let gp_cell_c         = gp_cell.clone();
         let gp_rumble         = cfg.input.gamepad.rumble;
         let narrator_c        = narrator.clone();
+        let audio_mode_c      = audio_mode.clone();
         let menu_sel_c        = menu_sel.clone();
         let menu_items_c      = menu_item_defs.clone();
         let mut menu_item_btns_c = menu_item_btns.clone();
@@ -1542,7 +1580,7 @@ fn main() {
                         let ab  = all_btns_c.borrow();
                         narrator_c.borrow_mut().play(
                             &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                            nav_tone_freq(sel, &ab),
+                            nav_tone_freq(sel, &ab, &audio_mode_c),
                         );
                     }
                     return true;
@@ -1674,6 +1712,7 @@ fn main() {
         let mut gamepad_status_t = gamepad_status.clone();
         let gp_cell_t         = gp_cell.clone();
         let narrator_t        = narrator.clone();
+        let audio_mode_t      = audio_mode.clone();
         let menu_sel_gp       = menu_sel.clone();
         let menu_items_gp     = menu_item_defs.clone();
         let mut menu_item_btns_gp = menu_item_btns.clone();
@@ -1808,7 +1847,7 @@ fn main() {
                             let ab  = all_btns_c.borrow();
                             narrator_t.borrow_mut().play(
                                 &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                nav_tone_freq(sel, &ab),
+                                nav_tone_freq(sel, &ab, &audio_mode_t),
                             );
                         }
                     }
@@ -1943,7 +1982,7 @@ fn main() {
                             let ab  = all_btns_c.borrow();
                             narrator_t.borrow_mut().play(
                                 &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
-                                nav_tone_freq(sel, &ab),
+                                nav_tone_freq(sel, &ab, &audio_mode_t),
                             );
                         }
                     }
