@@ -501,8 +501,14 @@ fn nav_move(
                     // Too far – keep scanning.
                 }
                 if dest_row == rows {
-                    // Sentinel: wrap to lang strip.
-                    NavSel::Lang(closest_lang(lang_btns, cx))
+                    // Sentinel: wrap to lang strip.  When rolling over from the
+                    // Spacebar, skip the lang strip and land on the F-key row
+                    // (row 0) instead, using the remembered preferred column.
+                    if all_btns[row][col].1 == Action::Space {
+                        NavSel::Key(0, closest_col(&all_btns[0], cx))
+                    } else {
+                        NavSel::Lang(closest_lang(lang_btns, cx))
+                    }
                 } else if dest_row == rows + 1 {
                     // Sentinel: wrap to first row.
                     NavSel::Key(0, closest_col(&all_btns[0], cx))
