@@ -172,10 +172,130 @@ fn default_axis_threshold()           -> i32  { 16384 }
 fn default_rumble_duration_ms()       -> u16  { 50 }
 fn default_rumble_magnitude()         -> u16  { 0x4000 }
 
+/// Which signal level on a GPIO line means "active" (button pressed).
+#[derive(Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum GpioSignal {
+    /// A high (1 / rising-edge) signal means the button is pressed.
+    High,
+    /// A low (0 / falling-edge) signal means the button is pressed (default).
+    #[default]
+    Low,
+}
+
+/// Internal pull-resistor configuration for GPIO input lines.
+///
+/// Requires Linux kernel 5.5 or newer (where the bias flags were added to the
+/// GPIO v1 line-event ABI).  On older kernels the flags are ignored.
+#[derive(Deserialize, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum GpioPull {
+    /// Enable the internal pull-up resistor on the line.
+    Up,
+    /// Enable the internal pull-down resistor on the line.
+    Down,
+    /// No internal pull resistor (floating / disabled; default).
+    #[default]
+    Null,
+}
+
+fn default_gpio_chip() -> String { "/dev/gpiochip0".to_string() }
+
+/// Configuration for the GPIO input source.
+///
+/// Each navigation / action key is mapped to a numeric GPIO line offset on the
+/// configured chip device.  Setting a field to `null` (or omitting it) disables
+/// that action.
+#[derive(Deserialize, Clone)]
+pub struct GpioInputConfig {
+    /// Enable GPIO input.  Default: `false`.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path to the GPIO chip character device.  Default: `"/dev/gpiochip0"`.
+    #[serde(default = "default_gpio_chip")]
+    pub chip: String,
+    /// GPIO line number for "navigate up"; `null` / absent = disabled.
+    #[serde(default)]
+    pub navigate_up: Option<u32>,
+    /// GPIO line number for "navigate down"; `null` / absent = disabled.
+    #[serde(default)]
+    pub navigate_down: Option<u32>,
+    /// GPIO line number for "navigate left"; `null` / absent = disabled.
+    #[serde(default)]
+    pub navigate_left: Option<u32>,
+    /// GPIO line number for "navigate right"; `null` / absent = disabled.
+    #[serde(default)]
+    pub navigate_right: Option<u32>,
+    /// GPIO line number for "activate"; `null` / absent = disabled.
+    #[serde(default)]
+    pub activate: Option<u32>,
+    /// GPIO line number for "menu"; `null` / absent = disabled.
+    #[serde(default)]
+    pub menu: Option<u32>,
+    /// GPIO line number for "activate with Shift"; `null` / absent = disabled.
+    #[serde(default)]
+    pub activate_shift: Option<u32>,
+    /// GPIO line number for "activate with Ctrl"; `null` / absent = disabled.
+    #[serde(default)]
+    pub activate_ctrl: Option<u32>,
+    /// GPIO line number for "activate with Alt"; `null` / absent = disabled.
+    #[serde(default)]
+    pub activate_alt: Option<u32>,
+    /// GPIO line number for "activate with AltGr"; `null` / absent = disabled.
+    #[serde(default)]
+    pub activate_altgr: Option<u32>,
+    /// GPIO line number for "activate Enter"; `null` / absent = disabled.
+    /// Produces the Enter output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_enter: Option<u32>,
+    /// GPIO line number for "activate Space"; `null` / absent = disabled.
+    /// Produces the Space output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_space: Option<u32>,
+    /// GPIO line number for "navigate center"; `null` / absent = disabled.
+    /// Moves the selection to the key configured by `[navigate] center_key`.
+    #[serde(default)]
+    pub navigate_center: Option<u32>,
+    /// Which signal level on the GPIO line means "pressed".
+    /// `"high"` = rising edge triggers press; `"low"` = falling edge (default).
+    #[serde(default)]
+    pub gpio_signal: GpioSignal,
+    /// Internal pull-resistor configuration for all configured GPIO lines.
+    /// `"up"` / `"down"` / `"null"` (default: `"null"` = no pull).
+    #[serde(default)]
+    pub gpio_pull: GpioPull,
+}
+
+impl Default for GpioInputConfig {
+    fn default() -> Self {
+        GpioInputConfig {
+            enabled:         false,
+            chip:            default_gpio_chip(),
+            navigate_up:     None,
+            navigate_down:   None,
+            navigate_left:   None,
+            navigate_right:  None,
+            activate:        None,
+            menu:            None,
+            activate_shift:  None,
+            activate_ctrl:   None,
+            activate_alt:    None,
+            activate_altgr:  None,
+            activate_enter:  None,
+            activate_space:  None,
+            navigate_center: None,
+            gpio_signal:     GpioSignal::Low,
+            gpio_pull:       GpioPull::Null,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct InputConfig {
     pub keyboard: KeyboardInputConfig,
     pub gamepad: GamepadInputConfig,
+    #[serde(default)]
+    pub gpio: GpioInputConfig,
 }
 
 // =============================================================================
@@ -503,6 +623,7 @@ impl Default for InputConfig {
         InputConfig {
             keyboard: KeyboardInputConfig::default(),
             gamepad:  GamepadInputConfig::default(),
+            gpio:     GpioInputConfig::default(),
         }
     }
 }
