@@ -223,7 +223,78 @@ axis_activate = 0x05
 
 ---
 
-### `[navigate]`
+### `[input.gpio]`
+
+Controls GPIO input using the Linux GPIO character device interface (gpiod v1
+ABI, available on kernel 4.8+).  GPIO is **disabled by default**.  When enabled,
+each navigation and action key is mapped to a numeric GPIO line offset on the
+configured chip device.
+
+The application registers each configured line for both rising- and
+falling-edge events so that button press *and* release are both reported.
+
+#### Basic settings
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Enable GPIO input. Set to `true` to activate it. |
+| `chip` | `"/dev/gpiochip0"` | Path to the GPIO chip character device. Change if your GPIO lines are on a different chip (e.g. `"/dev/gpiochip1"`). |
+
+#### Signal polarity and pull resistors
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `gpio_signal` | `"low"` | Which signal level on the line means "pressed". `"low"` — falling edge triggers press (typical with a pull-up resistor and a button that pulls to ground). `"high"` — rising edge triggers press (typical with a pull-down resistor). |
+| `gpio_pull` | `"null"` | Internal pull-resistor configuration applied to **all** configured GPIO lines. `"up"` enables the internal pull-up, `"down"` enables the internal pull-down, and `"null"` leaves the line floating (no internal pull). Requires Linux kernel 5.5 or newer; on older kernels the setting is silently ignored. |
+
+#### Button navigation
+
+GPIO line numbers are the numeric offset of the line on the chip.  Use a
+tool such as `gpioinfo` (from the `gpiod` package) to list line offsets.
+Remove or set a field to `null` to disable that action.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `navigate_up` | *(disabled)* | GPIO line number for move-up |
+| `navigate_down` | *(disabled)* | GPIO line number for move-down |
+| `navigate_left` | *(disabled)* | GPIO line number for move-left |
+| `navigate_right` | *(disabled)* | GPIO line number for move-right |
+| `activate` | *(disabled)* | GPIO line number for activate (type the selected key) |
+| `menu` | *(disabled)* | GPIO line number for opening the application pop-up menu |
+| `activate_shift` | *(disabled)* | GPIO line number for activate-with-Shift. Remove or set to `null` to disable. |
+| `activate_ctrl` | *(disabled)* | GPIO line number for activate-with-Ctrl. Remove or set to `null` to disable. |
+| `activate_alt` | *(disabled)* | GPIO line number for activate-with-Alt. Remove or set to `null` to disable. |
+| `activate_altgr` | *(disabled)* | GPIO line number for activate-with-AltGr. Remove or set to `null` to disable. |
+| `activate_enter` | *(disabled)* | GPIO line number for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_space` | *(disabled)* | GPIO line number for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
+| `navigate_center` | *(disabled)* | GPIO line number for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
+
+**Example** — four directional buttons and an activate button using a pull-up
+resistor with active-low logic (buttons pull lines to ground when pressed):
+
+```toml
+[input.gpio]
+enabled     = true
+chip        = "/dev/gpiochip0"
+gpio_pull   = "up"    # enable internal pull-ups on all configured lines
+gpio_signal = "low"   # falling edge = pressed (default; button pulls to GND)
+
+navigate_up    = 17
+navigate_down  = 27
+navigate_left  = 22
+navigate_right = 23
+activate       = 24
+# menu           = null
+```
+
+**Status indicator** — when GPIO input is enabled a `P` icon appears in the
+status bar (left of the gamepad icon when the gamepad is also enabled).  The
+icon is red when no GPIO lines could be opened and green once at least one
+line is successfully registered.
+
+---
+
+
 
 Controls navigation behaviour.
 
@@ -246,9 +317,9 @@ center_after_activate = true
 
 ### Pop-up menu
 
-When the menu key (`input.keyboard.menu`, default: `M`) or gamepad menu button
-(`input.gamepad.menu`, default: `0x08`) is pressed, a pop-up menu appears in
-the centre of the screen.
+When the menu key (`input.keyboard.menu`, default: `M`), gamepad menu button
+(`input.gamepad.menu`, default: `0x08`), or GPIO menu line (`input.gpio.menu`)
+is pressed, a pop-up menu appears in the centre of the screen.
 
 The cursor starts on the first enabled item.  Navigate vertically with the
 standard navigation keys (up / down or the gamepad stick / D-pad) and confirm
@@ -358,11 +429,14 @@ built-in default.
 
 #### Connectivity icons
 
+These colours are shared by the BLE (`●`), gamepad (`G`), and GPIO (`P`)
+status icons in the status bar.
+
 | Key | Default | Description |
 |-----|---------|-------------|
-| `conn_disconnected` | `"#dc3c3c"` | Icon colour when the BLE dongle / gamepad is **not** found (red). |
+| `conn_disconnected` | `"#dc3c3c"` | Icon colour when the BLE dongle / gamepad / GPIO is **not** found (red). |
 | `conn_connecting` | `"#dc9628"` | Icon colour when the BLE dongle is open but the remote host is not yet paired (amber). |
-| `conn_connected` | `"#50dc50"` | Icon colour when the BLE link / gamepad is connected and ready (green). |
+| `conn_connected` | `"#50dc50"` | Icon colour when the BLE link / gamepad / GPIO lines are open and ready (green). |
 
 **Example** — swap to a light theme for the key area
 

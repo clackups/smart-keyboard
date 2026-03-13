@@ -53,7 +53,37 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # Intensity of both rumble motors: 0 = silent, 65535 = maximum (default: 16384 = 0x4000 ~= 25 %).
 # rumble_magnitude = 16384
 
-[navigate]
+[input.gpio]
+# GPIO input is disabled by default.  Set enabled = true to activate it.
+enabled = false
+# Path to the GPIO chip character device.  Default: "/dev/gpiochip0".
+# chip = "/dev/gpiochip0"
+# GPIO line numbers (numeric, decimal or hexadecimal); null/absent = disabled.
+# navigate_up    = null
+# navigate_down  = null
+# navigate_left  = null
+# navigate_right = null
+# activate       = null
+# menu           = null
+# activate_shift = null   # equivalent to activate when Shift is held; null/absent = disabled
+# activate_ctrl  = null   # equivalent to activate when Ctrl is held; null/absent = disabled
+# activate_alt   = null   # equivalent to activate when Alt is held; null/absent = disabled
+# activate_altgr = null   # equivalent to activate when AltGr is held; null/absent = disabled
+# activate_enter = null   # produces the Enter output regardless of selection; null/absent = disabled
+# activate_space = null   # produces the Space output regardless of selection; null/absent = disabled
+# navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
+# Which GPIO signal level means "pressed": "high" or "low" (default: "low").
+# A low signal is typical when using a pull-up resistor and a button that pulls
+# the line to ground on press.
+# gpio_signal = "low"
+# Internal pull-resistor configuration applied to all configured GPIO lines.
+# "up"   - enable internal pull-up resistor
+# "down" - enable internal pull-down resistor
+# "null" - no internal pull resistor (floating; default)
+# Requires Linux kernel >= 5.5.  On older kernels the setting is ignored.
+# gpio_pull = "null"
+
+
 # When rollover = true, navigation wraps around at the edges of the keyboard:
 # moving left past the first column brings the cursor to the last column of the
 # same row, and vice-versa; moving down past the last row brings the cursor back

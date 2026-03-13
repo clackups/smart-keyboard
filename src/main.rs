@@ -1,5 +1,6 @@
 mod config;
 mod gamepad;
+mod gpio;
 mod keyboards;
 mod narrator;
 mod output;
@@ -24,6 +25,7 @@ use keyboards::{
 };
 
 use gamepad::{Gamepad, GamepadAction, GamepadEvent};
+use gpio::{GpioInput, GpioAction, GpioEvent};
 use narrator::Narrator;
 
 // =============================================================================
@@ -1145,6 +1147,25 @@ fn main() {
         let mut f = Frame::new(gp_icon_x, ind_pad, ind_w, ind_h, "G");
         f.set_color(colors.status_ind_bg);
         f.set_label_color(colors.conn_disconnected); // initial: disconnected (red G)
+        f.set_frame(FrameType::FlatBox);
+        f.set_label_size(status_lbl_size);
+        Some(f)
+    } else {
+        None
+    };
+
+    // GPIO icon - left of gamepad icon (if enabled) or left of BLE icon,
+    // otherwise at the rightmost right-side position.
+    // Only created when GPIO input is enabled in config.
+    let gpio_icon_x = if cfg.input.gamepad.enabled {
+        gp_icon_x - ind_gap - ind_w
+    } else {
+        gp_icon_x
+    };
+    let mut gpio_status: Option<Frame> = if cfg.input.gpio.enabled {
+        let mut f = Frame::new(gpio_icon_x, ind_pad, ind_w, ind_h, "P");
+        f.set_color(colors.status_ind_bg);
+        f.set_label_color(colors.conn_disconnected); // initial: not yet opened (red P)
         f.set_frame(FrameType::FlatBox);
         f.set_label_size(status_lbl_size);
         Some(f)
@@ -2603,6 +2624,370 @@ fn main() {
                             changed, gp_rumble, &gp_cell_t, &sel_c,
                             &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
                         );
+                    }
+                }
+            }
+            app::repeat_timeout3(0.016, handle);
+        });
+    }
+
+    // --- GPIO input (if enabled in config) ---
+    if cfg.input.gpio.enabled {
+        let gpio_cfg = cfg.input.gpio.clone();
+
+        // Open the GPIO lines now and store the result in a shared cell.
+        let gpio_cell: Rc<RefCell<Option<GpioInput>>> =
+            Rc::new(RefCell::new(GpioInput::open(&cfg.input.gpio)));
+
+        // Update the initial GPIO icon colour.
+        if let Some(ref mut icon) = gpio_status {
+            if gpio_cell.borrow().is_some() {
+                icon.set_label_color(colors.conn_connected);
+            }
+            // If not opened the icon already shows red (set at creation).
+        }
+
+        let all_btns_c        = all_btns.clone();
+        let lang_btns_c       = lang_btns.clone();
+        let layout_idx_c      = layout_idx.clone();
+        let mod_state_c       = mod_state.clone();
+        let mod_btns_c        = mod_btns.clone();
+        let sel_c             = sel.clone();
+        let mut buf_c         = buf.clone();
+        let mut disp_c        = disp.clone();
+        let hook_c            = Rc::clone(&hook);
+        let active_nav_key_c  = active_nav_key.clone();
+        let mut gpio_status_t = gpio_status.clone();
+        let gpio_cell_t       = gpio_cell.clone();
+        let gp_cell_gpio      = gp_cell.clone();
+        let narrator_t        = narrator.clone();
+        let audio_mode_t      = audio_mode.clone();
+        let menu_sel_gpio     = menu_sel.clone();
+        let menu_items_gpio   = menu_item_defs.clone();
+        let mut menu_item_btns_gpio = menu_item_btns.clone();
+        let mut menu_group_gpio     = menu_group.clone();
+        let gpio_rollover             = cfg.navigate.rollover;
+        let gpio_center_key           = cfg.navigate.center_key.clone();
+        let gpio_center_after_activate = cfg.navigate.center_after_activate;
+        let preferred_cx_gpio         = preferred_cx.clone();
+
+        let mut gpio_evt_buf: Vec<GpioEvent> = Vec::new();
+
+        // Poll at ~60 Hz.  When lines are not yet open, retry every 1 s.
+        app::add_timeout3(0.016, move |handle| {
+            // Phase 1 - try to open if currently unavailable.
+            if gpio_cell_t.borrow().is_none() {
+                match GpioInput::open(&gpio_cfg) {
+                    Some(gpio) => {
+                        eprintln!("[gpio] opened");
+                        *gpio_cell_t.borrow_mut() = Some(gpio);
+                        if let Some(ref mut icon) = gpio_status_t {
+                            icon.set_label_color(colors.conn_connected);
+                            app::redraw();
+                        }
+                    }
+                    None => {
+                        app::repeat_timeout3(1.0, handle);
+                        return;
+                    }
+                }
+            }
+
+            // Phase 2 - poll for events.
+            {
+                let mut opt = gpio_cell_t.borrow_mut();
+                opt.as_mut().unwrap().poll(&mut gpio_evt_buf);
+            }
+
+            // Phase 3 - process collected events.
+            for evt in gpio_evt_buf.iter() {
+                match evt.action {
+                    GpioAction::Menu => {
+                        if !evt.pressed { continue; }
+                        if menu_sel_gpio.borrow().is_some() {
+                            *menu_sel_gpio.borrow_mut() = None;
+                            menu_group_gpio.hide();
+                            app::redraw();
+                        } else {
+                            if let Some(first) = menu_first_enabled(&menu_items_gpio) {
+                                if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                    hook_c.on_key_release(sc, &ks);
+                                }
+                                *menu_sel_gpio.borrow_mut() = Some(first);
+                                menu_set_item_colors(
+                                    Some(first), &menu_items_gpio,
+                                    &mut menu_item_btns_gpio, colors,
+                                );
+                                let _ = menu_item_btns_gpio[first].take_focus();
+                                menu_group_gpio.show();
+                                app::redraw();
+                            }
+                        }
+                    }
+                    GpioAction::Up
+                    | GpioAction::Down
+                    | GpioAction::Left
+                    | GpioAction::Right => {
+                        if !evt.pressed { continue; }
+                        if menu_sel_gpio.borrow().is_some() {
+                            let dir = match evt.action {
+                                GpioAction::Up   => -1i32,
+                                GpioAction::Down =>  1i32,
+                                _                => continue,
+                            };
+                            let cur = menu_sel_gpio.borrow().unwrap();
+                            let next = menu_move_sel(cur, dir, &menu_items_gpio);
+                            if next != cur {
+                                *menu_sel_gpio.borrow_mut() = Some(next);
+                                menu_set_item_colors(
+                                    Some(next), &menu_items_gpio,
+                                    &mut menu_item_btns_gpio, colors,
+                                );
+                                let _ = menu_item_btns_gpio[next].take_focus();
+                                app::redraw();
+                            }
+                            continue;
+                        }
+                        let (dr, dc) = match evt.action {
+                            GpioAction::Up    => (-1,  0),
+                            GpioAction::Down  => ( 1,  0),
+                            GpioAction::Left  => ( 0, -1),
+                            _                 => ( 0,  1),
+                        };
+                        let changed = {
+                            let mut ab = all_btns_c.borrow_mut();
+                            let mut lb = lang_btns_c.borrow_mut();
+                            let mut s  = sel_c.borrow_mut();
+                            nav_move(
+                                &mut ab, &mut lb,
+                                *layout_idx_c.borrow(),
+                                &mut s, &mod_state_c,
+                                dr, dc,
+                                colors,
+                                gpio_rollover,
+                                &mut *preferred_cx_gpio.borrow_mut(),
+                            )
+                        };
+                        on_nav_changed(
+                            changed, false, &gp_cell_gpio, &sel_c,
+                            &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                        );
+                    }
+                    GpioAction::Activate => {
+                        if menu_sel_gpio.borrow().is_some() {
+                            if evt.pressed {
+                                let idx = menu_sel_gpio.borrow().unwrap();
+                                if (menu_items_gpio[idx].is_enabled)() {
+                                    (menu_items_gpio[idx].execute)();
+                                }
+                                *menu_sel_gpio.borrow_mut() = None;
+                                menu_group_gpio.hide();
+                                app::redraw();
+                            }
+                            continue;
+                        }
+                        if evt.pressed {
+                            let cur_sel = *sel_c.borrow();
+                            match cur_sel {
+                                NavSel::Lang(li) => {
+                                    lang_btns_c.borrow_mut()[li].do_callback();
+                                    *active_nav_key_c.borrow_mut() = None;
+                                }
+                                NavSel::Key(row, col) => {
+                                    let (action, scancode) = {
+                                        let ab = all_btns_c.borrow();
+                                        (ab[row][col].1, ab[row][col].2)
+                                    };
+                                    let key_str = execute_action(
+                                        action, scancode,
+                                        *layout_idx_c.borrow(),
+                                        &mut buf_c, &mut disp_c, &hook_c,
+                                        &mod_state_c,
+                                        &mod_btns_c.borrow(),
+                                        colors,
+                                    );
+                                    *active_nav_key_c.borrow_mut() =
+                                        Some((scancode, key_str));
+                                    all_btns_c.borrow_mut()[row][col]
+                                        .0.set_color(colors.nav_sel);
+                                }
+                            }
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::ActivateEnter => {
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                Action::Enter, 0x1c,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::ActivateSpace => {
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                Action::Space, 0x39,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::ActivateShift
+                    | GpioAction::ActivateCtrl
+                    | GpioAction::ActivateAlt
+                    | GpioAction::ActivateAltGr => {
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            {
+                                let mut ms = mod_state_c.borrow_mut();
+                                match evt.action {
+                                    GpioAction::ActivateShift => ms.lshift = true,
+                                    GpioAction::ActivateCtrl  => ms.ctrl   = true,
+                                    GpioAction::ActivateAlt   => ms.alt    = true,
+                                    _                         => ms.altgr  = true,
+                                }
+                            }
+                            let cur_sel = *sel_c.borrow();
+                            match cur_sel {
+                                NavSel::Lang(li) => {
+                                    lang_btns_c.borrow_mut()[li].do_callback();
+                                    *active_nav_key_c.borrow_mut() = None;
+                                }
+                                NavSel::Key(row, col) => {
+                                    let (action, scancode) = {
+                                        let ab = all_btns_c.borrow();
+                                        (ab[row][col].1, ab[row][col].2)
+                                    };
+                                    let key_str = execute_action(
+                                        action, scancode,
+                                        *layout_idx_c.borrow(),
+                                        &mut buf_c, &mut disp_c, &hook_c,
+                                        &mod_state_c,
+                                        &mod_btns_c.borrow(),
+                                        colors,
+                                    );
+                                    *active_nav_key_c.borrow_mut() =
+                                        Some((scancode, key_str));
+                                    all_btns_c.borrow_mut()[row][col]
+                                        .0.set_color(colors.nav_sel);
+                                }
+                            }
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::NavigateCenter => {
+                        if !evt.pressed { continue; }
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(
+                                    &mut ab, &mut lb,
+                                    *layout_idx_c.borrow(),
+                                    &mut s, &mod_state_c,
+                                    center,
+                                    colors,
+                                )
+                            };
+                            on_nav_changed(
+                                changed, false, &gp_cell_gpio, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                            );
+                        }
                     }
                 }
             }
