@@ -1,6 +1,23 @@
-# smart-keyboard
+# smart keyboard
 
-An on-screen keyboard for Wayland compositors, built with [FLTK](https://www.fltk.org/) and Rust.
+This project aims building a Linux device that acts as an accessible
+virtual keyboard for users with disabilities. The device has a small
+screen that displays a virtual keyboard, and the user is given rich
+possibilities to navigate the keyboard and enter the text.
+
+The device uses an [ESP32-S3 USB
+dongle](https://github.com/clackups/esp_hid_serial_bridge) that
+simulates a Bluetooth keyboard toward the main computer.
+
+The user's input can include a mouse, a keyboard, a game controller,
+or button switches attached to GPIO pins on the device.
+
+The application is implemented in Riust, using FLTK library, and it's
+designed to use any available Wayland
+compositor. [Cage](https://github.com/cage-kiosk/cage) is the
+recommended compositor, although Weston, Sway and others can also be
+used.
+
 
 ## Build prerequisites
 
@@ -8,49 +25,34 @@ The project uses the `fltk` crate with its `use-wayland` feature, which compiles
 FLTK from source using CMake. The following system packages must be installed
 **before** running `cargo build`:
 
-### Debian / Ubuntu
+### Building on Debian / Ubuntu
 
 ```sh
-sudo apt-get install \
-    cmake g++ \
+sudo apt install -y \
+    cage xdg-desktop-portal-wlr xdg-desktop-portal \
+    git cmake g++ \
     libwayland-dev wayland-protocols \
-    libxkbcommon-dev \
-    libcairo2-dev \
-    libpango1.0-dev
-```
+    libxkbcommon-dev libcairo2-dev libpango1.0-dev libudev-dev \
+    libxfixes-dev libxcursor-dev libxinerama-dev libdbus-1-dev
 
-### Fedora / RHEL / CentOS
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+. "$HOME/.cargo/env"
 
-```sh
-sudo dnf install \
-    cmake gcc-c++ \
-    wayland-devel wayland-protocols-devel \
-    libxkbcommon-devel \
-    cairo-devel \
-    pango-devel
-```
-
-### Arch Linux
-
-```sh
-sudo pacman -S \
-    cmake \
-    wayland wayland-protocols \
-    libxkbcommon \
-    cairo \
-    pango
-```
-
-## Building
-
-```sh
+mkdir $HOME/build
+cd $HOME/build
+git clone https://github.com/clackups/smart-keyboard.git
+cd smart-keyboard/
 cargo build --release
 ```
 
 ## Running
 
 ```sh
-cargo run --release
+
+# TODO: automatic boot with Cage https://github.com/cage-kiosk/cage/wiki/Starting-Cage-on-boot-with-systemd
+
+nohup cage target/release/smart-keyboard >/tmp/smart-keyboard.log &
+
 ```
 
 The keyboard opens full-screen on the active Wayland display.
