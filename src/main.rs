@@ -651,15 +651,16 @@ fn find_center_key(
 /// can invoke `on_key_release` when the physical activation key is later
 /// released.
 fn execute_action(
-    action:    Action,
-    scancode:  u16,
-    layout_i:  usize,
-    buf:       &mut TextBuffer,
-    disp:      &mut TextDisplay,
-    hook:      &Rc<dyn KeyHook>,
-    mod_state: &Rc<RefCell<ModState>>,
-    mod_btns:  &[ModBtn],
-    colors:    Colors,
+    action:         Action,
+    scancode:       u16,
+    layout_i:       usize,
+    buf:            &mut TextBuffer,
+    disp:           &mut TextDisplay,
+    hook:           &Rc<dyn KeyHook>,
+    mod_state:      &Rc<RefCell<ModState>>,
+    mod_btns:       &[ModBtn],
+    colors:         Colors,
+    update_display: bool,
 ) -> String {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
     // Symbol/number keys (label_shifted != "") use the shifted character on LShift/RShift;
@@ -713,26 +714,28 @@ fn execute_action(
         app::redraw();
     } else {
         // Regular key: insert text into the buffer.
-        match action {
-            Action::Regular(_) => {
-                buf.append(regular_text.as_deref().unwrap_or(""));
-            }
-            Action::Backspace => {
-                let text = buf.text();
-                let n    = text.chars().count();
-                if n > 0 {
-                    buf.set_text(&text.chars().take(n - 1).collect::<String>());
+        if update_display {
+            match action {
+                Action::Regular(_) => {
+                    buf.append(regular_text.as_deref().unwrap_or(""));
                 }
+                Action::Backspace => {
+                    let text = buf.text();
+                    let n    = text.chars().count();
+                    if n > 0 {
+                        buf.set_text(&text.chars().take(n - 1).collect::<String>());
+                    }
+                }
+                Action::Tab   => buf.append("\t"),
+                Action::Enter => buf.set_text(""),
+                Action::Space => buf.append(" "),
+                _ => {}
             }
-            Action::Tab   => buf.append("\t"),
-            Action::Enter => buf.append("\n"),
-            Action::Space => buf.append(" "),
-            _ => {}
+            // Scroll the display to keep the newest text visible.
+            let len   = buf.length();
+            let lines = disp.count_lines(0, len, false);
+            disp.scroll(lines, 0);
         }
-        // Scroll the display to keep the newest text visible.
-        let len   = buf.length();
-        let lines = disp.count_lines(0, len, false);
-        disp.scroll(lines, 0);
 
         // Auto-release sticky modifiers and reset their button colours.
         {
@@ -1018,6 +1021,7 @@ fn main() {
     let cfg = config::Config::load();
     let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
     let colors = Colors::from_config(&cfg.ui.colors);
+    let show_text_display = cfg.ui.show_text_display;
 
     // Build the narrator early so it can be cloned into closures below.
     let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.audio.clone())));
@@ -1045,7 +1049,7 @@ fn main() {
 
     let avail_w = sw - 2 * pad;
 
-    let display_h  = ((sh as f32 / 12.0) as i32).max(10);
+    let display_h  = if cfg.ui.show_text_display { ((sh as f32 / 12.0) as i32).max(10) } else { 0 };
     let lang_btn_h = ((sh as f32 / 12.0) as i32).max(10);
 
     // Status bar occupies a thin strip at the very top of the window.
@@ -1336,6 +1340,9 @@ fn main() {
     disp.set_text_color(colors.disp_text);
     disp.set_frame(FrameType::DownBox);
     disp.set_text_size(disp_size);
+    if !show_text_display {
+        disp.hide();
+    }
 
     // --- Language toggle buttons (one per entry in LAYOUTS) ---
     let active_col   = colors.mod_active;
@@ -1525,6 +1532,7 @@ fn main() {
                         &mod_state_c,
                         &mod_btns_c.borrow(),
                         colors,
+                        show_text_display,
                     );
                     // For mouse/touch clicks the Released event fires before this
                     // callback, so the key press command was sent in execute_action ->
@@ -1792,6 +1800,7 @@ fn main() {
         let center_key_kbd        = cfg.navigate.center_key.clone();
         let center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_c        = preferred_cx.clone();
+        let show_text_display_kbd = show_text_display;
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1890,6 +1899,7 @@ fn main() {
                                 &mod_state_c,
                                 &mod_btns_c.borrow(),
                                 colors,
+                                show_text_display_kbd,
                             );
                             // Store the activated key so on_key_release can be sent
                             // when the physical activation key is released.
@@ -1969,6 +1979,7 @@ fn main() {
                         *layout_idx_c.borrow(),
                         &mut buf_c, &mut disp_c, &hook_c,
                         &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
                     );
                     *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
                     if center_after_activate {
@@ -1998,8 +2009,47 @@ fn main() {
                         *layout_idx_c.borrow(),
                         &mut buf_c, &mut disp_c, &hook_c,
                         &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
                     );
                     *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            );
+                        }
+                    }
+                    return true;
+                }
+
+                // activate_arrow_left/right/up/down: directly produce the
+                // corresponding Arrow key output.
+                let which_arrow: Option<(Action, u16)> =
+                    if      nav_keys.activate_arrow_left .map_or(false, |ak| k == ak) { Some((Action::ArrowLeft,  0x69)) }
+                    else if nav_keys.activate_arrow_right.map_or(false, |ak| k == ak) { Some((Action::ArrowRight, 0x6a)) }
+                    else if nav_keys.activate_arrow_up   .map_or(false, |ak| k == ak) { Some((Action::ArrowUp,    0x67)) }
+                    else if nav_keys.activate_arrow_down .map_or(false, |ak| k == ak) { Some((Action::ArrowDown,  0x6c)) }
+                    else { None };
+
+                if let Some((arrow_action, arrow_sc)) = which_arrow {
+                    let key_str = execute_action(
+                        arrow_action, arrow_sc,
+                        *layout_idx_c.borrow(),
+                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
+                    );
+                    *active_nav_key_c.borrow_mut() = Some((arrow_sc, key_str));
                     if center_after_activate {
                         if let Some(center) = {
                             let ab = all_btns_c.borrow();
@@ -2057,6 +2107,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_kbd,
                             );
                             *active_nav_key_c.borrow_mut() = Some((scancode, key_str));
                             all_btns_c.borrow_mut()[row][col].0.set_color(colors.nav_sel);
@@ -2100,7 +2151,11 @@ fn main() {
                     || nav_keys.activate_alt   .map_or(false, |ak| k == ak)
                     || nav_keys.activate_altgr .map_or(false, |ak| k == ak)
                     || nav_keys.activate_enter .map_or(false, |ak| k == ak)
-                    || nav_keys.activate_space .map_or(false, |ak| k == ak);
+                    || nav_keys.activate_space .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_left .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_right.map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_up   .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_down .map_or(false, |ak| k == ak);
                 if is_activate_variant {
                     if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                         hook_c.on_key_release(sc, &ks);
@@ -2170,6 +2225,7 @@ fn main() {
         let gp_center_key           = cfg.navigate.center_key.clone();
         let gp_center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_gp         = preferred_cx.clone();
+        let show_text_display_gp    = show_text_display;
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -2332,6 +2388,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gp,
                                     );
                                     // Store the activated key so on_key_release can be
                                     // sent when the gamepad button is released.
@@ -2374,6 +2431,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
                             if gp_center_after_activate {
@@ -2408,8 +2466,53 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::ActivateArrowLeft
+                    | GamepadAction::ActivateArrowRight
+                    | GamepadAction::ActivateArrowUp
+                    | GamepadAction::ActivateArrowDown => {
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        let (arrow_action, arrow_sc) = match evt.action {
+                            GamepadAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
+                            GamepadAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
+                            GamepadAction::ActivateArrowUp    => (Action::ArrowUp,    0x67u16),
+                            _                                 => (Action::ArrowDown,  0x6cu16),
+                        };
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                arrow_action, arrow_sc,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((arrow_sc, key_str));
                             if gp_center_after_activate {
                                 if let Some(center) = {
                                     let ab = all_btns_c.borrow();
@@ -2469,6 +2572,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gp,
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
@@ -2670,6 +2774,7 @@ fn main() {
         let gpio_center_key           = cfg.navigate.center_key.clone();
         let gpio_center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_gpio         = preferred_cx.clone();
+        let show_text_display_gpio    = show_text_display;
 
         let mut gpio_evt_buf: Vec<GpioEvent> = Vec::new();
 
@@ -2805,6 +2910,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gpio,
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
@@ -2843,6 +2949,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
                             if gpio_center_after_activate {
@@ -2876,8 +2983,52 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::ActivateArrowLeft
+                    | GpioAction::ActivateArrowRight
+                    | GpioAction::ActivateArrowUp
+                    | GpioAction::ActivateArrowDown => {
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        let (arrow_action, arrow_sc) = match evt.action {
+                            GpioAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
+                            GpioAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
+                            GpioAction::ActivateArrowUp    => (Action::ArrowUp,    0x67u16),
+                            _                              => (Action::ArrowDown,  0x6cu16),
+                        };
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                arrow_action, arrow_sc,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((arrow_sc, key_str));
                             if gpio_center_after_activate {
                                 if let Some(center) = {
                                     let ab = all_btns_c.borrow();
@@ -2934,6 +3085,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gpio,
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));

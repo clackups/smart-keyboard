@@ -14,6 +14,10 @@ menu           = 0x6d     # 'm'
 # activate_altgr = null  # equivalent to activate when AltGr is held; null/absent = disabled
 # activate_enter = null  # produces the Enter output regardless of selection; null/absent = disabled
 # activate_space = null  # produces the Space output regardless of selection; null/absent = disabled
+# activate_arrow_left  = null  # produces the Left Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # navigate_center = null # moves selection to center of keyboard; null/absent = disabled
 # Example: navigate_center = 0x63  # 'c'
 
@@ -33,6 +37,10 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_altgr = null   # equivalent to activate when AltGr is held; null/absent = disabled
 # activate_enter = null   # produces the Enter output regardless of selection; null/absent = disabled
 # activate_space = null   # produces the Space output regardless of selection; null/absent = disabled
+# activate_arrow_left  = null  # produces the Left Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
@@ -71,6 +79,10 @@ enabled = false
 # activate_altgr = null   # equivalent to activate when AltGr is held; null/absent = disabled
 # activate_enter = null   # produces the Enter output regardless of selection; null/absent = disabled
 # activate_space = null   # produces the Space output regardless of selection; null/absent = disabled
+# activate_arrow_left  = null  # produces the Left Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
+# activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Which GPIO signal level means "pressed": "high" or "low" (default: "low").
 # A low signal is typical when using a pull-up resistor and a button that pulls
@@ -131,6 +143,12 @@ pid = 0xbbd1
 # Uncomment and set `serial` to select a specific dongle when multiple
 # matching USB devices are connected:
 # serial = "your_dongle_serial_string"
+
+[ui]
+# Set show_text_display = true to show a text display of typed input at the
+# top of the keyboard window.  When false (the default) the display is hidden
+# and no CPU is spent updating the text buffer.
+# show_text_display = false
 
 [ui.colors]
 # All colour values are 6-digit hex strings ("#RRGGBB").

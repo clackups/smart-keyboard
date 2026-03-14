@@ -50,6 +50,14 @@ pub enum GamepadAction {
     ActivateEnter,
     /// Produce the Space output directly.
     ActivateSpace,
+    /// Produce the Left Arrow output directly.
+    ActivateArrowLeft,
+    /// Produce the Right Arrow output directly.
+    ActivateArrowRight,
+    /// Produce the Up Arrow output directly.
+    ActivateArrowUp,
+    /// Produce the Down Arrow output directly.
+    ActivateArrowDown,
     /// Move the selection to the center of the keyboard.
     NavigateCenter,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
@@ -201,6 +209,10 @@ pub struct Gamepad {
     activate_altgr: Option<u32>,
     activate_enter: Option<u32>,
     activate_space: Option<u32>,
+    activate_arrow_left:  Option<u32>,
+    activate_arrow_right: Option<u32>,
+    activate_arrow_up:    Option<u32>,
+    activate_arrow_down:  Option<u32>,
     navigate_center: Option<u32>,
     // Axis configuration
     axis_horizontal: Option<u32>,         // axis index for left/right (None = disabled)
@@ -272,6 +284,10 @@ impl Gamepad {
             activate_altgr: cfg.activate_altgr,
             activate_enter: cfg.activate_enter,
             activate_space: cfg.activate_space,
+            activate_arrow_left:  cfg.activate_arrow_left,
+            activate_arrow_right: cfg.activate_arrow_right,
+            activate_arrow_up:    cfg.activate_arrow_up,
+            activate_arrow_down:  cfg.activate_arrow_down,
             navigate_center: cfg.navigate_center,
             axis_horizontal: cfg.axis_navigate_horizontal,
             axis_vertical:   cfg.axis_navigate_vertical,
@@ -422,8 +438,12 @@ impl Gamepad {
         if self.activate_ctrl  == Some(code) { return Some(GamepadAction::ActivateCtrl);  }
         if self.activate_alt   == Some(code) { return Some(GamepadAction::ActivateAlt);   }
         if self.activate_altgr == Some(code) { return Some(GamepadAction::ActivateAltGr); }
-        if self.activate_enter  == Some(code) { return Some(GamepadAction::ActivateEnter);   }
-        if self.activate_space  == Some(code) { return Some(GamepadAction::ActivateSpace);   }
+        if self.activate_enter  == Some(code) { return Some(GamepadAction::ActivateEnter);      }
+        if self.activate_space  == Some(code) { return Some(GamepadAction::ActivateSpace);      }
+        if self.activate_arrow_left  == Some(code) { return Some(GamepadAction::ActivateArrowLeft);  }
+        if self.activate_arrow_right == Some(code) { return Some(GamepadAction::ActivateArrowRight); }
+        if self.activate_arrow_up    == Some(code) { return Some(GamepadAction::ActivateArrowUp);    }
+        if self.activate_arrow_down  == Some(code) { return Some(GamepadAction::ActivateArrowDown);  }
         if self.navigate_center == Some(code) { return Some(GamepadAction::NavigateCenter);  }
         None
     }

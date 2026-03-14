@@ -63,6 +63,22 @@ pub struct KeyboardInputConfig {
     /// Produces the Space output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_space: Option<u32>,
+    /// FLTK key code for "activate Arrow Left" (default: None / disabled).
+    /// Produces the Left Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_left: Option<u32>,
+    /// FLTK key code for "activate Arrow Right" (default: None / disabled).
+    /// Produces the Right Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_right: Option<u32>,
+    /// FLTK key code for "activate Arrow Up" (default: None / disabled).
+    /// Produces the Up Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_up: Option<u32>,
+    /// FLTK key code for "activate Arrow Down" (default: None / disabled).
+    /// Produces the Down Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_down: Option<u32>,
     /// FLTK key code for "navigate center" (default: None / disabled).
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
@@ -157,6 +173,18 @@ pub struct GamepadInputConfig {
     /// Button index for "activate Space"; absent / `null` means disabled.
     #[serde(default)]
     pub activate_space: Option<u32>,
+    /// Button index for "activate Arrow Left"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_arrow_left: Option<u32>,
+    /// Button index for "activate Arrow Right"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_arrow_right: Option<u32>,
+    /// Button index for "activate Arrow Up"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_arrow_up: Option<u32>,
+    /// Button index for "activate Arrow Down"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_arrow_down: Option<u32>,
     /// Button index for "navigate center"; absent / `null` means disabled.
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
@@ -252,6 +280,22 @@ pub struct GpioInputConfig {
     /// Produces the Space output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_space: Option<u32>,
+    /// GPIO line number for "activate Arrow Left"; `null` / absent = disabled.
+    /// Produces the Left Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_left: Option<u32>,
+    /// GPIO line number for "activate Arrow Right"; `null` / absent = disabled.
+    /// Produces the Right Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_right: Option<u32>,
+    /// GPIO line number for "activate Arrow Up"; `null` / absent = disabled.
+    /// Produces the Up Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_up: Option<u32>,
+    /// GPIO line number for "activate Arrow Down"; `null` / absent = disabled.
+    /// Produces the Down Arrow output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_arrow_down: Option<u32>,
     /// GPIO line number for "navigate center"; `null` / absent = disabled.
     /// Moves the selection to the key configured by `[navigate] center_key`.
     #[serde(default)]
@@ -283,6 +327,10 @@ impl Default for GpioInputConfig {
             activate_altgr:  None,
             activate_enter:  None,
             activate_space:  None,
+            activate_arrow_left:  None,
+            activate_arrow_right: None,
+            activate_arrow_up:    None,
+            activate_arrow_down:  None,
             navigate_center: None,
             gpio_signal:     GpioSignal::Low,
             gpio_pull:       GpioPull::Null,
@@ -514,6 +562,11 @@ pub struct UiConfig {
     /// UI colour palette.
     #[serde(default)]
     pub colors: ColorsConfig,
+    /// When `true`, show the typed-text display at the top of the keyboard
+    /// window.  When `false` (the default) the display is hidden and no CPU
+    /// is spent updating the text buffer.
+    #[serde(default)]
+    pub show_text_display: bool,
 }
 
 fn default_center_key() -> String { "h".to_string() }
@@ -582,6 +635,10 @@ impl Default for KeyboardInputConfig {
             activate_altgr: None,
             activate_enter: None,
             activate_space: None,
+            activate_arrow_left:  None,
+            activate_arrow_right: None,
+            activate_arrow_up:    None,
+            activate_arrow_down:  None,
             navigate_center: None,
         }
     }
@@ -613,6 +670,10 @@ impl Default for GamepadInputConfig {
             activate_altgr:           None,
             activate_enter:           None,
             activate_space:           None,
+            activate_arrow_left:      None,
+            activate_arrow_right:     None,
+            activate_arrow_up:        None,
+            activate_arrow_down:      None,
             navigate_center:          None,
         }
     }
@@ -684,6 +745,14 @@ pub struct NavKeys {
     pub activate_enter: Option<Key>,
     /// Key that produces the Space output directly (None = disabled).
     pub activate_space: Option<Key>,
+    /// Key that produces the Left Arrow output directly (None = disabled).
+    pub activate_arrow_left: Option<Key>,
+    /// Key that produces the Right Arrow output directly (None = disabled).
+    pub activate_arrow_right: Option<Key>,
+    /// Key that produces the Up Arrow output directly (None = disabled).
+    pub activate_arrow_up: Option<Key>,
+    /// Key that produces the Down Arrow output directly (None = disabled).
+    pub activate_arrow_down: Option<Key>,
     /// Key that moves the selection to the center of the keyboard (None = disabled).
     pub navigate_center: Option<Key>,
 }
@@ -706,6 +775,10 @@ impl NavKeys {
             activate_altgr:  cfg.activate_altgr .map(|v| Key::from_i32(v as i32)),
             activate_enter:  cfg.activate_enter .map(|v| Key::from_i32(v as i32)),
             activate_space:  cfg.activate_space .map(|v| Key::from_i32(v as i32)),
+            activate_arrow_left:  cfg.activate_arrow_left .map(|v| Key::from_i32(v as i32)),
+            activate_arrow_right: cfg.activate_arrow_right.map(|v| Key::from_i32(v as i32)),
+            activate_arrow_up:    cfg.activate_arrow_up   .map(|v| Key::from_i32(v as i32)),
+            activate_arrow_down:  cfg.activate_arrow_down .map(|v| Key::from_i32(v as i32)),
             navigate_center: cfg.navigate_center.map(|v| Key::from_i32(v as i32)),
         }
     }
