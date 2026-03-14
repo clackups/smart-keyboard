@@ -8,75 +8,75 @@ insert_unshifted = "\u00b2"
 label_shifted = "\u00b3"
 insert_shifted = "\u00b3"
 
-# Slot 1: & / 1
+# Slot 1: 1 / &
 [[keys]]
-label_unshifted = "&"
-insert_unshifted = "&"
-label_shifted = "1"
-insert_shifted = "1"
+label_unshifted = "1"
+insert_unshifted = "1"
+label_shifted = "&"
+insert_shifted = "&"
 
-# Slot 2: é / 2
+# Slot 2: 2 / é
 [[keys]]
-label_unshifted = "\u00e9"
-insert_unshifted = "\u00e9"
-label_shifted = "2"
-insert_shifted = "2"
+label_unshifted = "2"
+insert_unshifted = "2"
+label_shifted = "\u00e9"
+insert_shifted = "\u00e9"
 
-# Slot 3: " / 3
+# Slot 3: 3 / "
 [[keys]]
-label_unshifted = "\""
-insert_unshifted = "\""
-label_shifted = "3"
-insert_shifted = "3"
+label_unshifted = "3"
+insert_unshifted = "3"
+label_shifted = "\""
+insert_shifted = "\""
 
-# Slot 4: ' / 4
+# Slot 4: 4 / '
 [[keys]]
-label_unshifted = "'"
-insert_unshifted = "'"
-label_shifted = "4"
-insert_shifted = "4"
+label_unshifted = "4"
+insert_unshifted = "4"
+label_shifted = "'"
+insert_shifted = "'"
 
-# Slot 5: ( / 5
+# Slot 5: 5 / (
 [[keys]]
-label_unshifted = "("
-insert_unshifted = "("
-label_shifted = "5"
-insert_shifted = "5"
+label_unshifted = "5"
+insert_unshifted = "5"
+label_shifted = "("
+insert_shifted = "("
 
-# Slot 6: - / 6
+# Slot 6: 6 / -
 [[keys]]
-label_unshifted = "-"
-insert_unshifted = "-"
-label_shifted = "6"
-insert_shifted = "6"
+label_unshifted = "6"
+insert_unshifted = "6"
+label_shifted = "-"
+insert_shifted = "-"
 
-# Slot 7: è / 7
+# Slot 7: 7 / è
 [[keys]]
-label_unshifted = "\u00e8"
-insert_unshifted = "\u00e8"
-label_shifted = "7"
-insert_shifted = "7"
+label_unshifted = "7"
+insert_unshifted = "7"
+label_shifted = "\u00e8"
+insert_shifted = "\u00e8"
 
-# Slot 8: _ / 8
+# Slot 8: 8 / _
 [[keys]]
-label_unshifted = "_"
-insert_unshifted = "_"
-label_shifted = "8"
-insert_shifted = "8"
+label_unshifted = "8"
+insert_unshifted = "8"
+label_shifted = "_"
+insert_shifted = "_"
 
-# Slot 9: ç / 9
+# Slot 9: 9 / ç
 [[keys]]
-label_unshifted = "\u00e7"
-insert_unshifted = "\u00e7"
-label_shifted = "9"
-insert_shifted = "9"
+label_unshifted = "9"
+insert_unshifted = "9"
+label_shifted = "\u00e7"
+insert_shifted = "\u00e7"
 
-# Slot 10: à / 0
+# Slot 10: 0 / à
 [[keys]]
-label_unshifted = "\u00e0"
-insert_unshifted = "\u00e0"
-label_shifted = "0"
-insert_shifted = "0"
+label_unshifted = "0"
+insert_unshifted = "0"
+label_shifted = "\u00e0"
+insert_shifted = "\u00e0"
 
 # Slot 11: ) / °
 [[keys]]
