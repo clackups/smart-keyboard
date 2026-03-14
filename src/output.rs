@@ -290,7 +290,7 @@ impl KeyHook for BleKeyHook {
 fn is_modifier_key_str(key_str: &str) -> bool {
     matches!(
         key_str,
-        "LShift" | "RShift" | "Ctrl" | "Alt" | "AltGr" | "CapsLock"
+        "LShift" | "RShift" | "Ctrl" | "Win" | "Alt" | "AltGr" | "CapsLock"
     )
 }
 
@@ -301,6 +301,7 @@ fn is_modifier_key_str(key_str: &str) -> bool {
 ///   0x01 = Ctrl (left)
 ///   0x02 = LShift
 ///   0x04 = Alt (left)
+///   0x08 = Win (left GUI)
 ///   0x20 = RShift
 ///   0x40 = AltGr (right alt)
 ///
@@ -308,6 +309,7 @@ fn is_modifier_key_str(key_str: &str) -> bool {
 ///   bit 0 (0x01) = LEFTCTRL
 ///   bit 1 (0x02) = LEFTSHIFT
 ///   bit 2 (0x04) = LEFTALT
+///   bit 3 (0x08) = LEFTGUI
 ///   bit 5 (0x20) = RIGHTSHIFT
 ///   bit 6 (0x40) = RIGHTALT
 fn ble_modifier_byte(modifier_bits: u8) -> u8 {
