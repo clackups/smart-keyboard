@@ -155,6 +155,15 @@ pid = 0xbbd1
 # Uncomment and set `serial` to select a specific dongle when multiple
 # matching USB devices are connected:
 # serial = "your_dongle_serial_string"
+# Delay in microseconds between the key-press report and the key-release
+# report (K0000).  Gives the remote host time to register the key press
+# before the key is released.  Default: 20000 (20 ms).
+# key_release_delay = 20000
+# Delay in microseconds between the language-switch key-press report and the
+# key-release report (K0000) in on_lang_switch().  Language-switch combos
+# (e.g. Ctrl+Shift+1) typically need a longer hold time than regular keys so
+# the OS can register the shortcut.  Default: 200000 (200 ms).
+# lang_switch_release_delay = 200000
 
 [ui]
 # Set show_text_display = true to show a text display of typed input at the

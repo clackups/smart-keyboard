@@ -164,7 +164,7 @@ fn menu_set_item_colors(
 /// Tracks the toggle / sticky state for every modifier key.
 ///
 /// * CapsLock: pure toggle (press once to lock, press again to unlock).
-/// * Ctrl, Shift (L/R), Alt, AltGr: sticky-toggle.
+/// * Ctrl, Shift (L/R), Alt, AltGr, Win: sticky-toggle.
 ///   First press activates them; they auto-deactivate after the next regular
 ///   keypress.  A second press before any regular key deactivates them early.
 #[derive(Default)]
@@ -173,6 +173,7 @@ struct ModState {
     pub lshift: bool,
     pub rshift: bool,
     pub ctrl:   bool,
+    pub win:    bool,
     pub alt:    bool,
     pub altgr:  bool,
 }
@@ -185,11 +186,12 @@ impl ModState {
         *s
     }
 
-    /// Deactivate all sticky modifiers (Ctrl/Shift/Alt/AltGr).
+    /// Deactivate all sticky modifiers (Ctrl/Shift/Alt/AltGr/Win).
     fn release_sticky(&mut self) {
         self.lshift = false;
         self.rshift = false;
         self.ctrl   = false;
+        self.win    = false;
         self.alt    = false;
         self.altgr  = false;
     }
@@ -228,6 +230,7 @@ impl ModState {
             Action::LShift   => &self.lshift,
             Action::RShift   => &self.rshift,
             Action::Ctrl     => &self.ctrl,
+            Action::Win      => &self.win,
             Action::Alt      => &self.alt,
             Action::AltGr    => &self.altgr,
             _                => unreachable!(),
@@ -239,6 +242,7 @@ impl ModState {
             Action::LShift   => &mut self.lshift,
             Action::RShift   => &mut self.rshift,
             Action::Ctrl     => &mut self.ctrl,
+            Action::Win      => &mut self.win,
             Action::Alt      => &mut self.alt,
             Action::AltGr    => &mut self.altgr,
             _                => unreachable!(),
@@ -722,12 +726,13 @@ fn execute_action(
     // on_key_action receives the bits that were active when the key was pressed.
     // Bit layout (matches USB HID modifier byte):
     //   0x01 = Ctrl (left), 0x02 = LShift, 0x04 = Alt (left),
-    //   0x20 = RShift,       0x40 = AltGr (right alt)
+    //   0x08 = Win (left GUI), 0x20 = RShift, 0x40 = AltGr (right alt)
     let modifier_bits: u8 = {
         let ms = mod_state.borrow();
         (if ms.ctrl   { 0x01 } else { 0 })
             | (if ms.lshift { 0x02 } else { 0 })
             | (if ms.alt    { 0x04 } else { 0 })
+            | (if ms.win    { 0x08 } else { 0 })
             | (if ms.rshift { 0x20 } else { 0 })
             | (if ms.altgr  { 0x40 } else { 0 })
     };
@@ -1301,6 +1306,8 @@ fn main() {
                 ble_cfg.vid,
                 ble_cfg.pid,
                 ble_cfg.serial.clone(),
+                ble_cfg.key_release_delay,
+                ble_cfg.lang_switch_release_delay,
             );
 
             // Intervals for the BLE connection-management timer.

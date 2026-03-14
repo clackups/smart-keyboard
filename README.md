@@ -486,14 +486,14 @@ Controls how key events are forwarded to the host or peripheral.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `mode` | `"print"` | Output mode. `"print"` writes key events to stdout (useful for debugging). `"ble"` sends USB HID reports to the BLE dongle (`esp_hid_serial_bridge`). |
-| `audio` | `"none"` | Audio feedback mode on navigation selection changes. `"none"` is silent. `"narrate"` plays a WAV clip naming each key (clips loaded from the `audio/` directory, or the path in `SMART_KBD_AUDIO_PATH`). `"tone"` plays a short synthesised musical tone that varies by key category (letters/punctuation, home-row bump keys F/J, digits 1–0, function keys F1–F12, and special keys each have a distinct pitch). |
+| `audio` | `"none"` | Audio feedback mode on navigation selection changes. `"none"` is silent. `"narrate"` plays a WAV clip naming each key (clips loaded from the `audio/` directory, or the path in `SMART_KBD_AUDIO_PATH`). `"tone"` plays a short synthesised musical tone that varies by key category (letters/punctuation, home-row bump keys F/J, digits 1–0, function keys F1–F12, and special keys each have a distinct pitch). `"tone_hint"` is like `"tone"` but all letter and punctuation keys are silent except for F and J (the physical home-row bump keys); digit keys and special keys still play their tones. |
 
 **Example**
 
 ```toml
 [output]
 mode = "print"
-# "none" (default) | "narrate" | "tone"
+# "none" (default) | "narrate" | "tone" | "tone_hint"
 audio = "none"
 ```
 
@@ -508,6 +508,8 @@ Settings for the BLE dongle, used only when `[output] mode = "ble"`.
 | `vid` | `0x1209` | USB Vendor ID of the dongle. |
 | `pid` | `0xbbd1` | USB Product ID of the dongle. |
 | `serial` | *(absent)* | USB serial string of the dongle. When absent, the first matching VID/PID device is used. Set this when multiple matching dongles are connected. |
+| `key_release_delay` | `20000` | Delay in **microseconds** between the key-press HID report and the key-release report (`K0000`). Gives the remote Bluetooth host time to register the key press before it is released. Set to `0` to send the release immediately. |
+| `lang_switch_release_delay` | `200000` | Delay in **microseconds** between the language-switch key-press HID report and the key-release report (`K0000`) in `on_lang_switch()`. Language-switch combos (e.g. Ctrl+Shift+1) typically need a longer hold time than regular keys so the OS registers the shortcut reliably. Set to `0` to send the release immediately. |
 
 **Example**
 
@@ -516,6 +518,8 @@ Settings for the BLE dongle, used only when `[output] mode = "ble"`.
 vid    = 0x1209
 pid    = 0xbbd1
 # serial = "your_dongle_serial_string"
+# key_release_delay = 20000
+# lang_switch_release_delay = 200000
 ```
 
 ---

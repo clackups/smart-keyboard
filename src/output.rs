@@ -195,6 +195,13 @@ impl BleConnection {
 /// See https://github.com/clackups/esp_hid_serial_bridge for the full spec.
 pub struct BleKeyHook {
     conn: Rc<RefCell<BleConnection>>,
+    /// Delay in microseconds between the key-press report and the key-release
+    /// report.  Gives the remote host time to register the key before it is
+    /// released.
+    key_release_delay: u32,
+    /// Delay in microseconds between the language-switch key-press report and
+    /// the key-release report in on_lang_switch().
+    lang_switch_release_delay: u32,
 }
 
 impl BleKeyHook {
@@ -204,9 +211,14 @@ impl BleKeyHook {
     /// [`BleConnection::try_connect`] (through the returned `Rc`) to
     /// establish the first connection, and set up a timer to retry
     /// periodically until the dongle is found.
-    pub fn new(vid: u16, pid: u16, serial: Option<String>) -> (Self, Rc<RefCell<BleConnection>>) {
+    ///
+    /// `key_release_delay` is the number of microseconds to wait after sending
+    /// the key-press report before sending the key-release report (`K0000`).
+    /// `lang_switch_release_delay` is the same delay for language-switch combos
+    /// in [`on_lang_switch`].
+    pub fn new(vid: u16, pid: u16, serial: Option<String>, key_release_delay: u32, lang_switch_release_delay: u32) -> (Self, Rc<RefCell<BleConnection>>) {
         let conn = Rc::new(RefCell::new(BleConnection::new(vid, pid, serial)));
-        (BleKeyHook { conn: conn.clone() }, conn)
+        (BleKeyHook { conn: conn.clone(), key_release_delay, lang_switch_release_delay }, conn)
     }
 }
 
@@ -219,6 +231,9 @@ impl KeyHook for BleKeyHook {
     fn on_key_release(&self, _scancode: u16, key_str: &str) {
         if is_modifier_key_str(key_str) {
             return;
+        }
+        if self.key_release_delay > 0 {
+            std::thread::sleep(std::time::Duration::from_micros(self.key_release_delay as u64));
         }
         self.conn.borrow_mut().send_key_release();
     }
@@ -256,6 +271,9 @@ impl KeyHook for BleKeyHook {
     fn on_lang_switch(&self, switch_scancodes: &[u8]) {
         if switch_scancodes.len() >= 2 {
             self.conn.borrow_mut().send_key(switch_scancodes[0], switch_scancodes[1]);
+            if self.lang_switch_release_delay > 0 {
+                std::thread::sleep(std::time::Duration::from_micros(self.lang_switch_release_delay as u64));
+            }
             self.conn.borrow_mut().send_key_release();
         }
     }
@@ -272,7 +290,7 @@ impl KeyHook for BleKeyHook {
 fn is_modifier_key_str(key_str: &str) -> bool {
     matches!(
         key_str,
-        "LShift" | "RShift" | "Ctrl" | "Alt" | "AltGr" | "CapsLock"
+        "LShift" | "RShift" | "Ctrl" | "Win" | "Alt" | "AltGr" | "CapsLock"
     )
 }
 
@@ -283,6 +301,7 @@ fn is_modifier_key_str(key_str: &str) -> bool {
 ///   0x01 = Ctrl (left)
 ///   0x02 = LShift
 ///   0x04 = Alt (left)
+///   0x08 = Win (left GUI)
 ///   0x20 = RShift
 ///   0x40 = AltGr (right alt)
 ///
@@ -290,6 +309,7 @@ fn is_modifier_key_str(key_str: &str) -> bool {
 ///   bit 0 (0x01) = LEFTCTRL
 ///   bit 1 (0x02) = LEFTSHIFT
 ///   bit 2 (0x04) = LEFTALT
+///   bit 3 (0x08) = LEFTGUI
 ///   bit 5 (0x20) = RIGHTSHIFT
 ///   bit 6 (0x40) = RIGHTALT
 fn ble_modifier_byte(modifier_bits: u8) -> u8 {

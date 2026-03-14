@@ -141,6 +141,7 @@ pub fn is_modifier(action: Action) -> bool {
             | Action::LShift
             | Action::RShift
             | Action::Ctrl
+            | Action::Win
             | Action::Alt
             | Action::AltGr
     )
@@ -150,7 +151,7 @@ pub fn is_modifier(action: Action) -> bool {
 pub fn is_sticky(action: Action) -> bool {
     matches!(
         action,
-        Action::LShift | Action::RShift | Action::Ctrl | Action::Alt | Action::AltGr
+        Action::LShift | Action::RShift | Action::Ctrl | Action::Win | Action::Alt | Action::AltGr
     )
 }
 
