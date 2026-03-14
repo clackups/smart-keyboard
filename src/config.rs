@@ -419,19 +419,28 @@ pub struct BleOutputConfig {
     /// before the key is released.  Default: 20000 (20 ms).
     #[serde(default = "BleOutputConfig::default_key_release_delay")]
     pub key_release_delay: u32,
+    /// Delay in microseconds between the language-switch key-press report and
+    /// the key-release report (K0000) in on_lang_switch().  Language-switch
+    /// combos (e.g. Ctrl+Shift+1) typically need a longer hold time than
+    /// regular keys so the OS can register the shortcut.  Default: 200000
+    /// (200 ms).
+    #[serde(default = "BleOutputConfig::default_lang_switch_release_delay")]
+    pub lang_switch_release_delay: u32,
 }
 
 impl BleOutputConfig {
     fn default_key_release_delay() -> u32 { 20000 }
+    fn default_lang_switch_release_delay() -> u32 { 200000 }
 }
 
 impl Default for BleOutputConfig {
     fn default() -> Self {
         BleOutputConfig {
-            vid:               0x1209,
-            pid:               0xbbd1,
-            serial:            None,
-            key_release_delay: Self::default_key_release_delay(),
+            vid:                        0x1209,
+            pid:                        0xbbd1,
+            serial:                     None,
+            key_release_delay:          Self::default_key_release_delay(),
+            lang_switch_release_delay:  Self::default_lang_switch_release_delay(),
         }
     }
 }

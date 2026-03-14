@@ -199,6 +199,9 @@ pub struct BleKeyHook {
     /// report.  Gives the remote host time to register the key before it is
     /// released.
     key_release_delay: u32,
+    /// Delay in microseconds between the language-switch key-press report and
+    /// the key-release report in on_lang_switch().
+    lang_switch_release_delay: u32,
 }
 
 impl BleKeyHook {
@@ -211,9 +214,11 @@ impl BleKeyHook {
     ///
     /// `key_release_delay` is the number of microseconds to wait after sending
     /// the key-press report before sending the key-release report (`K0000`).
-    pub fn new(vid: u16, pid: u16, serial: Option<String>, key_release_delay: u32) -> (Self, Rc<RefCell<BleConnection>>) {
+    /// `lang_switch_release_delay` is the same delay for language-switch combos
+    /// in [`on_lang_switch`].
+    pub fn new(vid: u16, pid: u16, serial: Option<String>, key_release_delay: u32, lang_switch_release_delay: u32) -> (Self, Rc<RefCell<BleConnection>>) {
         let conn = Rc::new(RefCell::new(BleConnection::new(vid, pid, serial)));
-        (BleKeyHook { conn: conn.clone(), key_release_delay }, conn)
+        (BleKeyHook { conn: conn.clone(), key_release_delay, lang_switch_release_delay }, conn)
     }
 }
 
@@ -266,8 +271,8 @@ impl KeyHook for BleKeyHook {
     fn on_lang_switch(&self, switch_scancodes: &[u8]) {
         if switch_scancodes.len() >= 2 {
             self.conn.borrow_mut().send_key(switch_scancodes[0], switch_scancodes[1]);
-            if self.key_release_delay > 0 {
-                std::thread::sleep(std::time::Duration::from_micros(self.key_release_delay as u64));
+            if self.lang_switch_release_delay > 0 {
+                std::thread::sleep(std::time::Duration::from_micros(self.lang_switch_release_delay as u64));
             }
             self.conn.borrow_mut().send_key_release();
         }
