@@ -132,6 +132,12 @@ pid = 0xbbd1
 # matching USB devices are connected:
 # serial = "your_dongle_serial_string"
 
+[ui]
+# Set show_text_display = true to show a text display of typed input at the
+# top of the keyboard window.  When false (the default) the display is hidden
+# and no CPU is spent updating the text buffer.
+# show_text_display = false
+
 [ui.colors]
 # All colour values are 6-digit hex strings ("#RRGGBB").
 # Remove or comment out any line to restore the built-in default.

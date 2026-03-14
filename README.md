@@ -438,6 +438,23 @@ pid    = 0xbbd1
 
 ---
 
+### `[ui]`
+
+General UI settings.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `show_text_display` | `false` | When `true`, a read-only text display is shown at the top of the keyboard window, reflecting the characters typed so far. Pressing Enter clears the display. When `false` (the default) the display is hidden and no CPU is spent updating the text buffer. |
+
+**Example**
+
+```toml
+[ui]
+show_text_display = true
+```
+
+---
+
 ### `[ui.colors]`
 
 All colours of the on-screen keyboard UI.  Every value is a **6-digit hex

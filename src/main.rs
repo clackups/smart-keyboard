@@ -651,15 +651,16 @@ fn find_center_key(
 /// can invoke `on_key_release` when the physical activation key is later
 /// released.
 fn execute_action(
-    action:    Action,
-    scancode:  u16,
-    layout_i:  usize,
-    buf:       &mut TextBuffer,
-    disp:      &mut TextDisplay,
-    hook:      &Rc<dyn KeyHook>,
-    mod_state: &Rc<RefCell<ModState>>,
-    mod_btns:  &[ModBtn],
-    colors:    Colors,
+    action:         Action,
+    scancode:       u16,
+    layout_i:       usize,
+    buf:            &mut TextBuffer,
+    disp:           &mut TextDisplay,
+    hook:           &Rc<dyn KeyHook>,
+    mod_state:      &Rc<RefCell<ModState>>,
+    mod_btns:       &[ModBtn],
+    colors:         Colors,
+    update_display: bool,
 ) -> String {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
     // Symbol/number keys (label_shifted != "") use the shifted character on LShift/RShift;
@@ -713,26 +714,28 @@ fn execute_action(
         app::redraw();
     } else {
         // Regular key: insert text into the buffer.
-        match action {
-            Action::Regular(_) => {
-                buf.append(regular_text.as_deref().unwrap_or(""));
-            }
-            Action::Backspace => {
-                let text = buf.text();
-                let n    = text.chars().count();
-                if n > 0 {
-                    buf.set_text(&text.chars().take(n - 1).collect::<String>());
+        if update_display {
+            match action {
+                Action::Regular(_) => {
+                    buf.append(regular_text.as_deref().unwrap_or(""));
                 }
+                Action::Backspace => {
+                    let text = buf.text();
+                    let n    = text.chars().count();
+                    if n > 0 {
+                        buf.set_text(&text.chars().take(n - 1).collect::<String>());
+                    }
+                }
+                Action::Tab   => buf.append("\t"),
+                Action::Enter => buf.set_text(""),
+                Action::Space => buf.append(" "),
+                _ => {}
             }
-            Action::Tab   => buf.append("\t"),
-            Action::Enter => buf.append("\n"),
-            Action::Space => buf.append(" "),
-            _ => {}
+            // Scroll the display to keep the newest text visible.
+            let len   = buf.length();
+            let lines = disp.count_lines(0, len, false);
+            disp.scroll(lines, 0);
         }
-        // Scroll the display to keep the newest text visible.
-        let len   = buf.length();
-        let lines = disp.count_lines(0, len, false);
-        disp.scroll(lines, 0);
 
         // Auto-release sticky modifiers and reset their button colours.
         {
@@ -1018,6 +1021,7 @@ fn main() {
     let cfg = config::Config::load();
     let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
     let colors = Colors::from_config(&cfg.ui.colors);
+    let show_text_display = cfg.ui.show_text_display;
 
     // Build the narrator early so it can be cloned into closures below.
     let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.audio.clone())));
@@ -1045,7 +1049,7 @@ fn main() {
 
     let avail_w = sw - 2 * pad;
 
-    let display_h  = ((sh as f32 / 12.0) as i32).max(10);
+    let display_h  = if cfg.ui.show_text_display { ((sh as f32 / 12.0) as i32).max(10) } else { 0 };
     let lang_btn_h = ((sh as f32 / 12.0) as i32).max(10);
 
     // Status bar occupies a thin strip at the very top of the window.
@@ -1336,6 +1340,9 @@ fn main() {
     disp.set_text_color(colors.disp_text);
     disp.set_frame(FrameType::DownBox);
     disp.set_text_size(disp_size);
+    if !show_text_display {
+        disp.hide();
+    }
 
     // --- Language toggle buttons (one per entry in LAYOUTS) ---
     let active_col   = colors.mod_active;
@@ -1525,6 +1532,7 @@ fn main() {
                         &mod_state_c,
                         &mod_btns_c.borrow(),
                         colors,
+                        show_text_display,
                     );
                     // For mouse/touch clicks the Released event fires before this
                     // callback, so the key press command was sent in execute_action ->
@@ -1792,6 +1800,7 @@ fn main() {
         let center_key_kbd        = cfg.navigate.center_key.clone();
         let center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_c        = preferred_cx.clone();
+        let show_text_display_kbd = show_text_display;
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1890,6 +1899,7 @@ fn main() {
                                 &mod_state_c,
                                 &mod_btns_c.borrow(),
                                 colors,
+                                show_text_display_kbd,
                             );
                             // Store the activated key so on_key_release can be sent
                             // when the physical activation key is released.
@@ -1969,6 +1979,7 @@ fn main() {
                         *layout_idx_c.borrow(),
                         &mut buf_c, &mut disp_c, &hook_c,
                         &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
                     );
                     *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
                     if center_after_activate {
@@ -1998,6 +2009,7 @@ fn main() {
                         *layout_idx_c.borrow(),
                         &mut buf_c, &mut disp_c, &hook_c,
                         &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
                     );
                     *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
                     if center_after_activate {
@@ -2057,6 +2069,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_kbd,
                             );
                             *active_nav_key_c.borrow_mut() = Some((scancode, key_str));
                             all_btns_c.borrow_mut()[row][col].0.set_color(colors.nav_sel);
@@ -2170,6 +2183,7 @@ fn main() {
         let gp_center_key           = cfg.navigate.center_key.clone();
         let gp_center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_gp         = preferred_cx.clone();
+        let show_text_display_gp    = show_text_display;
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
@@ -2332,6 +2346,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gp,
                                     );
                                     // Store the activated key so on_key_release can be
                                     // sent when the gamepad button is released.
@@ -2374,6 +2389,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
                             if gp_center_after_activate {
@@ -2408,6 +2424,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
                             if gp_center_after_activate {
@@ -2469,6 +2486,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gp,
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
@@ -2670,6 +2688,7 @@ fn main() {
         let gpio_center_key           = cfg.navigate.center_key.clone();
         let gpio_center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_gpio         = preferred_cx.clone();
+        let show_text_display_gpio    = show_text_display;
 
         let mut gpio_evt_buf: Vec<GpioEvent> = Vec::new();
 
@@ -2805,6 +2824,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gpio,
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
@@ -2843,6 +2863,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x1c, key_str));
                             if gpio_center_after_activate {
@@ -2876,6 +2897,7 @@ fn main() {
                                 *layout_idx_c.borrow(),
                                 &mut buf_c, &mut disp_c, &hook_c,
                                 &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
                             if gpio_center_after_activate {
@@ -2934,6 +2956,7 @@ fn main() {
                                         &mod_state_c,
                                         &mod_btns_c.borrow(),
                                         colors,
+                                        show_text_display_gpio,
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));

@@ -514,6 +514,11 @@ pub struct UiConfig {
     /// UI colour palette.
     #[serde(default)]
     pub colors: ColorsConfig,
+    /// When `true`, show the typed-text display at the top of the keyboard
+    /// window.  When `false` (the default) the display is hidden and no CPU
+    /// is spent updating the text buffer.
+    #[serde(default)]
+    pub show_text_display: bool,
 }
 
 fn default_center_key() -> String { "h".to_string() }
