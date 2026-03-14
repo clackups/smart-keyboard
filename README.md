@@ -371,7 +371,7 @@ line is successfully registered.
 
 ---
 
-
+### `[navigate]`
 
 Controls navigation behaviour.
 
@@ -465,12 +465,14 @@ General UI settings.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `show_text_display` | `false` | When `true`, a read-only text display is shown at the top of the keyboard window, reflecting the characters typed so far. Pressing Enter clears the display. When `false` (the default) the display is hidden and no CPU is spent updating the text buffer. |
+| `active_keymaps` | `["us", "ua"]` | Ordered list of keymap names to show in the language strip at the bottom of the keyboard. Each name must have a corresponding built-in layout or a `keymap_<name>.toml` file in the config directory. The first entry is the default layout shown on startup. |
 
 **Example**
 
 ```toml
 [ui]
 show_text_display = true
+active_keymaps    = ["us", "ua"]
 ```
 
 ---
@@ -544,4 +546,82 @@ key_label_mod    = "#333333"
 nav_sel        = "#0078d7"
 disp_bg        = "#ffffff"
 disp_text      = "#003300"
+```
+
+---
+
+### `[keymap.xx]`
+
+Per-keymap configuration in `config.toml`.  Replace `xx` with the keymap name
+(e.g. `us`, `ua`, `de`, `fr`).  Each keymap listed in `[ui] active_keymaps`
+may have an optional `[keymap.xx]` section.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `switch_scancode` | *(empty)* | Raw HID report bytes sent to the output device when the user switches to this keymap (e.g. by pressing its language button). The array is `[modifier_byte, keycode, ...]` — the same format as a USB HID keyboard report. When empty (the default), no scancode is sent on switch. |
+
+**Example** — send Ctrl+Shift+1 when switching to the US layout and
+Ctrl+Shift+4 when switching to the Ukrainian layout:
+
+```toml
+[keymap.us]
+# Ctrl+Shift+1 (modifier=0x03, HID keycode 0x1e)
+switch_scancode = [0x03, 0x1e]
+
+[keymap.ua]
+# Ctrl+Shift+4 (modifier=0x03, HID keycode 0x21)
+switch_scancode = [0x03, 0x21]
+```
+
+---
+
+### Keymap TOML files
+
+Each active keymap may have a TOML file named `keymap_<name>.toml` placed in
+the same directory as `config.toml`.  If such a file exists it takes
+precedence over the built-in layout for that name.  If no file is found, the
+application falls back to the built-in layout (currently available for `us`
+and `ua`).  If neither exists, the keymap is skipped with a warning.
+
+A keymap file must contain a `name` string (the human-readable label shown on
+the language button) and a `[[keys]]` array listing every key in the keyboard
+grid, in row-major order (left to right, top to bottom).
+
+Each `[[keys]]` entry supports the following fields:
+
+| Field | Description |
+|-------|-------------|
+| `label_unshifted` | Text displayed on the button face in the unshifted state. |
+| `insert_unshifted` | String inserted when the key is activated without Shift. Required; must be present in every `[[keys]]` entry. |
+| `label_shifted` | Text displayed on the button face in the shifted state. Use an empty string for letter keys — the display will use the automatic uppercase of `insert_unshifted`. |
+| `insert_shifted` | String inserted when Shift is held. Use an empty string for letter keys — the inserted text will be the automatic uppercase of `insert_unshifted`. |
+
+**Example** — a minimal German (`de`) keymap snippet:
+
+```toml
+name = "DE"
+
+[[keys]]
+label_unshifted = "q"
+insert_unshifted = "q"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u00e4"
+insert_unshifted = "\u00e4"
+label_shifted = "\u00c4"
+insert_shifted = "\u00c4"
+```
+
+Place the file alongside your `config.toml` and add `"de"` to
+`[ui] active_keymaps`:
+
+```toml
+[ui]
+active_keymaps = ["us", "de"]
+
+[keymap.de]
+# Ctrl+Shift+3 switches the OS input method to German
+switch_scancode = [0x03, 0x20]
 ```
