@@ -19,22 +19,73 @@ recommended compositor, although Weston, Sway and others can also be
 used.
 
 
-## Build prerequisites
-
-The project uses the `fltk` crate with its `use-wayland` feature, which compiles
-FLTK from source using CMake. The following system packages must be installed
-**before** running `cargo build`:
-
-### Building on Debian / Ubuntu
+## Build prerequisites (Debian / Ubuntu)
 
 ```sh
 sudo apt install -y \
-    cage xdg-desktop-portal-wlr xdg-desktop-portal \
+    cage \
     git cmake g++ \
     libwayland-dev wayland-protocols \
     libxkbcommon-dev libcairo2-dev libpango1.0-dev libudev-dev \
     libxfixes-dev libxcursor-dev libxinerama-dev libdbus-1-dev
+```
 
+## Setting up a kiosk display
+
+As described in [Cage wiki](https://github.com/cage-kiosk/cage/wiki/Starting-Cage-on-boot-with-systemd):
+
+```
+sudo -i
+
+useradd -c 'Cage Kiosk' -d /opt/cage -m -r -s /bin/bash cage
+
+cat >/etc/systemd/system/cage@.service <<'EOT'
+# This is a system unit for launching Cage with auto-login as the
+# user configured here. For this to work, wlroots must be built
+# with systemd logind support.
+[Unit]
+Description=Cage Wayland compositor on %I
+After=systemd-user-sessions.service plymouth-quit-wait.service
+Before=graphical.target
+ConditionPathExists=/dev/tty0
+Wants=dbus.socket systemd-logind.service
+After=dbus.socket systemd-logind.service
+Conflicts=getty@%i.service
+After=getty@%i.service
+[Service]
+Type=simple
+ExecStart=/usr/bin/cage -s /opt/cage/build/smart-keyboard/target/release/smart-keyboard 
+ExecStartPost=+sh -c "tty_name='%i'; exec chvt $${tty_name#tty}"
+Restart=always
+User=cage
+UtmpIdentifier=%I
+UtmpMode=user
+TTYPath=/dev/%I
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+PAMName=cage
+[Install]
+WantedBy=graphical.target
+DefaultInstance=tty7
+EOT
+
+cat >/etc/pam.d/cage <<'EOT'
+auth           required        pam_unix.so nullok
+account        required        pam_unix.so
+session        required        pam_unix.so
+session        required        pam_systemd.so
+EOT
+
+systemctl enable cage@tty1.service
+
+systemctl set-default graphical.target
+
+su - cage
+# build the app under cage user
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 . "$HOME/.cargo/env"
 
@@ -43,19 +94,23 @@ cd $HOME/build
 git clone https://github.com/clackups/smart-keyboard.git
 cd smart-keyboard/
 cargo build --release
+# finished, goo back to root
+exit
+
+# see if the smart keyboard starts on your screen
+systemctl start cage@tty1.service
+
+# service startup journal
+journalctl -u cage@tty1.service -f
+
+# smart-keyboard log is sent to the common journal
+journalctl -f
+
+# The keyboard opens full-screen on the active Wayland display.
+# TODO: audio
 ```
 
-## Running
 
-```sh
-
-# TODO: automatic boot with Cage https://github.com/cage-kiosk/cage/wiki/Starting-Cage-on-boot-with-systemd
-
-nohup cage target/release/smart-keyboard >/tmp/smart-keyboard.log &
-
-```
-
-The keyboard opens full-screen on the active Wayland display.
 
 ## Configuration
 
