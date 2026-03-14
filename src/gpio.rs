@@ -32,6 +32,7 @@ use gpio_cdev::{
     LineRequestFlags,
 };
 use std::os::unix::io::AsRawFd;
+use std::time::{Duration, Instant};
 
 use crate::config::{GpioInputConfig, GpioPull, GpioSignal};
 
@@ -117,7 +118,17 @@ struct GpioLine {
 
 /// Non-blocking reader for a set of Linux GPIO lines.
 pub struct GpioInput {
-    lines: Vec<GpioLine>,
+    lines:           Vec<GpioLine>,
+    /// The directional action (Up/Down/Left/Right) that is currently held
+    /// pressed, or `None` if no directional is held.
+    held_dir:        Option<GpioAction>,
+    /// Monotonic instant at which the next repeat event should be emitted,
+    /// or `None` when no directional is held.
+    repeat_at:       Option<Instant>,
+    /// Time a directional button must be held before the first repeat fires.
+    repeat_delay:    Duration,
+    /// Interval between successive repeat events once repeating has started.
+    repeat_interval: Duration,
 }
 
 // =============================================================================
@@ -337,7 +348,13 @@ impl GpioInput {
             return None;
         }
 
-        Some(GpioInput { lines })
+        Some(GpioInput {
+            lines,
+            held_dir:        None,
+            repeat_at:       None,
+            repeat_delay:    Duration::from_millis(cfg.repeat_delay_ms),
+            repeat_interval: Duration::from_millis(cfg.repeat_interval_ms),
+        })
     }
 
     /// Drain all pending GPIO events into `out` without blocking.
@@ -348,10 +365,15 @@ impl GpioInput {
     /// For polled lines: reads the current value with `get_value()` and
     /// synthesises press/release events on state changes.
     ///
+    /// After draining hardware events, updates the directional-repeat state
+    /// and appends a synthetic repeat press if the held direction's timer has
+    /// elapsed (matching the gamepad axis-repeat behaviour).
+    ///
     /// `out` is cleared before filling.  Always returns `true` (GPIO lines do
     /// not disconnect like gamepads).
     pub fn poll(&mut self, out: &mut Vec<GpioEvent>) -> bool {
         out.clear();
+        let now = Instant::now();
 
         for line in &mut self.lines {
             match &mut line.handle {
@@ -423,6 +445,35 @@ impl GpioInput {
                         }
                     }
                 }
+            }
+        }
+
+        // Update the directional-hold state from the events collected above.
+        // A press on a directional action arms the repeat timer; a release of
+        // the currently-held direction disarms it.
+        for evt in out.iter() {
+            match evt.action {
+                GpioAction::Up
+                | GpioAction::Down
+                | GpioAction::Left
+                | GpioAction::Right => {
+                    if evt.pressed {
+                        self.held_dir  = Some(evt.action);
+                        self.repeat_at = Some(now + self.repeat_delay);
+                    } else if self.held_dir == Some(evt.action) {
+                        self.held_dir  = None;
+                        self.repeat_at = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Emit a repeat press if the timer has elapsed and a direction is held.
+        if let (Some(dir), Some(t)) = (self.held_dir, self.repeat_at) {
+            if now >= t {
+                out.push(GpioEvent { action: dir, pressed: true });
+                self.repeat_at = Some(now + self.repeat_interval);
             }
         }
 

@@ -19,12 +19,6 @@ use crate::config::GamepadInputConfig;
 /// Maximum number of joystick device indices to probe during auto-detection.
 const MAX_JOYSTICK_DEVICES: u8 = 8;
 
-/// Time a directional axis must be held before the first repeat event fires.
-const REPEAT_DELAY: Duration = Duration::from_millis(300);
-
-/// Interval between successive repeat events once repeating has begun.
-const REPEAT_INTERVAL: Duration = Duration::from_millis(100);
-
 // =============================================================================
 // Public types
 // =============================================================================
@@ -228,6 +222,9 @@ pub struct Gamepad {
     // Repeat timers: `Some(t)` means "fire next repeat event at time t".
     horiz_repeat_at: Option<Instant>,
     vert_repeat_at:  Option<Instant>,
+    // Configurable repeat timing.
+    repeat_delay:    Duration,
+    repeat_interval: Duration,
     // Absolute-axes mode
     axis_absolute:  bool,    // true when absolute_axes = true in config
     abs_horiz_raw:  i16,     // last raw horizontal axis value (absolute mode)
@@ -300,6 +297,8 @@ impl Gamepad {
             menu_active:     false,
             horiz_repeat_at: None,
             vert_repeat_at:  None,
+            repeat_delay:    Duration::from_millis(cfg.repeat_delay_ms),
+            repeat_interval: Duration::from_millis(cfg.repeat_interval_ms),
             axis_absolute:   cfg.absolute_axes,
             abs_horiz_raw:   0,
             abs_vert_raw:    0,
@@ -401,7 +400,7 @@ impl Gamepad {
                             AxisDir::Positive => GamepadAction::Right,
                         };
                         out.push(GamepadEvent { action, pressed: true });
-                        self.horiz_repeat_at = Some(now + REPEAT_INTERVAL);
+                        self.horiz_repeat_at = Some(now + self.repeat_interval);
                     } else {
                         self.horiz_repeat_at = None;
                     }
@@ -415,7 +414,7 @@ impl Gamepad {
                             AxisDir::Positive => GamepadAction::Down,
                         };
                         out.push(GamepadEvent { action, pressed: true });
-                        self.vert_repeat_at = Some(now + REPEAT_INTERVAL);
+                        self.vert_repeat_at = Some(now + self.repeat_interval);
                     } else {
                         self.vert_repeat_at = None;
                     }
@@ -531,7 +530,7 @@ impl Gamepad {
                 }
                 self.horiz_dir = new_dir;
                 self.horiz_repeat_at = if new_dir.is_some() {
-                    Some(Instant::now() + REPEAT_DELAY)
+                    Some(Instant::now() + self.repeat_delay)
                 } else {
                     None
                 };
@@ -557,7 +556,7 @@ impl Gamepad {
                 }
                 self.vert_dir = new_dir;
                 self.vert_repeat_at = if new_dir.is_some() {
-                    Some(Instant::now() + REPEAT_DELAY)
+                    Some(Instant::now() + self.repeat_delay)
                 } else {
                     None
                 };

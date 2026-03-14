@@ -60,6 +60,11 @@ axis_activate             = 0x05  # axis index for Activate (positive only); com
 # rumble_duration_ms = 50
 # Intensity of both rumble motors: 0 = silent, 65535 = maximum (default: 16384 = 0x4000 ~= 25 %).
 # rumble_magnitude = 16384
+# Auto-repeat for directional navigation (analog axes and directional buttons held).
+# Time in ms before the first repeat fires when a direction is held (default: 300).
+# repeat_delay_ms = 300
+# Interval in ms between successive repeat events once repeating starts (default: 100).
+# repeat_interval_ms = 100
 
 [input.gpio]
 # GPIO input is disabled by default.  Set enabled = true to activate it.
@@ -95,6 +100,11 @@ enabled = false
 # "up" and "down" require Linux kernel >= 5.5.  On older kernels those
 # settings are ignored and the line is opened without a pull resistor.
 # gpio_pull = "null"
+# Auto-repeat for directional navigation buttons held pressed.
+# Time in ms before the first repeat fires when a direction is held (default: 300).
+# repeat_delay_ms = 300
+# Interval in ms between successive repeat events once repeating starts (default: 100).
+# repeat_interval_ms = 100
 
 
 [navigate]

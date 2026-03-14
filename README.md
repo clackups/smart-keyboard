@@ -267,6 +267,15 @@ a key to disable that action.
 | `rumble_duration_ms` | `50` | Duration of the rumble effect in milliseconds. |
 | `rumble_magnitude` | `16384` | Intensity of both rumble motors. Range: `0` (silent) to `65535` (maximum). `16384` is `0x4000`, approximately 25 % of maximum. |
 
+#### Auto-repeat
+
+When a directional axis or button is held, navigation events repeat automatically.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `repeat_delay_ms` | `300` | Time in milliseconds that a directional input must be held before the first repeat event fires. |
+| `repeat_interval_ms` | `100` | Interval in milliseconds between successive repeat events once repeating has started. |
+
 **Example**
 
 ```toml
@@ -309,6 +318,10 @@ axis_activate = 0x05
 # rumble             = false
 # rumble_duration_ms = 50
 # rumble_magnitude   = 16384
+
+# Auto-repeat for held directional inputs
+# repeat_delay_ms    = 300
+# repeat_interval_ms = 100
 ```
 
 ---
@@ -363,6 +376,16 @@ Remove or set a field to `null` to disable that action.
 | `activate_arrow_down` | *(disabled)* | GPIO line number for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | GPIO line number for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
+#### Auto-repeat
+
+When a directional button (up / down / left / right) is held pressed, navigation
+events repeat automatically — just like holding an arrow key on a keyboard.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `repeat_delay_ms` | `300` | Time in milliseconds that a directional button must be held before the first repeat event fires. |
+| `repeat_interval_ms` | `100` | Interval in milliseconds between successive repeat events once repeating has started. |
+
 **Example** — four directional buttons and an activate button using a pull-up
 resistor with active-low logic (buttons pull lines to ground when pressed):
 
@@ -379,6 +402,10 @@ navigate_left  = 22
 navigate_right = 23
 activate       = 24
 # menu           = null
+
+# Auto-repeat for held directional buttons
+# repeat_delay_ms    = 300
+# repeat_interval_ms = 100
 ```
 
 **Status indicator** — when GPIO input is enabled a `P` icon appears in the
