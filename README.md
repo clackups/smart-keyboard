@@ -45,6 +45,24 @@ sudo -i
 useradd -c 'Cage Kiosk' -d /opt/smartkbd -m -r -s /bin/bash smartkbd
 loginctl enable-linger smartkbd
 
+# optional access to GPIO
+groupadd gpio
+sudo usermod -aG gpio smartkbd
+
+# Allow members of the smartkbd group access the BLE dongle serial interface
+cat >/etc/udev/rules.d/99-esp_hid_serial_bridge.rules << 'EOF'
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bbd1", GROUP="smartkbd", MODE="0660"
+EOF
+
+# Allow members of the gpio group to access GPIO character devices
+cat >/etc/udev/rules.d/99-gpio.rules << 'EOF'
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
+SUBSYSTEM=="gpio", GROUP="gpio", MODE="0660"
+EOF
+
+udevadm control --reload-rules
+udevadm trigger
+
 cat >/etc/systemd/system/smartkbd@.service <<'EOT'
 # This is a system unit for launching Cage with auto-login as the
 # user configured here. For this to work, wlroots must be built
