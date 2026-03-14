@@ -205,3 +205,11 @@ switch_scancode = [0x03, 0x1e]
 [keymap.ua]
 # Ctrl+Shift+4 (modifier=0x03, HID keycode 0x21)
 switch_scancode = [0x03, 0x21]
+
+[keymap.de]
+# Ctrl+Shift+3 (modifier=0x03, HID keycode 0x20)
+switch_scancode = [0x03, 0x20]
+
+[keymap.fr]
+# Ctrl+Shift+2 (modifier=0x03, HID keycode 0x1f)
+switch_scancode = [0x03, 0x1f]

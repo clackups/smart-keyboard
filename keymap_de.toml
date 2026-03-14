@@ -1,0 +1,334 @@
+name = "DE"
+
+# Row 1 — number row (slots 0-12)
+# Slot 0: ^ / °
+[[keys]]
+label_unshifted = "^"
+insert_unshifted = "^"
+label_shifted = "\u00b0"
+insert_shifted = "\u00b0"
+
+# Slot 1: 1 / !
+[[keys]]
+label_unshifted = "1"
+insert_unshifted = "1"
+label_shifted = "!"
+insert_shifted = "!"
+
+# Slot 2: 2 / "
+[[keys]]
+label_unshifted = "2"
+insert_unshifted = "2"
+label_shifted = "\""
+insert_shifted = "\""
+
+# Slot 3: 3 / §
+[[keys]]
+label_unshifted = "3"
+insert_unshifted = "3"
+label_shifted = "\u00a7"
+insert_shifted = "\u00a7"
+
+# Slot 4: 4 / $
+[[keys]]
+label_unshifted = "4"
+insert_unshifted = "4"
+label_shifted = "$"
+insert_shifted = "$"
+
+# Slot 5: 5 / %
+[[keys]]
+label_unshifted = "5"
+insert_unshifted = "5"
+label_shifted = "%"
+insert_shifted = "%"
+
+# Slot 6: 6 / &
+[[keys]]
+label_unshifted = "6"
+insert_unshifted = "6"
+label_shifted = "&"
+insert_shifted = "&"
+
+# Slot 7: 7 / /
+[[keys]]
+label_unshifted = "7"
+insert_unshifted = "7"
+label_shifted = "/"
+insert_shifted = "/"
+
+# Slot 8: 8 / (
+[[keys]]
+label_unshifted = "8"
+insert_unshifted = "8"
+label_shifted = "("
+insert_shifted = "("
+
+# Slot 9: 9 / )
+[[keys]]
+label_unshifted = "9"
+insert_unshifted = "9"
+label_shifted = ")"
+insert_shifted = ")"
+
+# Slot 10: 0 / =
+[[keys]]
+label_unshifted = "0"
+insert_unshifted = "0"
+label_shifted = "="
+insert_shifted = "="
+
+# Slot 11: ß / ?
+[[keys]]
+label_unshifted = "\u00df"
+insert_unshifted = "\u00df"
+label_shifted = "?"
+insert_shifted = "?"
+
+# Slot 12: ´ / `
+[[keys]]
+label_unshifted = "\u00b4"
+insert_unshifted = "\u00b4"
+label_shifted = "`"
+insert_shifted = "`"
+
+# Row 2 — QWERTZ row (slots 13-25)
+# Slot 13: q
+[[keys]]
+label_unshifted = "q"
+insert_unshifted = "q"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 14: w
+[[keys]]
+label_unshifted = "w"
+insert_unshifted = "w"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 15: e
+[[keys]]
+label_unshifted = "e"
+insert_unshifted = "e"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 16: r
+[[keys]]
+label_unshifted = "r"
+insert_unshifted = "r"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 17: t
+[[keys]]
+label_unshifted = "t"
+insert_unshifted = "t"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 18: z  (QWERTZ: z here, not y)
+[[keys]]
+label_unshifted = "z"
+insert_unshifted = "z"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 19: u
+[[keys]]
+label_unshifted = "u"
+insert_unshifted = "u"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 20: i
+[[keys]]
+label_unshifted = "i"
+insert_unshifted = "i"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 21: o
+[[keys]]
+label_unshifted = "o"
+insert_unshifted = "o"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 22: p
+[[keys]]
+label_unshifted = "p"
+insert_unshifted = "p"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 23: ü  (auto-uppercased to Ü)
+[[keys]]
+label_unshifted = "\u00fc"
+insert_unshifted = "\u00fc"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 24: + / *
+[[keys]]
+label_unshifted = "+"
+insert_unshifted = "+"
+label_shifted = "*"
+insert_shifted = "*"
+
+# Slot 25: # / '
+[[keys]]
+label_unshifted = "#"
+insert_unshifted = "#"
+label_shifted = "'"
+insert_shifted = "'"
+
+# Row 3 — home row (slots 26-36)
+# Slot 26: a
+[[keys]]
+label_unshifted = "a"
+insert_unshifted = "a"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 27: s
+[[keys]]
+label_unshifted = "s"
+insert_unshifted = "s"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 28: d
+[[keys]]
+label_unshifted = "d"
+insert_unshifted = "d"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 29: f
+[[keys]]
+label_unshifted = "f"
+insert_unshifted = "f"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 30: g
+[[keys]]
+label_unshifted = "g"
+insert_unshifted = "g"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 31: h
+[[keys]]
+label_unshifted = "h"
+insert_unshifted = "h"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 32: j
+[[keys]]
+label_unshifted = "j"
+insert_unshifted = "j"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 33: k
+[[keys]]
+label_unshifted = "k"
+insert_unshifted = "k"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 34: l
+[[keys]]
+label_unshifted = "l"
+insert_unshifted = "l"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 35: ö  (auto-uppercased to Ö)
+[[keys]]
+label_unshifted = "\u00f6"
+insert_unshifted = "\u00f6"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 36: ä  (auto-uppercased to Ä)
+[[keys]]
+label_unshifted = "\u00e4"
+insert_unshifted = "\u00e4"
+label_shifted = ""
+insert_shifted = ""
+
+# Row 4 — bottom row (slots 37-46)
+# Slot 37: y  (QWERTZ: y here, not z)
+[[keys]]
+label_unshifted = "y"
+insert_unshifted = "y"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 38: x
+[[keys]]
+label_unshifted = "x"
+insert_unshifted = "x"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 39: c
+[[keys]]
+label_unshifted = "c"
+insert_unshifted = "c"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 40: v
+[[keys]]
+label_unshifted = "v"
+insert_unshifted = "v"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 41: b
+[[keys]]
+label_unshifted = "b"
+insert_unshifted = "b"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 42: n
+[[keys]]
+label_unshifted = "n"
+insert_unshifted = "n"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 43: m
+[[keys]]
+label_unshifted = "m"
+insert_unshifted = "m"
+label_shifted = ""
+insert_shifted = ""
+
+# Slot 44: , / ;
+[[keys]]
+label_unshifted = ","
+insert_unshifted = ","
+label_shifted = ";"
+insert_shifted = ";"
+
+# Slot 45: . / :
+[[keys]]
+label_unshifted = "."
+insert_unshifted = "."
+label_shifted = ":"
+insert_shifted = ":"
+
+# Slot 46: - / _
+[[keys]]
+label_unshifted = "-"
+insert_unshifted = "-"
+label_shifted = "_"
+insert_shifted = "_"
