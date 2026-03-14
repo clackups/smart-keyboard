@@ -149,6 +149,7 @@ pid = 0xbbd1
 # top of the keyboard window.  When false (the default) the display is hidden
 # and no CPU is spent updating the text buffer.
 # show_text_display = false
+# active_keymaps = ["us", "ua"]
 
 [ui.colors]
 # All colour values are 6-digit hex strings ("#RRGGBB").
@@ -195,3 +196,11 @@ pid = 0xbbd1
 # key_label_normal      = "#141414"
 # Text label colour on modifier / function keys (light text on dark background).
 # key_label_mod         = "#d2d2d2"
+
+[keymap.us]
+# Ctrl+Shift+1 (modifier=0x03, HID keycode 0x1e)
+switch_scancode = [0x03, 0x1e]
+
+[keymap.ua]
+# Ctrl+Shift+4 (modifier=0x03, HID keycode 0x21)
+switch_scancode = [0x03, 0x21]

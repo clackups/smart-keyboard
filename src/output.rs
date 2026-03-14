@@ -30,6 +30,13 @@ impl KeyHook for PrintKeyHook {
     fn on_key_action(&self, scancode: u16, key: &str, modifier_bits: u8) {
         println!("scancode=0x{:02x} key={:?} modifier_bits=0x{:02x}", scancode, key, modifier_bits);
     }
+
+    fn on_lang_switch(&self, switch_scancodes: &[u8]) {
+        if switch_scancodes.len() >= 2 {
+            println!("lang_switch: modifier=0x{:02x} keycode=0x{:02x}",
+                     switch_scancodes[0], switch_scancodes[1]);
+        }
+    }
 }
 
 // =============================================================================
@@ -244,6 +251,13 @@ impl KeyHook for BleKeyHook {
         }
 
         self.conn.borrow_mut().send_key(hid_modifier, hid_code);
+    }
+
+    fn on_lang_switch(&self, switch_scancodes: &[u8]) {
+        if switch_scancodes.len() >= 2 {
+            self.conn.borrow_mut().send_key(switch_scancodes[0], switch_scancodes[1]);
+            self.conn.borrow_mut().send_key_release();
+        }
     }
 }
 

@@ -1,0 +1,283 @@
+name = "US"
+
+[[keys]]
+label_unshifted = "`"
+insert_unshifted = "`"
+label_shifted = "~"
+insert_shifted = "~"
+
+[[keys]]
+label_unshifted = "1"
+insert_unshifted = "1"
+label_shifted = "!"
+insert_shifted = "!"
+
+[[keys]]
+label_unshifted = "2"
+insert_unshifted = "2"
+label_shifted = "@@"
+insert_shifted = "@"
+
+[[keys]]
+label_unshifted = "3"
+insert_unshifted = "3"
+label_shifted = "#"
+insert_shifted = "#"
+
+[[keys]]
+label_unshifted = "4"
+insert_unshifted = "4"
+label_shifted = "$"
+insert_shifted = "$"
+
+[[keys]]
+label_unshifted = "5"
+insert_unshifted = "5"
+label_shifted = "%"
+insert_shifted = "%"
+
+[[keys]]
+label_unshifted = "6"
+insert_unshifted = "6"
+label_shifted = "^"
+insert_shifted = "^"
+
+[[keys]]
+label_unshifted = "7"
+insert_unshifted = "7"
+label_shifted = "&&"
+insert_shifted = "&"
+
+[[keys]]
+label_unshifted = "8"
+insert_unshifted = "8"
+label_shifted = "*"
+insert_shifted = "*"
+
+[[keys]]
+label_unshifted = "9"
+insert_unshifted = "9"
+label_shifted = "("
+insert_shifted = "("
+
+[[keys]]
+label_unshifted = "0"
+insert_unshifted = "0"
+label_shifted = ")"
+insert_shifted = ")"
+
+[[keys]]
+label_unshifted = "-"
+insert_unshifted = "-"
+label_shifted = "_"
+insert_shifted = "_"
+
+[[keys]]
+label_unshifted = "="
+insert_unshifted = "="
+label_shifted = "+"
+insert_shifted = "+"
+
+[[keys]]
+label_unshifted = "q"
+insert_unshifted = "q"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "w"
+insert_unshifted = "w"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "e"
+insert_unshifted = "e"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "r"
+insert_unshifted = "r"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "t"
+insert_unshifted = "t"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "y"
+insert_unshifted = "y"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "u"
+insert_unshifted = "u"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "i"
+insert_unshifted = "i"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "o"
+insert_unshifted = "o"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "p"
+insert_unshifted = "p"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "["
+insert_unshifted = "["
+label_shifted = "{"
+insert_shifted = "{"
+
+[[keys]]
+label_unshifted = "]"
+insert_unshifted = "]"
+label_shifted = "}"
+insert_shifted = "}"
+
+[[keys]]
+label_unshifted = "\\"
+insert_unshifted = "\\"
+label_shifted = "|"
+insert_shifted = "|"
+
+[[keys]]
+label_unshifted = "a"
+insert_unshifted = "a"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "s"
+insert_unshifted = "s"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "d"
+insert_unshifted = "d"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "f"
+insert_unshifted = "f"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "g"
+insert_unshifted = "g"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "h"
+insert_unshifted = "h"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "j"
+insert_unshifted = "j"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "k"
+insert_unshifted = "k"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "l"
+insert_unshifted = "l"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = ";"
+insert_unshifted = ";"
+label_shifted = ":"
+insert_shifted = ":"
+
+[[keys]]
+label_unshifted = "'"
+insert_unshifted = "'"
+label_shifted = "\""
+insert_shifted = "\""
+
+[[keys]]
+label_unshifted = "z"
+insert_unshifted = "z"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "x"
+insert_unshifted = "x"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "c"
+insert_unshifted = "c"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "v"
+insert_unshifted = "v"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "b"
+insert_unshifted = "b"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "n"
+insert_unshifted = "n"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "m"
+insert_unshifted = "m"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = ","
+insert_unshifted = ","
+label_shifted = "<"
+insert_shifted = "<"
+
+[[keys]]
+label_unshifted = "."
+insert_unshifted = "."
+label_shifted = ">"
+insert_shifted = ">"
+
+[[keys]]
+label_unshifted = "/"
+insert_unshifted = "/"
+label_shifted = "?"
+insert_shifted = "?"

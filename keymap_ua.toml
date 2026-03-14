@@ -1,0 +1,283 @@
+name = "UA"
+
+[[keys]]
+label_unshifted = "\u0027"
+insert_unshifted = "\u0027"
+label_shifted = "\u20b4"
+insert_shifted = "\u20b4"
+
+[[keys]]
+label_unshifted = "1"
+insert_unshifted = "1"
+label_shifted = "!"
+insert_shifted = "!"
+
+[[keys]]
+label_unshifted = "2"
+insert_unshifted = "2"
+label_shifted = "\""
+insert_shifted = "\""
+
+[[keys]]
+label_unshifted = "3"
+insert_unshifted = "3"
+label_shifted = "\u2116"
+insert_shifted = "\u2116"
+
+[[keys]]
+label_unshifted = "4"
+insert_unshifted = "4"
+label_shifted = ";"
+insert_shifted = ";"
+
+[[keys]]
+label_unshifted = "5"
+insert_unshifted = "5"
+label_shifted = "%"
+insert_shifted = "%"
+
+[[keys]]
+label_unshifted = "6"
+insert_unshifted = "6"
+label_shifted = ":"
+insert_shifted = ":"
+
+[[keys]]
+label_unshifted = "7"
+insert_unshifted = "7"
+label_shifted = "?"
+insert_shifted = "?"
+
+[[keys]]
+label_unshifted = "8"
+insert_unshifted = "8"
+label_shifted = "*"
+insert_shifted = "*"
+
+[[keys]]
+label_unshifted = "9"
+insert_unshifted = "9"
+label_shifted = "("
+insert_shifted = "("
+
+[[keys]]
+label_unshifted = "0"
+insert_unshifted = "0"
+label_shifted = ")"
+insert_shifted = ")"
+
+[[keys]]
+label_unshifted = "-"
+insert_unshifted = "-"
+label_shifted = "_"
+insert_shifted = "_"
+
+[[keys]]
+label_unshifted = "="
+insert_unshifted = "="
+label_shifted = "+"
+insert_shifted = "+"
+
+[[keys]]
+label_unshifted = "\u0439"
+insert_unshifted = "\u0439"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0446"
+insert_unshifted = "\u0446"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0443"
+insert_unshifted = "\u0443"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u043a"
+insert_unshifted = "\u043a"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0435"
+insert_unshifted = "\u0435"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u043d"
+insert_unshifted = "\u043d"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0433"
+insert_unshifted = "\u0433"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0448"
+insert_unshifted = "\u0448"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0449"
+insert_unshifted = "\u0449"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0437"
+insert_unshifted = "\u0437"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0445"
+insert_unshifted = "\u0445"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0457"
+insert_unshifted = "\u0457"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\\"
+insert_unshifted = "\\"
+label_shifted = "|"
+insert_shifted = "|"
+
+[[keys]]
+label_unshifted = "\u0444"
+insert_unshifted = "\u0444"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0456"
+insert_unshifted = "\u0456"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0432"
+insert_unshifted = "\u0432"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0430"
+insert_unshifted = "\u0430"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u043f"
+insert_unshifted = "\u043f"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0440"
+insert_unshifted = "\u0440"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u043e"
+insert_unshifted = "\u043e"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u043b"
+insert_unshifted = "\u043b"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0434"
+insert_unshifted = "\u0434"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0436"
+insert_unshifted = "\u0436"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0454"
+insert_unshifted = "\u0454"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u044f"
+insert_unshifted = "\u044f"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0447"
+insert_unshifted = "\u0447"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0441"
+insert_unshifted = "\u0441"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u043c"
+insert_unshifted = "\u043c"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0438"
+insert_unshifted = "\u0438"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0442"
+insert_unshifted = "\u0442"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u044c"
+insert_unshifted = "\u044c"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u0431"
+insert_unshifted = "\u0431"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "\u044e"
+insert_unshifted = "\u044e"
+label_shifted = ""
+insert_shifted = ""
+
+[[keys]]
+label_unshifted = "."
+insert_unshifted = "."
+label_shifted = ","
+insert_shifted = ","

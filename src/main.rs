@@ -21,7 +21,7 @@ use fltk::{
 
 use keyboards::{
     is_modifier, is_sticky, special_hook_str, special_label,
-    Action, KW, KEYS, LAYOUTS, REGULAR_KEY_COUNT,
+    Action, KW, KEYS, REGULAR_KEY_COUNT,
 };
 
 use gamepad::{Gamepad, GamepadAction, GamepadEvent};
@@ -73,6 +73,13 @@ pub trait KeyHook {
         let _ = modifier_bits; // unused in default delegation
         self.on_key_press(scancode, key);
         // NOTE: on_key_release is driven by the physical key-up event, not here.
+    }
+
+    /// Called when the user switches to a language layout.
+    /// `switch_scancodes` is [modifier_byte, hid_keycode].
+    /// If len < 2, nothing should be sent.
+    fn on_lang_switch(&self, switch_scancodes: &[u8]) {
+        let _ = switch_scancodes;
     }
 }
 
@@ -627,7 +634,7 @@ fn find_center_key(
     for (r, row) in all_btns.iter().enumerate() {
         for (c, (_btn, action, _sc, _col)) in row.iter().enumerate() {
             let label = match *action {
-                Action::Regular(n) => LAYOUTS[layout_idx].keys[n].label_unshifted,
+                Action::Regular(n) => keyboards::get_layouts()[layout_idx].keys[n].label_unshifted.as_str(),
                 other              => special_label(other),
             };
             if label == center_key {
@@ -667,14 +674,14 @@ fn execute_action(
     // CapsLock does NOT affect them (standard keyboard behaviour).
     // Letter keys (label_shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
     let regular_text: Option<String> = if let Action::Regular(slot) = action {
-        let key = &LAYOUTS[layout_i].keys[slot];
+        let key = &keyboards::get_layouts()[layout_i].keys[slot];
         let ms  = mod_state.borrow();
         Some(if !key.label_shifted.is_empty() && (ms.lshift || ms.rshift) {
-            key.insert_shifted.to_string()
+            key.insert_shifted.clone()
         } else if key.label_shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
             key.insert_unshifted.to_uppercase()
         } else {
-            key.insert_unshifted.to_string()
+            key.insert_unshifted.clone()
         })
     } else {
         None
@@ -796,8 +803,8 @@ fn label_to_audio_slug(label: &str) -> String {
 fn action_audio_slug(action: Action, layout_idx: usize) -> String {
     match action {
         Action::Regular(slot) => {
-            let layout_name = keyboards::LAYOUTS[layout_idx].name.to_lowercase();
-            let label = keyboards::LAYOUTS[layout_idx].keys[slot].label_unshifted;
+            let layout_name = keyboards::get_layouts()[layout_idx].name.to_lowercase();
+            let label = keyboards::get_layouts()[layout_idx].keys[slot].label_unshifted.as_str();
             format!("{}_{}", layout_name, label_to_audio_slug(label))
         }
         Action::Backspace  => "backspace".to_string(),
@@ -845,7 +852,7 @@ fn nav_audio_slug(
 ) -> String {
     match sel {
         NavSel::Lang(li) => {
-            format!("lang_{}", keyboards::LAYOUTS[li].name.to_lowercase())
+            format!("lang_{}", keyboards::get_layouts()[li].name.to_lowercase())
         }
         NavSel::Key(row, col) => action_audio_slug(all_btns[row][col].1, layout_idx),
     }
@@ -1013,12 +1020,33 @@ fn on_nav_changed(
 // =============================================================================
 
 fn main() {
+    let cfg = config::Config::load();
+
+    // Determine config path for keymap file lookup.
+    let config_path = std::env::var("SMART_KBD_CONFIG_PATH")
+        .unwrap_or_else(|_| "config.toml".into());
+
+    // Load active layouts (from TOML files or built-in fallbacks).
+    let active_keymaps = cfg.ui.active_keymaps.clone();
+    let loaded_layouts = keyboards::load_active_layouts(&active_keymaps, &config_path);
+    keyboards::set_layouts(loaded_layouts);
+    let layouts = keyboards::get_layouts();
+
     debug_assert!(
-        LAYOUTS.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
+        layouts.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
         "every LayoutDef must have exactly REGULAR_KEY_COUNT entries"
     );
 
-    let cfg = config::Config::load();
+    // Build switch_scancodes: per-layout key combination to send on language switch.
+    let switch_scancodes: Rc<Vec<Vec<u8>>> = Rc::new(
+        active_keymaps.iter().map(|name| {
+            match cfg.keymap.get(name) {
+                None     => keyboards::default_switch_scancode_for(name),
+                Some(kc) => kc.switch_scancode.clone(),
+            }
+        }).collect()
+    );
+
     let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
     let colors = Colors::from_config(&cfg.ui.colors);
     let show_text_display = cfg.ui.show_text_display;
@@ -1050,7 +1078,7 @@ fn main() {
     let avail_w = sw - 2 * pad;
 
     let display_h  = if cfg.ui.show_text_display { ((sh as f32 / 12.0) as i32).max(10) } else { 0 };
-    let lang_btn_h = ((sh as f32 / 12.0) as i32).max(10);
+    let lang_btn_h = if layouts.len() <= 1 { 0i32 } else { ((sh as f32 / 12.0) as i32).max(10) };
 
     // Status bar occupies a thin strip at the very top of the window.
     let status_h = (sh / 24).max(18).min(32);
@@ -1371,66 +1399,74 @@ fn main() {
     // selection to drift from the column the user came from.
     let preferred_cx: Rc<RefCell<i32>> = Rc::new(RefCell::new(0));
 
-    for (li, def) in LAYOUTS.iter().enumerate() {
-        let btn_x = pad_left + li as i32 * (lang_w + gap);
-        let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, def.name);
-        btn.set_color(if li == 0 { active_col } else { inactive_col });
-        btn.set_label_color(colors.lang_btn_label);
-        btn.set_label_size(btn_size);
+    if layouts.len() > 1 {
+        for (li, def) in layouts.iter().enumerate() {
+            let btn_x = pad_left + li as i32 * (lang_w + gap);
+            let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, None);
+            btn.set_label(&def.name);
+            btn.set_color(if li == 0 { active_col } else { inactive_col });
+            btn.set_label_color(colors.lang_btn_label);
+            btn.set_label_size(btn_size);
 
-        let layout_idx_c  = layout_idx.clone();
-        let lang_btns_c   = lang_btns.clone();
-        let switch_btns_c = switch_btns.clone();
-        let all_btns_c    = all_btns.clone();
-        let sel_c         = sel.clone();
-        let mod_state_c   = mod_state.clone();
-        let narrator_c    = narrator.clone();
-        btn.set_callback(move |_| {
-            // Execute the language switch.
-            *layout_idx_c.borrow_mut() = li;
-            for (j, lb) in lang_btns_c.borrow_mut().iter_mut().enumerate() {
-                lb.set_color(if j == li { active_col } else { inactive_col });
-            }
-            let def = LAYOUTS[li];
-            for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
-                let key = &def.keys[*slot];
-                if key.label_shifted.is_empty() {
-                    kb.set_label(key.label_unshifted);
-                    let sz = if key.label_unshifted.chars().count() == 1 { big_lbl_size } else { lbl_size };
-                    kb.set_label_size(sz);
-                } else {
-                    let lbl = format!("{}\n{}", key.label_shifted, key.label_unshifted);
-                    kb.set_label(&lbl);
-                    kb.set_label_size(lbl_size);
+            let layout_idx_c  = layout_idx.clone();
+            let lang_btns_c   = lang_btns.clone();
+            let switch_btns_c = switch_btns.clone();
+            let all_btns_c    = all_btns.clone();
+            let sel_c         = sel.clone();
+            let mod_state_c   = mod_state.clone();
+            let narrator_c    = narrator.clone();
+            let switch_scancodes_c = switch_scancodes.clone();
+            let hook_lang_c   = Rc::clone(&hook);
+            btn.set_callback(move |_| {
+                // Execute the language switch.
+                *layout_idx_c.borrow_mut() = li;
+                for (j, lb) in lang_btns_c.borrow_mut().iter_mut().enumerate() {
+                    lb.set_color(if j == li { active_col } else { inactive_col });
                 }
-            }
-            // Move the amber highlight to this lang button.
-            // Copy sel (it is Copy) so the borrow is released before we mutate below.
-            let old_sel = *sel_c.borrow();
-            if let NavSel::Key(old_r, old_c) = old_sel {
-                let mut ab = all_btns_c.borrow_mut();
-                let old_action = ab[old_r][old_c].1;
-                let old_base   = ab[old_r][old_c].3;
-                let restore = if is_modifier(old_action)
-                    && mod_state_c.borrow().is_active(old_action)
-                {
-                    colors.mod_active
-                } else {
-                    old_base
-                };
-                ab[old_r][old_c].0.set_color(restore);
-            }
-            // (If old_sel was Lang(_), the colour loop above already restored it.)
-            lang_btns_c.borrow_mut()[li].set_color(colors.nav_sel);
-            let _ = lang_btns_c.borrow_mut()[li].take_focus();
-            *sel_c.borrow_mut() = NavSel::Lang(li);
-            narrator_c.borrow_mut().play(
-                &format!("lang_{}", LAYOUTS[li].name.to_lowercase()),
-                LANG_BTN_TONE_HZ,
-            );
-            app::redraw();
-        });
-        lang_btns.borrow_mut().push(btn);
+                let def = &keyboards::get_layouts()[li];
+                for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
+                    let key = &def.keys[*slot];
+                    if key.label_shifted.is_empty() {
+                        kb.set_label(key.label_unshifted.as_str());
+                        let sz = if key.label_unshifted.chars().count() == 1 { big_lbl_size } else { lbl_size };
+                        kb.set_label_size(sz);
+                    } else {
+                        let lbl = format!("{}\n{}", key.label_shifted, key.label_unshifted);
+                        kb.set_label(&lbl);
+                        kb.set_label_size(lbl_size);
+                    }
+                }
+                // Move the amber highlight to this lang button.
+                // Copy sel (it is Copy) so the borrow is released before we mutate below.
+                let old_sel = *sel_c.borrow();
+                if let NavSel::Key(old_r, old_c) = old_sel {
+                    let mut ab = all_btns_c.borrow_mut();
+                    let old_action = ab[old_r][old_c].1;
+                    let old_base   = ab[old_r][old_c].3;
+                    let restore = if is_modifier(old_action)
+                        && mod_state_c.borrow().is_active(old_action)
+                    {
+                        colors.mod_active
+                    } else {
+                        old_base
+                    };
+                    ab[old_r][old_c].0.set_color(restore);
+                }
+                // (If old_sel was Lang(_), the colour loop above already restored it.)
+                lang_btns_c.borrow_mut()[li].set_color(colors.nav_sel);
+                let _ = lang_btns_c.borrow_mut()[li].take_focus();
+                *sel_c.borrow_mut() = NavSel::Lang(li);
+                narrator_c.borrow_mut().play(
+                    &format!("lang_{}", keyboards::get_layouts()[li].name.to_lowercase()),
+                    LANG_BTN_TONE_HZ,
+                );
+                if li < switch_scancodes_c.len() {
+                    hook_lang_c.on_lang_switch(&switch_scancodes_c[li]);
+                }
+                app::redraw();
+            });
+            lang_btns.borrow_mut().push(btn);
+        }
     }
 
     // --- Keyboard key grid ---
@@ -1465,9 +1501,9 @@ fn main() {
 
             let init_label: String = match phys.action {
                 Action::Regular(slot) => {
-                    let key = &LAYOUTS[0].keys[slot];
+                    let key = &keyboards::get_layouts()[0].keys[slot];
                     if key.label_shifted.is_empty() {
-                        key.label_unshifted.to_string()
+                        key.label_unshifted.clone()
                     } else {
                         format!("{}\n{}", key.label_shifted, key.label_unshifted)
                     }
@@ -1495,7 +1531,7 @@ fn main() {
                 btn.handle(move |_b, ev| {
                     let key_str: &str = match action {
                         Action::Regular(slot) => {
-                            LAYOUTS[*layout_idx_h.borrow()].keys[slot].insert_unshifted
+                            keyboards::get_layouts()[*layout_idx_h.borrow()].keys[slot].insert_unshifted.as_str()
                         }
                         other => special_hook_str(other),
                     };

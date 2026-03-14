@@ -309,208 +309,235 @@ pub static KEYS: &[&[PhysKey]] = &[
 // Language layouts
 // =============================================================================
 
+use serde::Deserialize;
+use std::sync::OnceLock;
+
 /// One substitutable key slot: display labels and strings to insert.
+#[derive(Deserialize, Clone)]
 pub struct LayoutKey {
     /// Text shown on the button face (unshifted state).
-    pub label_unshifted:  &'static str,
+    pub label_unshifted:  String,
     /// String inserted when the key is activated without Shift / CapsLock.
-    pub insert_unshifted: &'static str,
+    pub insert_unshifted: String,
     /// Text shown in the top half of the button face (shifted state).
     /// Empty for letter keys (they use `insert_unshifted.to_uppercase()` instead,
     /// and CapsLock also applies to them).
-    pub label_shifted:    &'static str,
+    pub label_shifted:    String,
     /// String inserted when Shift is held.
     /// Empty for letter keys (uppercase is computed from `insert_unshifted`).
-    pub insert_shifted:   &'static str,
+    pub insert_shifted:   String,
 }
 
 /// A named keyboard layout.
-///
-/// To add a new language:
-///   1. Define `pub static MY_LANG: LayoutDef = LayoutDef { name: "XX", keys: &[...] };`
-///      with exactly REGULAR_KEY_COUNT entries in slot order (see slot index map
-///      in the KEYS comment above).
-///   2. Append `&MY_LANG` to the LAYOUTS slice below.
-///
-/// No changes to main.rs are required; the toggle button appears automatically.
 pub struct LayoutDef {
-    pub name: &'static str,
-    pub keys: &'static [LayoutKey],
+    pub name: String,
+    pub keys: Vec<LayoutKey>,
+}
+
+/// TOML file format for keymap files.
+#[derive(Deserialize)]
+struct KeymapFileToml {
+    name: String,
+    keys: Vec<LayoutKey>,
+}
+
+static ACTIVE_LAYOUTS: OnceLock<Vec<LayoutDef>> = OnceLock::new();
+
+/// Store the active layouts (call once from main before showing the UI).
+pub fn set_layouts(layouts: Vec<LayoutDef>) {
+    let _ = ACTIVE_LAYOUTS.set(layouts);
+}
+
+/// Return the active layouts slice.  Returns `&[]` if not yet initialised.
+pub fn get_layouts() -> &'static [LayoutDef] {
+    ACTIVE_LAYOUTS.get().map(|v| v.as_slice()).unwrap_or(&[])
+}
+
+/// Returns the built-in default switch scancode for a known keymap name.
+/// [modifier_byte, hid_keycode]: Ctrl+Shift+1 for "us", Ctrl+Shift+4 for "ua".
+pub fn default_switch_scancode_for(name: &str) -> Vec<u8> {
+    match name {
+        "us" => vec![0x03, 0x1e],  // Ctrl+Shift+1
+        "ua" => vec![0x03, 0x21],  // Ctrl+Shift+4
+        _    => vec![],
+    }
 }
 
 // ---------------------------------------------------------------------------
-// US (QWERTY)
+// Built-in fallback layout definitions
 // ---------------------------------------------------------------------------
-pub static US: LayoutDef = LayoutDef {
-    name: "US",
-    keys: &[
-        // slots 0-12: number row  (shifted = symbol above the digit/key)
-        LayoutKey { label_unshifted: "`",  insert_unshifted: "`",  label_shifted: "~",  insert_shifted: "~"  }, // 0
-        LayoutKey { label_unshifted: "1",  insert_unshifted: "1",  label_shifted: "!",  insert_shifted: "!"  }, // 1
-        LayoutKey { label_unshifted: "2",  insert_unshifted: "2",  label_shifted: "@@", insert_shifted: "@"  }, // 2
-        LayoutKey { label_unshifted: "3",  insert_unshifted: "3",  label_shifted: "#",  insert_shifted: "#"  }, // 3
-        LayoutKey { label_unshifted: "4",  insert_unshifted: "4",  label_shifted: "$",  insert_shifted: "$"  }, // 4
-        LayoutKey { label_unshifted: "5",  insert_unshifted: "5",  label_shifted: "%",  insert_shifted: "%"  }, // 5
-        LayoutKey { label_unshifted: "6",  insert_unshifted: "6",  label_shifted: "^",  insert_shifted: "^"  }, // 6
-        LayoutKey { label_unshifted: "7",  insert_unshifted: "7",  label_shifted: "&&", insert_shifted: "&"  }, // 7
-        LayoutKey { label_unshifted: "8",  insert_unshifted: "8",  label_shifted: "*",  insert_shifted: "*"  }, // 8
-        LayoutKey { label_unshifted: "9",  insert_unshifted: "9",  label_shifted: "(",  insert_shifted: "("  }, // 9
-        LayoutKey { label_unshifted: "0",  insert_unshifted: "0",  label_shifted: ")",  insert_shifted: ")"  }, // 10
-        LayoutKey { label_unshifted: "-",  insert_unshifted: "-",  label_shifted: "_",  insert_shifted: "_"  }, // 11
-        LayoutKey { label_unshifted: "=",  insert_unshifted: "=",  label_shifted: "+",  insert_shifted: "+"  }, // 12
-        // slots 13-22: top alpha row (q-p) - letter keys, no shifted display
-        LayoutKey { label_unshifted: "q",  insert_unshifted: "q",  label_shifted: "",   insert_shifted: ""   }, // 13
-        LayoutKey { label_unshifted: "w",  insert_unshifted: "w",  label_shifted: "",   insert_shifted: ""   }, // 14
-        LayoutKey { label_unshifted: "e",  insert_unshifted: "e",  label_shifted: "",   insert_shifted: ""   }, // 15
-        LayoutKey { label_unshifted: "r",  insert_unshifted: "r",  label_shifted: "",   insert_shifted: ""   }, // 16
-        LayoutKey { label_unshifted: "t",  insert_unshifted: "t",  label_shifted: "",   insert_shifted: ""   }, // 17
-        LayoutKey { label_unshifted: "y",  insert_unshifted: "y",  label_shifted: "",   insert_shifted: ""   }, // 18
-        LayoutKey { label_unshifted: "u",  insert_unshifted: "u",  label_shifted: "",   insert_shifted: ""   }, // 19
-        LayoutKey { label_unshifted: "i",  insert_unshifted: "i",  label_shifted: "",   insert_shifted: ""   }, // 20
-        LayoutKey { label_unshifted: "o",  insert_unshifted: "o",  label_shifted: "",   insert_shifted: ""   }, // 21
-        LayoutKey { label_unshifted: "p",  insert_unshifted: "p",  label_shifted: "",   insert_shifted: ""   }, // 22
-        // slots 23-25: top-row punctuation
-        LayoutKey { label_unshifted: "[",  insert_unshifted: "[",  label_shifted: "{",  insert_shifted: "{"  }, // 23
-        LayoutKey { label_unshifted: "]",  insert_unshifted: "]",  label_shifted: "}",  insert_shifted: "}"  }, // 24
-        LayoutKey { label_unshifted: "\\", insert_unshifted: "\\", label_shifted: "|",  insert_shifted: "|"  }, // 25
-        // slots 26-34: home alpha row (a-l) - letter keys
-        LayoutKey { label_unshifted: "a",  insert_unshifted: "a",  label_shifted: "",   insert_shifted: ""   }, // 26
-        LayoutKey { label_unshifted: "s",  insert_unshifted: "s",  label_shifted: "",   insert_shifted: ""   }, // 27
-        LayoutKey { label_unshifted: "d",  insert_unshifted: "d",  label_shifted: "",   insert_shifted: ""   }, // 28
-        LayoutKey { label_unshifted: "f",  insert_unshifted: "f",  label_shifted: "",   insert_shifted: ""   }, // 29
-        LayoutKey { label_unshifted: "g",  insert_unshifted: "g",  label_shifted: "",   insert_shifted: ""   }, // 30
-        LayoutKey { label_unshifted: "h",  insert_unshifted: "h",  label_shifted: "",   insert_shifted: ""   }, // 31
-        LayoutKey { label_unshifted: "j",  insert_unshifted: "j",  label_shifted: "",   insert_shifted: ""   }, // 32
-        LayoutKey { label_unshifted: "k",  insert_unshifted: "k",  label_shifted: "",   insert_shifted: ""   }, // 33
-        LayoutKey { label_unshifted: "l",  insert_unshifted: "l",  label_shifted: "",   insert_shifted: ""   }, // 34
-        // slots 35-36: home-row punctuation
-        LayoutKey { label_unshifted: ";",  insert_unshifted: ";",  label_shifted: ":",  insert_shifted: ":"  }, // 35
-        LayoutKey { label_unshifted: "'",  insert_unshifted: "'",  label_shifted: "\"", insert_shifted: "\"" }, // 36
-        // slots 37-43: lower alpha row (z-m) - letter keys
-        LayoutKey { label_unshifted: "z",  insert_unshifted: "z",  label_shifted: "",   insert_shifted: ""   }, // 37
-        LayoutKey { label_unshifted: "x",  insert_unshifted: "x",  label_shifted: "",   insert_shifted: ""   }, // 38
-        LayoutKey { label_unshifted: "c",  insert_unshifted: "c",  label_shifted: "",   insert_shifted: ""   }, // 39
-        LayoutKey { label_unshifted: "v",  insert_unshifted: "v",  label_shifted: "",   insert_shifted: ""   }, // 40
-        LayoutKey { label_unshifted: "b",  insert_unshifted: "b",  label_shifted: "",   insert_shifted: ""   }, // 41
-        LayoutKey { label_unshifted: "n",  insert_unshifted: "n",  label_shifted: "",   insert_shifted: ""   }, // 42
-        LayoutKey { label_unshifted: "m",  insert_unshifted: "m",  label_shifted: "",   insert_shifted: ""   }, // 43
-        // slots 44-46: lower-row punctuation
-        LayoutKey { label_unshifted: ",",  insert_unshifted: ",",  label_shifted: "<",  insert_shifted: "<"  }, // 44
-        LayoutKey { label_unshifted: ".",  insert_unshifted: ".",  label_shifted: ">",  insert_shifted: ">"  }, // 45
-        LayoutKey { label_unshifted: "/",  insert_unshifted: "/",  label_shifted: "?",  insert_shifted: "?"  }, // 46
-    ],
-};
+
+fn lk(lu: &str, iu: &str, ls: &str, is: &str) -> LayoutKey {
+    LayoutKey {
+        label_unshifted:  lu.to_string(),
+        insert_unshifted: iu.to_string(),
+        label_shifted:    ls.to_string(),
+        insert_shifted:   is.to_string(),
+    }
+}
+
+fn builtin_us_layout() -> LayoutDef {
+    LayoutDef {
+        name: "US".to_string(),
+        keys: vec![
+            // slots 0-12: number row
+            lk("`",  "`",  "~",  "~"),   // 0
+            lk("1",  "1",  "!",  "!"),   // 1
+            lk("2",  "2",  "@@", "@"),   // 2
+            lk("3",  "3",  "#",  "#"),   // 3
+            lk("4",  "4",  "$",  "$"),   // 4
+            lk("5",  "5",  "%",  "%"),   // 5
+            lk("6",  "6",  "^",  "^"),   // 6
+            lk("7",  "7",  "&&", "&"),   // 7
+            lk("8",  "8",  "*",  "*"),   // 8
+            lk("9",  "9",  "(",  "("),   // 9
+            lk("0",  "0",  ")",  ")"),   // 10
+            lk("-",  "-",  "_",  "_"),   // 11
+            lk("=",  "=",  "+",  "+"),   // 12
+            // slots 13-22: top alpha row (q-p)
+            lk("q",  "q",  "",   ""),    // 13
+            lk("w",  "w",  "",   ""),    // 14
+            lk("e",  "e",  "",   ""),    // 15
+            lk("r",  "r",  "",   ""),    // 16
+            lk("t",  "t",  "",   ""),    // 17
+            lk("y",  "y",  "",   ""),    // 18
+            lk("u",  "u",  "",   ""),    // 19
+            lk("i",  "i",  "",   ""),    // 20
+            lk("o",  "o",  "",   ""),    // 21
+            lk("p",  "p",  "",   ""),    // 22
+            // slots 23-25: top-row punctuation
+            lk("[",  "[",  "{",  "{"),   // 23
+            lk("]",  "]",  "}",  "}"),   // 24
+            lk("\\", "\\", "|",  "|"),   // 25
+            // slots 26-34: home alpha row (a-l)
+            lk("a",  "a",  "",   ""),    // 26
+            lk("s",  "s",  "",   ""),    // 27
+            lk("d",  "d",  "",   ""),    // 28
+            lk("f",  "f",  "",   ""),    // 29
+            lk("g",  "g",  "",   ""),    // 30
+            lk("h",  "h",  "",   ""),    // 31
+            lk("j",  "j",  "",   ""),    // 32
+            lk("k",  "k",  "",   ""),    // 33
+            lk("l",  "l",  "",   ""),    // 34
+            // slots 35-36: home-row punctuation
+            lk(";",  ";",  ":",  ":"),   // 35
+            lk("'",  "'",  "\"", "\""),  // 36
+            // slots 37-43: lower alpha row (z-m)
+            lk("z",  "z",  "",   ""),    // 37
+            lk("x",  "x",  "",   ""),    // 38
+            lk("c",  "c",  "",   ""),    // 39
+            lk("v",  "v",  "",   ""),    // 40
+            lk("b",  "b",  "",   ""),    // 41
+            lk("n",  "n",  "",   ""),    // 42
+            lk("m",  "m",  "",   ""),    // 43
+            // slots 44-46: lower-row punctuation
+            lk(",",  ",",  "<",  "<"),   // 44
+            lk(".",  ".",  ">",  ">"),   // 45
+            lk("/",  "/",  "?",  "?"),   // 46
+        ],
+    }
+}
+
+fn builtin_ua_layout() -> LayoutDef {
+    LayoutDef {
+        name: "UA".to_string(),
+        keys: vec![
+            // slots 0-12: number row
+            lk("\u{0027}", "\u{0027}", "\u{20b4}", "\u{20b4}"),  // 0  ` -> apostrophe
+            lk("1",        "1",        "!",        "!"),         // 1
+            lk("2",        "2",        "\"",       "\""),        // 2
+            lk("3",        "3",        "\u{2116}", "\u{2116}"),  // 3  numero sign
+            lk("4",        "4",        ";",        ";"),         // 4
+            lk("5",        "5",        "%",        "%"),         // 5
+            lk("6",        "6",        ":",        ":"),         // 6
+            lk("7",        "7",        "?",        "?"),         // 7
+            lk("8",        "8",        "*",        "*"),         // 8
+            lk("9",        "9",        "(",        "("),         // 9
+            lk("0",        "0",        ")",        ")"),         // 10
+            lk("-",        "-",        "_",        "_"),         // 11
+            lk("=",        "=",        "+",        "+"),         // 12
+            // slots 13-22: top alpha row (Cyrillic)
+            lk("\u{0439}", "\u{0439}", "", ""),  // 13  q -> J
+            lk("\u{0446}", "\u{0446}", "", ""),  // 14  w -> Ts
+            lk("\u{0443}", "\u{0443}", "", ""),  // 15  e -> U
+            lk("\u{043A}", "\u{043A}", "", ""),  // 16  r -> K
+            lk("\u{0435}", "\u{0435}", "", ""),  // 17  t -> Ye
+            lk("\u{043D}", "\u{043D}", "", ""),  // 18  y -> N
+            lk("\u{0433}", "\u{0433}", "", ""),  // 19  u -> G
+            lk("\u{0448}", "\u{0448}", "", ""),  // 20  i -> Sh
+            lk("\u{0449}", "\u{0449}", "", ""),  // 21  o -> Shch
+            lk("\u{0437}", "\u{0437}", "", ""),  // 22  p -> Z
+            // slots 23-25
+            lk("\u{0445}", "\u{0445}", "", ""),  // 23  [ -> Kh
+            lk("\u{0457}", "\u{0457}", "", ""),  // 24  ] -> Yi
+            lk("\\",       "\\",       "|", "|"), // 25  \
+            // slots 26-34: home alpha row (Cyrillic)
+            lk("\u{0444}", "\u{0444}", "", ""),  // 26  a -> F
+            lk("\u{0456}", "\u{0456}", "", ""),  // 27  s -> I
+            lk("\u{0432}", "\u{0432}", "", ""),  // 28  d -> V
+            lk("\u{0430}", "\u{0430}", "", ""),  // 29  f -> A
+            lk("\u{043F}", "\u{043F}", "", ""),  // 30  g -> P
+            lk("\u{0440}", "\u{0440}", "", ""),  // 31  h -> R
+            lk("\u{043E}", "\u{043E}", "", ""),  // 32  j -> O
+            lk("\u{043B}", "\u{043B}", "", ""),  // 33  k -> L
+            lk("\u{0434}", "\u{0434}", "", ""),  // 34  l -> D
+            // slots 35-36
+            lk("\u{0436}", "\u{0436}", "", ""),  // 35  ; -> Zh
+            lk("\u{0454}", "\u{0454}", "", ""),  // 36  ' -> Ye
+            // slots 37-43: lower alpha row (Cyrillic)
+            lk("\u{044F}", "\u{044F}", "", ""),  // 37  z -> Ya
+            lk("\u{0447}", "\u{0447}", "", ""),  // 38  x -> Ch
+            lk("\u{0441}", "\u{0441}", "", ""),  // 39  c -> S
+            lk("\u{043C}", "\u{043C}", "", ""),  // 40  v -> M
+            lk("\u{0438}", "\u{0438}", "", ""),  // 41  b -> I
+            lk("\u{0442}", "\u{0442}", "", ""),  // 42  n -> T
+            lk("\u{044C}", "\u{044C}", "", ""),  // 43  m -> soft sign
+            // slots 44-46
+            lk("\u{0431}", "\u{0431}", "", ""),  // 44  , -> B
+            lk("\u{044E}", "\u{044E}", "", ""),  // 45  . -> Yu
+            lk(".",        ".",        ",", ","), // 46  / -> FULL STOP
+        ],
+    }
+}
+
+pub fn builtin_layout(name: &str) -> Option<LayoutDef> {
+    match name {
+        "us" => Some(builtin_us_layout()),
+        "ua" => Some(builtin_ua_layout()),
+        _    => None,
+    }
+}
 
 // ---------------------------------------------------------------------------
-// Ukrainian (QWERTY-UA)
-//
-// All non-ASCII runtime values use \u{XXXX} Rust escape sequences; the source
-// file contains only ASCII bytes.
-//
-// Slot -> Ukrainian character:
-//   0  ` -> \u{0027} APOSTROPHE / \u{20b4} HRYVNA SYMBOL
-//  13  q -> \u{0439} CYRILLIC SMALL LETTER SHORT I       (J)
-//  14  w -> \u{0446} CYRILLIC SMALL LETTER TSE           (Ts)
-//  15  e -> \u{0443} CYRILLIC SMALL LETTER U
-//  16  r -> \u{043A} CYRILLIC SMALL LETTER KA            (K)
-//  17  t -> \u{0435} CYRILLIC SMALL LETTER IE            (Ye)
-//  18  y -> \u{043D} CYRILLIC SMALL LETTER EN            (N)
-//  19  u -> \u{0433} CYRILLIC SMALL LETTER GHE           (G)
-//  20  i -> \u{0448} CYRILLIC SMALL LETTER SHA           (Sh)
-//  21  o -> \u{0449} CYRILLIC SMALL LETTER SHCHA         (Shch)
-//  22  p -> \u{0437} CYRILLIC SMALL LETTER ZE            (Z)
-//  23  [ -> \u{0445} CYRILLIC SMALL LETTER HA            (Kh)
-//  24  ] -> \u{0457} CYRILLIC SMALL LETTER YI            (Yi)
-//  25  \ -> \ (unchanged)
-//  26  a -> \u{0444} CYRILLIC SMALL LETTER EF            (F)
-//  27  s -> \u{0456} CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
-//  28  d -> \u{0432} CYRILLIC SMALL LETTER VE            (V)
-//  29  f -> \u{0430} CYRILLIC SMALL LETTER A
-//  30  g -> \u{043F} CYRILLIC SMALL LETTER PE            (P)
-//  31  h -> \u{0440} CYRILLIC SMALL LETTER ER            (R)
-//  32  j -> \u{043E} CYRILLIC SMALL LETTER O
-//  33  k -> \u{043B} CYRILLIC SMALL LETTER EL            (L)
-//  34  l -> \u{0434} CYRILLIC SMALL LETTER DE            (D)
-//  35  ; -> \u{0436} CYRILLIC SMALL LETTER ZHE           (Zh)
-//  36  ' -> \u{0454} CYRILLIC SMALL LETTER UKRAINIAN IE  (Ye)
-//  37  z -> \u{044F} CYRILLIC SMALL LETTER YA            (Ya)
-//  38  x -> \u{0447} CYRILLIC SMALL LETTER CHE           (Ch)
-//  39  c -> \u{0441} CYRILLIC SMALL LETTER ES            (S)
-//  40  v -> \u{043C} CYRILLIC SMALL LETTER EM            (M)
-//  41  b -> \u{0438} CYRILLIC SMALL LETTER I
-//  42  n -> \u{0442} CYRILLIC SMALL LETTER TE            (T)
-//  43  m -> \u{044C} CYRILLIC SMALL LETTER SOFT SIGN
-//  44  , -> \u{0431} CYRILLIC SMALL LETTER BE            (B)
-//  45  . -> \u{044E} CYRILLIC SMALL LETTER YU            (Yu)
-//  46  / -> FULL STOP, COMMA
+// TOML file loading
 // ---------------------------------------------------------------------------
-pub static UA: LayoutDef = LayoutDef {
-    name: "UA",
-    keys: &[
-        // slots 0-12: number row
-        // The grave key carries the Ukrainian apostrophe; its physical Shift value is ~.
-        // Number-row shifted symbols follow the KBDUR standard (differ from US layout).
-        LayoutKey { label_unshifted: "\u{0027}", insert_unshifted: "\u{0027}", label_shifted: "\u{20b4}",  insert_shifted: "\u{20b4}"  }, // 0  ` -> apostrophe, hryvna
-        LayoutKey { label_unshifted: "1",        insert_unshifted: "1",        label_shifted: "!",         insert_shifted: "!"         }, // 1
-        LayoutKey { label_unshifted: "2",        insert_unshifted: "2",        label_shifted: "\"",        insert_shifted: "\""        }, // 2  Shift+2 -> "
-        LayoutKey { label_unshifted: "3",        insert_unshifted: "3",        label_shifted: "\u{2116}",  insert_shifted: "\u{2116}"  }, // 3  Shift+3 -> \u{2116} (numero sign)
-        LayoutKey { label_unshifted: "4",        insert_unshifted: "4",        label_shifted: ";",         insert_shifted: ";"         }, // 4  Shift+4 -> ;
-        LayoutKey { label_unshifted: "5",        insert_unshifted: "5",        label_shifted: "%",         insert_shifted: "%"         }, // 5
-        LayoutKey { label_unshifted: "6",        insert_unshifted: "6",        label_shifted: ":",         insert_shifted: ":"         }, // 6  Shift+6 -> :
-        LayoutKey { label_unshifted: "7",        insert_unshifted: "7",        label_shifted: "?",         insert_shifted: "?"         }, // 7  Shift+7 -> ?
-        LayoutKey { label_unshifted: "8",        insert_unshifted: "8",        label_shifted: "*",         insert_shifted: "*"         }, // 8
-        LayoutKey { label_unshifted: "9",        insert_unshifted: "9",        label_shifted: "(",         insert_shifted: "("         }, // 9
-        LayoutKey { label_unshifted: "0",        insert_unshifted: "0",        label_shifted: ")",         insert_shifted: ")"         }, // 10
-        LayoutKey { label_unshifted: "-",        insert_unshifted: "-",        label_shifted: "_",         insert_shifted: "_"         }, // 11
-        LayoutKey { label_unshifted: "=",        insert_unshifted: "=",        label_shifted: "+",         insert_shifted: "+"         }, // 12
-        // slots 13-22: top alpha row (Cyrillic letters) - no shifted display
-        LayoutKey { label_unshifted: "\u{0439}", insert_unshifted: "\u{0439}", label_shifted: "", insert_shifted: "" }, // 13  q -> J
-        LayoutKey { label_unshifted: "\u{0446}", insert_unshifted: "\u{0446}", label_shifted: "", insert_shifted: "" }, // 14  w -> Ts
-        LayoutKey { label_unshifted: "\u{0443}", insert_unshifted: "\u{0443}", label_shifted: "", insert_shifted: "" }, // 15  e -> U
-        LayoutKey { label_unshifted: "\u{043A}", insert_unshifted: "\u{043A}", label_shifted: "", insert_shifted: "" }, // 16  r -> K
-        LayoutKey { label_unshifted: "\u{0435}", insert_unshifted: "\u{0435}", label_shifted: "", insert_shifted: "" }, // 17  t -> Ye
-        LayoutKey { label_unshifted: "\u{043D}", insert_unshifted: "\u{043D}", label_shifted: "", insert_shifted: "" }, // 18  y -> N
-        LayoutKey { label_unshifted: "\u{0433}", insert_unshifted: "\u{0433}", label_shifted: "", insert_shifted: "" }, // 19  u -> G
-        LayoutKey { label_unshifted: "\u{0448}", insert_unshifted: "\u{0448}", label_shifted: "", insert_shifted: "" }, // 20  i -> Sh
-        LayoutKey { label_unshifted: "\u{0449}", insert_unshifted: "\u{0449}", label_shifted: "", insert_shifted: "" }, // 21  o -> Shch
-        LayoutKey { label_unshifted: "\u{0437}", insert_unshifted: "\u{0437}", label_shifted: "", insert_shifted: "" }, // 22  p -> Z
-        // slots 23-25: top-row bracket/backslash keys.
-        // [ and ] now hold Cyrillic letters; Shift produces their uppercase, no secondary symbol.
-        // \ is unchanged from US (Shift+\ = |).
-        LayoutKey { label_unshifted: "\u{0445}", insert_unshifted: "\u{0445}", label_shifted: "", insert_shifted: "" }, // 23  [ -> Kh
-        LayoutKey { label_unshifted: "\u{0457}", insert_unshifted: "\u{0457}", label_shifted: "", insert_shifted: "" }, // 24  ] -> Yi
-        LayoutKey { label_unshifted: "\\",       insert_unshifted: "\\",       label_shifted: "|", insert_shifted: "|" }, // 25  \ -> same
-        // slots 26-34: home alpha row (Cyrillic letters) - no shifted display
-        LayoutKey { label_unshifted: "\u{0444}", insert_unshifted: "\u{0444}", label_shifted: "", insert_shifted: "" }, // 26  a -> F
-        LayoutKey { label_unshifted: "\u{0456}", insert_unshifted: "\u{0456}", label_shifted: "", insert_shifted: "" }, // 27  s -> I
-        LayoutKey { label_unshifted: "\u{0432}", insert_unshifted: "\u{0432}", label_shifted: "", insert_shifted: "" }, // 28  d -> V
-        LayoutKey { label_unshifted: "\u{0430}", insert_unshifted: "\u{0430}", label_shifted: "", insert_shifted: "" }, // 29  f -> A
-        LayoutKey { label_unshifted: "\u{043F}", insert_unshifted: "\u{043F}", label_shifted: "", insert_shifted: "" }, // 30  g -> P
-        LayoutKey { label_unshifted: "\u{0440}", insert_unshifted: "\u{0440}", label_shifted: "", insert_shifted: "" }, // 31  h -> R
-        LayoutKey { label_unshifted: "\u{043E}", insert_unshifted: "\u{043E}", label_shifted: "", insert_shifted: "" }, // 32  j -> O
-        LayoutKey { label_unshifted: "\u{043B}", insert_unshifted: "\u{043B}", label_shifted: "", insert_shifted: "" }, // 33  k -> L
-        LayoutKey { label_unshifted: "\u{0434}", insert_unshifted: "\u{0434}", label_shifted: "", insert_shifted: "" }, // 34  l -> D
-        // slots 35-36: home-row keys that now hold Cyrillic letters.
-        // Shift produces their uppercase; there is no secondary punctuation symbol.
-        LayoutKey { label_unshifted: "\u{0436}", insert_unshifted: "\u{0436}", label_shifted: "", insert_shifted: "" }, // 35  ; -> Zh
-        LayoutKey { label_unshifted: "\u{0454}", insert_unshifted: "\u{0454}", label_shifted: "", insert_shifted: "" }, // 36  ' -> Ye
-        // slots 37-43: lower alpha row (Cyrillic letters) - no shifted display
-        LayoutKey { label_unshifted: "\u{044F}", insert_unshifted: "\u{044F}", label_shifted: "", insert_shifted: "" }, // 37  z -> Ya
-        LayoutKey { label_unshifted: "\u{0447}", insert_unshifted: "\u{0447}", label_shifted: "", insert_shifted: "" }, // 38  x -> Ch
-        LayoutKey { label_unshifted: "\u{0441}", insert_unshifted: "\u{0441}", label_shifted: "", insert_shifted: "" }, // 39  c -> S
-        LayoutKey { label_unshifted: "\u{043C}", insert_unshifted: "\u{043C}", label_shifted: "", insert_shifted: "" }, // 40  v -> M
-        LayoutKey { label_unshifted: "\u{0438}", insert_unshifted: "\u{0438}", label_shifted: "", insert_shifted: "" }, // 41  b -> I
-        LayoutKey { label_unshifted: "\u{0442}", insert_unshifted: "\u{0442}", label_shifted: "", insert_shifted: "" }, // 42  n -> T
-        LayoutKey { label_unshifted: "\u{044C}", insert_unshifted: "\u{044C}", label_shifted: "", insert_shifted: "" }, // 43  m -> soft sign
-        // slots 44-46: lower-row punctuation
-        LayoutKey { label_unshifted: "\u{0431}", insert_unshifted: "\u{0431}", label_shifted: "", insert_shifted: "" }, // 44  , -> B
-        LayoutKey { label_unshifted: "\u{044E}", insert_unshifted: "\u{044E}", label_shifted: "", insert_shifted: "" }, // 45  . -> Yu
-        LayoutKey { label_unshifted: ".",        insert_unshifted: ".",        label_shifted: ",", insert_shifted: "," }, // 46  / -> FULL STOP, COMMA
-    ],
-};
 
-/// All available layouts.
-///
-/// To add a new language: define a new LayoutDef constant (see UA above) and
-/// append a reference to it here.  The toggle button appears automatically.
-pub static LAYOUTS: &[&LayoutDef] = &[&US, &UA];
+/// Load a keymap TOML file from the same directory as `config_path`.
+/// Looks for `keymap_{name}.toml`.
+pub fn load_layout_from_toml(config_path: &str, name: &str) -> Option<LayoutDef> {
+    let dir = std::path::Path::new(config_path).parent()
+        .unwrap_or(std::path::Path::new("."));
+    let filename = format!("keymap_{}.toml", name);
+    let path = dir.join(&filename);
+    let content = std::fs::read_to_string(&path).ok()?;
+    let toml_data: KeymapFileToml = toml::from_str(&content)
+        .map_err(|e| eprintln!("[keymap] failed to parse {}: {}", path.display(), e))
+        .ok()?;
+    Some(LayoutDef { name: toml_data.name, keys: toml_data.keys })
+}
+
+/// Load active layouts from TOML files (falling back to built-ins).
+pub fn load_active_layouts(active_keymaps: &[String], config_path: &str) -> Vec<LayoutDef> {
+    let mut layouts = Vec::new();
+    for name in active_keymaps {
+        if let Some(layout) = load_layout_from_toml(config_path, name) {
+            layouts.push(layout);
+        } else if let Some(layout) = builtin_layout(name) {
+            layouts.push(layout);
+        } else {
+            eprintln!("[keymap] no definition found for keymap {:?}, skipping", name);
+        }
+    }
+    layouts
+}
+
