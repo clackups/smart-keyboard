@@ -96,6 +96,7 @@ enabled = false
 # gpio_pull = "null"
 
 
+[navigate]
 # When rollover = true, navigation wraps around at the edges of the keyboard:
 # moving left past the first column brings the cursor to the last column of the
 # same row, and vice-versa; moving down past the last row brings the cursor back
