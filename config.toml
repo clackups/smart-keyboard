@@ -150,7 +150,7 @@ pid = 0xbbd1
 # top of the keyboard window.  When false (the default) the display is hidden
 # and no CPU is spent updating the text buffer.
 # show_text_display = false
-# active_keymaps = ["us", "ua"]
+# active_keymaps = ["us", "ua", "de", "fr"]
 
 [ui.colors]
 # All colour values are 6-digit hex strings ("#RRGGBB").
