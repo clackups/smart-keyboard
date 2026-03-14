@@ -1078,7 +1078,7 @@ fn main() {
     let avail_w = sw - 2 * pad;
 
     let display_h  = if cfg.ui.show_text_display { ((sh as f32 / 12.0) as i32).max(10) } else { 0 };
-    let lang_btn_h = if layouts.len() <= 1 { 0i32 } else { ((sh as f32 / 12.0) as i32).max(10) };
+    let lang_btn_h = if layouts.len() <= 1 { 0 } else { ((sh as f32 / 12.0) as i32).max(10) };
 
     // Status bar occupies a thin strip at the very top of the window.
     let status_h = (sh / 24).max(18).min(32);
@@ -1402,8 +1402,7 @@ fn main() {
     if layouts.len() > 1 {
         for (li, def) in layouts.iter().enumerate() {
             let btn_x = pad_left + li as i32 * (lang_w + gap);
-            let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, None);
-            btn.set_label(&def.name);
+            let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, def.name.as_str());
             btn.set_color(if li == 0 { active_col } else { inactive_col });
             btn.set_label_color(colors.lang_btn_label);
             btn.set_label_size(btn_size);
@@ -1459,6 +1458,11 @@ fn main() {
                 narrator_c.borrow_mut().play(
                     &format!("lang_{}", keyboards::get_layouts()[li].name.to_lowercase()),
                     LANG_BTN_TONE_HZ,
+                );
+                debug_assert!(
+                    li < switch_scancodes_c.len(),
+                    "switch_scancodes and layouts are out of sync at index {}",
+                    li,
                 );
                 if li < switch_scancodes_c.len() {
                     hook_lang_c.on_lang_switch(&switch_scancodes_c[li]);
