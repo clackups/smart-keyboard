@@ -189,6 +189,14 @@ pub struct GamepadInputConfig {
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
     pub navigate_center: Option<u32>,
+    /// Time in milliseconds that a directional input must be held before the
+    /// first auto-repeat event fires.  Default: 300.
+    #[serde(default = "default_repeat_delay_ms")]
+    pub repeat_delay_ms: u64,
+    /// Interval in milliseconds between successive auto-repeat events once
+    /// repeating has started.  Default: 100.
+    #[serde(default = "default_repeat_interval_ms")]
+    pub repeat_interval_ms: u64,
 }
 
 fn default_activate()                 -> Option<u32> { Some(0x05) }
@@ -199,6 +207,8 @@ fn default_axis_activate()            -> Option<u32> { Some(0x05) }
 fn default_axis_threshold()           -> i32  { 16384 }
 fn default_rumble_duration_ms()       -> u16  { 50 }
 fn default_rumble_magnitude()         -> u16  { 0x4000 }
+fn default_repeat_delay_ms()          -> u64  { 300 }
+fn default_repeat_interval_ms()       -> u64  { 100 }
 
 /// Which signal level on a GPIO line means "active" (button pressed).
 #[derive(Deserialize, Clone, PartialEq, Eq, Default)]
@@ -308,6 +318,14 @@ pub struct GpioInputConfig {
     /// `"up"` / `"down"` / `"null"` (default: `"null"` = no pull).
     #[serde(default)]
     pub gpio_pull: GpioPull,
+    /// Time in milliseconds that a directional button must be held before the
+    /// first auto-repeat event fires.  Default: 300.
+    #[serde(default = "default_repeat_delay_ms")]
+    pub repeat_delay_ms: u64,
+    /// Interval in milliseconds between successive auto-repeat events once
+    /// repeating has started.  Default: 100.
+    #[serde(default = "default_repeat_interval_ms")]
+    pub repeat_interval_ms: u64,
 }
 
 impl Default for GpioInputConfig {
@@ -334,6 +352,8 @@ impl Default for GpioInputConfig {
             navigate_center: None,
             gpio_signal:     GpioSignal::Low,
             gpio_pull:       GpioPull::Null,
+            repeat_delay_ms:    default_repeat_delay_ms(),
+            repeat_interval_ms: default_repeat_interval_ms(),
         }
     }
 }
@@ -706,10 +726,11 @@ impl Default for GamepadInputConfig {
             activate_arrow_up:        None,
             activate_arrow_down:      None,
             navigate_center:          None,
+            repeat_delay_ms:          default_repeat_delay_ms(),
+            repeat_interval_ms:       default_repeat_interval_ms(),
         }
     }
 }
-
 impl Default for InputConfig {
     fn default() -> Self {
         InputConfig {
