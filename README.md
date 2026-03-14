@@ -47,7 +47,7 @@ loginctl enable-linger smartkbd
 
 # optional access to GPIO
 groupadd gpio
-sudo usermod -aG gpio smartkbd
+usermod -aG gpio,input smartkbd
 
 # Allow members of the smartkbd group access the BLE dongle serial interface
 cat >/etc/udev/rules.d/99-esp_hid_serial_bridge.rules << 'EOF'
