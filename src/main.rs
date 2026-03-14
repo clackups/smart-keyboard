@@ -194,6 +194,26 @@ impl ModState {
         self.altgr  = false;
     }
 
+    /// If `action` is LShift or RShift, deactivate the other Shift key and
+    /// return its `Action`; otherwise return `None`.
+    fn release_shift_peer(&mut self, action: Action) -> Option<Action> {
+        match action {
+            Action::LShift if self.rshift => { self.rshift = false; Some(Action::RShift) }
+            Action::RShift if self.lshift => { self.lshift = false; Some(Action::LShift) }
+            _ => None,
+        }
+    }
+
+    /// If `action` is Alt or AltGr, deactivate the other Alt key and return
+    /// its `Action`; otherwise return `None`.
+    fn release_alt_peer(&mut self, action: Action) -> Option<Action> {
+        match action {
+            Action::Alt   if self.altgr => { self.altgr = false; Some(Action::AltGr) }
+            Action::AltGr if self.alt   => { self.alt   = false; Some(Action::Alt)   }
+            _ => None,
+        }
+    }
+
     fn is_active(&self, action: Action) -> bool { *self.slot(action) }
 
     /// Returns `true` when either Shift key is held (Left or Right Shift).
@@ -721,6 +741,25 @@ fn execute_action(
                 if let Some(mut sf) = m.status.clone() {
                     sf.set_color(if now_active { colors.mod_active } else { colors.status_ind_bg });
                     sf.set_label_color(if now_active { colors.status_ind_active_text } else { colors.status_ind_text });
+                }
+            }
+        }
+        // Synchronize paired modifier keys: pressing/releasing either Shift
+        // releases the other Shift; pressing/releasing either Alt releases
+        // the other Alt (AltGr).
+        let peer = {
+            let mut ms = mod_state.borrow_mut();
+            let p = ms.release_shift_peer(action);
+            if p.is_some() { p } else { ms.release_alt_peer(action) }
+        };
+        if let Some(peer_action) = peer {
+            for m in mod_btns {
+                if m.action == peer_action {
+                    m.btn.clone().set_color(m.base_col);
+                    if let Some(mut sf) = m.status.clone() {
+                        sf.set_color(colors.status_ind_bg);
+                        sf.set_label_color(colors.status_ind_text);
+                    }
                 }
             }
         }
@@ -1597,6 +1636,9 @@ fn main() {
                 let action                = phys.action;
                 let scancode              = phys.scancode;
                 btn.set_callback(move |_| {
+                    // Capture shift state BEFORE execute_action, which releases
+                    // sticky modifiers (including Shift) for non-modifier keys.
+                    let shifted_pre = mod_state_c.borrow().is_shifted();
                     let key_str = execute_action(
                         action, scancode,
                         *layout_idx_c.borrow(),
@@ -1676,9 +1718,8 @@ fn main() {
                         false
                     };
                     if !jumped {
-                        let shifted_c = mod_state_c.borrow().is_shifted();
-                        let slug = action_audio_slug(action, *layout_idx_c.borrow(), shifted_c);
-                        let fallback = if shifted_c { action_audio_slug(action, *layout_idx_c.borrow(), false) } else { String::new() };
+                        let slug = action_audio_slug(action, *layout_idx_c.borrow(), shifted_pre);
+                        let fallback = if shifted_pre { action_audio_slug(action, *layout_idx_c.borrow(), false) } else { String::new() };
                         narrator_c.borrow_mut().play_with_fallback(
                             &slug,
                             &fallback,
