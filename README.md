@@ -37,14 +37,14 @@ As described in [Cage wiki](https://github.com/cage-kiosk/cage/wiki/Starting-Cag
 ```
 sudo -i
 
-useradd -c 'Cage Kiosk' -d /opt/cage -m -r -s /bin/bash cage
+useradd -c 'Cage Kiosk' -d /opt/smartkbd -m -r -s /bin/bash smartkbd
 
-cat >/etc/systemd/system/cage@.service <<'EOT'
+cat >/etc/systemd/system/smartkbd@.service <<'EOT'
 # This is a system unit for launching Cage with auto-login as the
 # user configured here. For this to work, wlroots must be built
 # with systemd logind support.
 [Unit]
-Description=Cage Wayland compositor on %I
+Description=Smartkbd Wayland compositor on %I
 After=systemd-user-sessions.service plymouth-quit-wait.service
 Before=graphical.target
 ConditionPathExists=/dev/tty0
@@ -54,10 +54,12 @@ Conflicts=getty@%i.service
 After=getty@%i.service
 [Service]
 Type=simple
-ExecStart=/usr/bin/cage -s /opt/cage/build/smart-keyboard/target/release/smart-keyboard 
+Environment="SMART_KBD_CONFIG_PATH=/opt/smartkbd/etc/"
+Environment="SMART_KBD_AUDIO_PATH=/opt/smartkbd/share/audio/"
+ExecStart=/usr/bin/cage -s /opt/smartkbd/bin/smart-keyboard 
 ExecStartPost=+sh -c "tty_name='%i'; exec chvt $${tty_name#tty}"
 Restart=always
-User=cage
+User=smartkbd
 UtmpIdentifier=%I
 UtmpMode=user
 TTYPath=/dev/%I
@@ -67,25 +69,22 @@ TTYVTDisallocate=yes
 StandardInput=tty-fail
 StandardOutput=journal
 StandardError=journal
-PAMName=cage
+PAMName=smartkbd
 [Install]
 WantedBy=graphical.target
 DefaultInstance=tty7
 EOT
 
-cat >/etc/pam.d/cage <<'EOT'
+cat >/etc/pam.d/smartkbd <<'EOT'
 auth           required        pam_unix.so nullok
 account        required        pam_unix.so
 session        required        pam_unix.so
 session        required        pam_systemd.so
 EOT
 
-systemctl enable cage@tty1.service
 
-systemctl set-default graphical.target
-
-su - cage
-# build the app under cage user
+su - smartkbd
+# build the app under smartkbd user
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 . "$HOME/.cargo/env"
 
@@ -94,14 +93,24 @@ cd $HOME/build
 git clone https://github.com/clackups/smart-keyboard.git
 cd smart-keyboard/
 cargo build --release
+
+mkdir -p $HOME/bin $HOME/etc $HOME/share
+cp target/release/smart-keyboard $HOME/bin/
+cp config.toml keymap_*.toml $HOME/etc
+cp -r audio/ $HOME/share/
+
 # finished, goo back to root
 exit
 
+
+systemctl enable smartkbd@tty1.service
+systemctl set-default graphical.target
+
 # see if the smart keyboard starts on your screen
-systemctl start cage@tty1.service
+systemctl start smartkbd@tty1.service
 
 # service startup journal
-journalctl -u cage@tty1.service -f
+journalctl -u smartkbd@tty1.service -f
 
 # smart-keyboard log is sent to the common journal
 journalctl -f
