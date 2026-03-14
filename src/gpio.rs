@@ -7,14 +7,21 @@
 // becomes readable on each edge transition.  This requires the GPIO chip to
 // expose a per-line hardware IRQ (gpiod_to_irq must succeed in the kernel).
 //
-// Fallback path: when LINEEVENT fails (e.g. the GPIO chip is an expander with
-// no per-line IRQ, or the line is hardware-fixed as an output), the code falls
-// back to GPIO_GET_LINEHANDLE_IOCTL and reads the current line value on every
-// poll() call, synthesising press/release events from value changes.  This is
-// the same mechanism used by gpioget(1) and works on all GPIO chips that
-// support read access.
+// Polling fallback: when LINEEVENT fails (e.g. the GPIO chip is an expander
+// with no per-line IRQ), the code retries with GPIO_GET_LINEHANDLE_IOCTL and
+// reads the current line value on every poll() call.  This is the same
+// mechanism used by gpioget(1) and works on all GPIO chips that support read
+// access.
 //
-// The poll() method handles both modes without blocking.
+// Wrong-chip fallback: when both ioctls fail with EINVAL the most common cause
+// is that the configured chip (/dev/gpiochip0 by default) has fewer GPIO lines
+// than the requested line offset (e.g. gpioget 1 76 uses /dev/gpiochip1, not
+// /dev/gpiochip0).  The code uses GPIO_GET_CHIPINFO_IOCTL to confirm this and
+// then probes /dev/gpiochip0 .. /dev/gpiochip7 to find the chip that hosts the
+// line.  A hint is printed so the user can set chip = "/dev/gpiochipN" in their
+// config to avoid the scan on future runs.
+//
+// The poll() method handles both event and polling modes without blocking.
 
 use std::fs::{File, OpenOptions};
 use std::os::unix::io::{AsRawFd, FromRawFd};
@@ -70,10 +77,21 @@ const GPIO_GET_LINEHANDLE_IOCTL: libc::c_ulong = 0xC16C_4203;
 ///   total                                         = 0xC040_4208
 const GPIOHANDLE_GET_LINE_VALUES_IOCTL: libc::c_ulong = 0xC040_4208;
 
+/// `GPIO_GET_CHIPINFO_IOCTL` = `_IOR('B', 0x01, struct gpiochip_info)`.
+///
+/// Computed as:
+///   direction (read = 2) << 30                   = 0x8000_0000
+///   size (sizeof gpiochip_info = 68 = 0x44) << 16 = 0x0044_0000
+///   type ('B' = 0x42) << 8                       = 0x0000_4200
+///   number (0x01)                                = 0x0000_0001
+///   total                                        = 0x8044_4201
+const GPIO_GET_CHIPINFO_IOCTL: libc::c_ulong = 0x8044_4201;
+
 // Compile-time sanity checks.
 const _: () = assert!(GPIO_GET_LINEEVENT_IOCTL == 0xC0304204);
 const _: () = assert!(GPIO_GET_LINEHANDLE_IOCTL == 0xC16C4203);
 const _: () = assert!(GPIOHANDLE_GET_LINE_VALUES_IOCTL == 0xC0404208);
+const _: () = assert!(GPIO_GET_CHIPINFO_IOCTL == 0x80444201);
 
 // =============================================================================
 // Linux GPIO v1 ABI structs
@@ -145,6 +163,25 @@ struct GpioHandleData {
 }
 
 const _: () = assert!(std::mem::size_of::<GpioHandleData>() == 64);
+
+/// `struct gpiochip_info` from `<linux/gpio.h>` (68 bytes).
+///
+/// Used with `GPIO_GET_CHIPINFO_IOCTL` to read the name, label, and number of
+/// GPIO lines exposed by a chip device.
+///
+/// Layout:
+/// - offset  0: name   ([u8; 32], 32 bytes)
+/// - offset 32: label  ([u8; 32], 32 bytes)
+/// - offset 64: lines  (u32,       4 bytes)
+/// - total: 68 bytes
+#[repr(C)]
+struct GpioChipInfo {
+    name:  [u8; 32],
+    label: [u8; 32],
+    lines: u32,
+}
+
+const _: () = assert!(std::mem::size_of::<GpioChipInfo>() == 68);
 
 // =============================================================================
 // Public types
@@ -222,15 +259,136 @@ pub struct GpioInput {
     lines: Vec<GpioLine>,
 }
 
+// =============================================================================
+// Per-chip helpers (free functions)
+// =============================================================================
+
+/// Return the number of GPIO lines on `chip_fd` via `GPIO_GET_CHIPINFO_IOCTL`.
+///
+/// Returns `0` on failure (caller treats 0 as "unknown").
+fn chip_ngpio(chip_fd: libc::c_int) -> u32 {
+    let mut info = GpioChipInfo { name: [0u8; 32], label: [0u8; 32], lines: 0 };
+    // SAFETY: `chip_fd` is a valid open chip fd; `info` is a correctly
+    // laid-out `GpioChipInfo` and `GPIO_GET_CHIPINFO_IOCTL` expects exactly
+    // that type at that size (68 bytes).
+    let ret = unsafe { libc::ioctl(chip_fd, GPIO_GET_CHIPINFO_IOCTL, &mut info) };
+    if ret >= 0 { info.lines } else { 0 }
+}
+
+/// Try to open a single GPIO line on `chip_fd`.
+///
+/// Attempts `GPIO_GET_LINEEVENT_IOCTL` first (edge-event delivery, requires a
+/// per-line hardware IRQ).  On failure, falls back to
+/// `GPIO_GET_LINEHANDLE_IOCTL` (polling mode, no IRQ required).  When
+/// `bias_flags` are non-zero and the first attempt returns `EINVAL` (kernel
+/// < 5.5 does not support bias flags), each path is automatically retried
+/// without bias flags.
+///
+/// Returns `Ok((file, polled))` on success:
+///   - `polled = false`: event mode (LINEEVENT), edge records via `read()`.
+///   - `polled = true`:  polling mode (LINEHANDLE), value via ioctl.
+///
+/// Returns `Err(last_error)` when both paths fail; `last_error` is the errno
+/// from the final LINEHANDLE attempt.
+fn try_line_on_chip_fd(
+    chip_fd:     libc::c_int,
+    line_offset: u32,
+    handle_flags: u32,
+    bias_flags:  u32,
+    event_flags: u32,
+    label:       &[u8],
+) -> Result<(File, bool), std::io::Error> {
+    // ---- LINEEVENT path ----
+    let mut req = GpioEventRequest {
+        lineoffset:     line_offset,
+        handleflags:    handle_flags,
+        eventflags:     event_flags,
+        consumer_label: [0u8; 32],
+        fd:             -1,
+    };
+    let copy_len = label.len().min(req.consumer_label.len() - 1);
+    req.consumer_label[..copy_len].copy_from_slice(&label[..copy_len]);
+
+    // SAFETY: `chip_fd` is a valid open chip fd; `req` is a correctly
+    // laid-out `GpioEventRequest`.
+    let ret = unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEEVENT_IOCTL, &mut req) };
+    let le_err = std::io::Error::last_os_error();
+
+    // On EINVAL with bias flags: kernel < 5.5 does not support them; retry.
+    let ret = if ret < 0 && bias_flags != 0
+        && le_err.raw_os_error() == Some(libc::EINVAL)
+    {
+        req.handleflags = GPIOHANDLE_REQUEST_INPUT;
+        // SAFETY: same as above.
+        unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEEVENT_IOCTL, &mut req) }
+    } else {
+        ret
+    };
+
+    if ret >= 0 {
+        // Set the event fd non-blocking.
+        // SAFETY: `req.fd` is a valid kernel-assigned fd.
+        let nb = unsafe { libc::fcntl(req.fd, libc::F_SETFL, libc::O_NONBLOCK) };
+        if nb < 0 {
+            let e = std::io::Error::last_os_error();
+            // SAFETY: `req.fd` is a valid, owned fd.
+            unsafe { libc::close(req.fd); }
+            return Err(e);
+        }
+        // SAFETY: `req.fd` is a valid, owned fd.
+        return Ok((unsafe { File::from_raw_fd(req.fd) }, false));
+    }
+
+    // ---- LINEHANDLE path (polling fallback) ----
+    let mut hreq = GpioHandleRequest {
+        lineoffsets:    [0u32; 64],
+        flags:          handle_flags,
+        default_values: [0u8; 64],
+        consumer_label: [0u8; 32],
+        lines:          1,
+        fd:             -1,
+    };
+    hreq.lineoffsets[0] = line_offset;
+    let hcopy = label.len().min(hreq.consumer_label.len() - 1);
+    hreq.consumer_label[..hcopy].copy_from_slice(&label[..hcopy]);
+
+    // SAFETY: `chip_fd` is a valid open chip fd; `hreq` is a correctly
+    // laid-out `GpioHandleRequest`.
+    let hret = unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEHANDLE_IOCTL, &mut hreq) };
+    let hfirst_err = std::io::Error::last_os_error();
+
+    // On EINVAL with bias flags: retry without them.
+    let hret = if hret < 0 && bias_flags != 0
+        && hfirst_err.raw_os_error() == Some(libc::EINVAL)
+    {
+        hreq.flags = GPIOHANDLE_REQUEST_INPUT;
+        // SAFETY: same as above.
+        unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEHANDLE_IOCTL, &mut hreq) }
+    } else {
+        hret
+    };
+
+    if hret >= 0 {
+        // SAFETY: `hreq.fd` is a valid, owned fd.
+        return Ok((unsafe { File::from_raw_fd(hreq.fd) }, true));
+    }
+
+    Err(std::io::Error::last_os_error())
+}
+
 impl GpioInput {
-    /// Open all configured GPIO lines on the chip device.
+    /// Open all configured GPIO lines.
     ///
-    /// Tries `GPIO_GET_LINEEVENT_IOCTL` first (efficient edge-based delivery).
-    /// If that fails (e.g. the GPIO chip has no per-line IRQ mapping, which is
-    /// common for I2C/SPI expanders and output-configured GPIO banks), falls
-    /// back to `GPIO_GET_LINEHANDLE_IOCTL` and reads the current value on
-    /// every `poll()` call.  Lines that cannot be opened at all are skipped
-    /// with a warning.
+    /// For each configured line the method first tries the configured chip
+    /// device (`cfg.chip`, default `/dev/gpiochip0`).  If both
+    /// `GPIO_GET_LINEEVENT_IOCTL` and `GPIO_GET_LINEHANDLE_IOCTL` fail with
+    /// `EINVAL` and the chip reports that the line offset is beyond its range,
+    /// the method automatically probes `/dev/gpiochip0` .. `/dev/gpiochip7` to
+    /// find the chip that actually owns the line.  A hint is logged so the user
+    /// can make the selection permanent by adding `chip = "/dev/gpiochipN"` to
+    /// the `[input.gpio]` section in their config.
+    ///
+    /// Lines that cannot be opened on any chip are skipped with a warning.
     ///
     /// Returns `None` when no lines are configured or none could be opened.
     pub fn open(cfg: &GpioInputConfig) -> Option<Self> {
@@ -265,7 +423,7 @@ impl GpioInput {
             return None;
         }
 
-        // Open the GPIO chip character device (read+write required by the ABI).
+        // Open the configured GPIO chip (read+write required by the ABI).
         let chip_file = match OpenOptions::new()
             .read(true)
             .write(true)
@@ -298,133 +456,103 @@ impl GpioInput {
         // Request both edges so we can see both press and release.
         let event_flags = GPIOEVENT_REQUEST_RISING_EDGE | GPIOEVENT_REQUEST_FALLING_EDGE;
 
+        let label = b"smart-keyboard";
         let mut lines: Vec<GpioLine> = Vec::with_capacity(configured.len());
 
         for (line_offset, action) in configured {
-            let mut req = GpioEventRequest {
-                lineoffset:     line_offset,
-                handleflags:    handle_flags,
-                eventflags:     event_flags,
-                consumer_label: [0u8; 32],
-                fd:             -1,
-            };
-
-            // Fill a NUL-terminated consumer label for kernel diagnostics.
-            let label = b"smart-keyboard";
-            let copy_len = label.len().min(req.consumer_label.len() - 1);
-            req.consumer_label[..copy_len].copy_from_slice(&label[..copy_len]);
-
-            // SAFETY: `chip_fd` is a valid open file descriptor; `req` is a
-            // correctly laid-out `GpioEventRequest` and `GPIO_GET_LINEEVENT_IOCTL`
-            // expects exactly that type at that size (48 bytes).
-            let ret = unsafe {
-                libc::ioctl(chip_fd, GPIO_GET_LINEEVENT_IOCTL, &mut req)
-            };
-            // Capture errno immediately so it is not overwritten by later calls.
-            let first_err = std::io::Error::last_os_error();
-
-            // If the request with bias flags fails (EINVAL on kernels < 5.5),
-            // retry without bias flags so the line can still be used.
-            let ret = if ret < 0 && bias_flags != 0
-                && first_err.raw_os_error() == Some(libc::EINVAL)
+            match try_line_on_chip_fd(chip_fd, line_offset, handle_flags,
+                                      bias_flags, event_flags, label)
             {
-                eprintln!(
-                    "[gpio] Warning: bias flags not supported for line {} ({:?}), retrying without pull resistor",
-                    line_offset, action,
-                );
-                req.handleflags = GPIOHANDLE_REQUEST_INPUT;
-                unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEEVENT_IOCTL, &mut req) }
-            } else {
-                ret
-            };
-
-            if ret < 0 {
-                // LINEEVENT ioctl failed.  The most common cause is that the
-                // GPIO chip has no per-line IRQ mapping (gpiod_to_irq() returns
-                // <= 0 in the kernel), which happens for I2C/SPI GPIO expanders
-                // and lines that are hardware-fixed as outputs.  Fall back to
-                // LINEHANDLE + periodic polling, which only requires read access
-                // and is the same mechanism used by gpioget(1).
-                let lineevent_err = std::io::Error::last_os_error();
-                eprintln!(
-                    "[gpio] LINEEVENT ioctl failed for line {} ({:?}): {}; \
-                     trying LINEHANDLE (polling fallback)",
-                    line_offset, action, lineevent_err,
-                );
-
-                let mut hreq = GpioHandleRequest {
-                    lineoffsets:    [0u32; 64],
-                    flags:          handle_flags,
-                    default_values: [0u8; 64],
-                    consumer_label: [0u8; 32],
-                    lines:          1,
-                    fd:             -1,
-                };
-                hreq.lineoffsets[0] = line_offset;
-                let hcopy = label.len().min(hreq.consumer_label.len() - 1);
-                hreq.consumer_label[..hcopy].copy_from_slice(&label[..hcopy]);
-
-                // SAFETY: `chip_fd` is a valid open fd; `hreq` is a correctly
-                // laid-out `GpioHandleRequest` and `GPIO_GET_LINEHANDLE_IOCTL`
-                // expects exactly that type at that size (364 bytes).
-                let hret = unsafe {
-                    libc::ioctl(chip_fd, GPIO_GET_LINEHANDLE_IOCTL, &mut hreq)
-                };
-                let hfirst_err = std::io::Error::last_os_error();
-
-                // Also retry without bias flags for older kernels.
-                let hret = if hret < 0 && bias_flags != 0
-                    && hfirst_err.raw_os_error() == Some(libc::EINVAL)
-                {
-                    hreq.flags = GPIOHANDLE_REQUEST_INPUT;
-                    unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEHANDLE_IOCTL, &mut hreq) }
-                } else {
-                    hret
-                };
-
-                if hret < 0 {
+                Ok((file, polled)) => {
                     eprintln!(
-                        "[gpio] LINEHANDLE ioctl also failed for line {} ({:?}): {}",
+                        "[gpio] line {} opened for action {:?}{}",
                         line_offset, action,
-                        std::io::Error::last_os_error(),
+                        if polled { " (polling mode)" } else { "" },
                     );
-                    continue;
+                    lines.push(GpioLine {
+                        file, action, active_high, pressed: false, polled,
+                    });
                 }
 
-                // SAFETY: `hreq.fd` is a valid, owned file descriptor.
-                let file = unsafe { File::from_raw_fd(hreq.fd) };
-                eprintln!(
-                    "[gpio] line {} opened for action {:?} (polling mode)",
-                    line_offset, action,
-                );
-                lines.push(GpioLine {
-                    file, action, active_high, pressed: false, polled: true,
-                });
-                continue;
+                Err(ref e) if e.raw_os_error() == Some(libc::EINVAL) => {
+                    // Both LINEEVENT and LINEHANDLE returned EINVAL.
+                    // The most likely cause is that the line offset exceeds the
+                    // configured chip's gpio count — the line is on a different
+                    // chip device (e.g. /dev/gpiochip1 instead of /dev/gpiochip0).
+                    //
+                    // Confirm via CHIPINFO and, if out-of-range, scan other chips.
+                    let ngpio = chip_ngpio(chip_fd);
+                    let out_of_range = ngpio > 0 && line_offset >= ngpio;
+
+                    if out_of_range {
+                        eprintln!(
+                            "[gpio] line {} out of range for {:?} ({} lines); \
+                             searching other gpiochip devices",
+                            line_offset, cfg.chip, ngpio,
+                        );
+                    } else {
+                        eprintln!(
+                            "[gpio] cannot open line {} ({:?}) on {:?}: {}; \
+                             trying other gpiochip devices",
+                            line_offset, action, cfg.chip, e,
+                        );
+                    }
+
+                    // Probe /dev/gpiochip0 .. /dev/gpiochip7, skipping the
+                    // already-tried configured chip.
+                    let mut found = false;
+                    for n in 0u8..=7 {
+                        let alt_path = format!("/dev/gpiochip{}", n);
+                        if alt_path == cfg.chip {
+                            continue;
+                        }
+                        let alt_file = match OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .open(&alt_path)
+                        {
+                            Ok(f) => f,
+                            Err(_) => continue,
+                        };
+                        let alt_fd = alt_file.as_raw_fd();
+
+                        match try_line_on_chip_fd(alt_fd, line_offset, handle_flags,
+                                                  bias_flags, event_flags, label)
+                        {
+                            Ok((file, polled)) => {
+                                eprintln!(
+                                    "[gpio] line {} found on {} for action {:?}{} \
+                                     (hint: add chip = {:?} to [input.gpio] in config)",
+                                    line_offset, alt_path, action,
+                                    if polled { " (polling mode)" } else { "" },
+                                    alt_path,
+                                );
+                                lines.push(GpioLine {
+                                    file, action, active_high, pressed: false, polled,
+                                });
+                                found = true;
+                                break;
+                            }
+                            Err(_) => {}
+                        }
+                    }
+
+                    if !found {
+                        eprintln!(
+                            "[gpio] line {} ({:?}): not found on any gpiochip device \
+                             (gpiochip0..7)",
+                            line_offset, action,
+                        );
+                    }
+                }
+
+                Err(e) => {
+                    eprintln!(
+                        "[gpio] cannot open line {} ({:?}): {}",
+                        line_offset, action, e,
+                    );
+                }
             }
-
-            // LINEEVENT ioctl succeeded.
-            // The kernel filled `req.fd` with a new event file descriptor.
-            // Set it non-blocking so poll() can drain it without stalling.
-            // SAFETY: `req.fd` is a valid kernel-assigned file descriptor.
-            let nb = unsafe { libc::fcntl(req.fd, libc::F_SETFL, libc::O_NONBLOCK) };
-            if nb < 0 {
-                eprintln!(
-                    "[gpio] fcntl O_NONBLOCK failed for line {} ({:?}): {}",
-                    line_offset, action,
-                    std::io::Error::last_os_error(),
-                );
-                // SAFETY: `req.fd` is a valid, owned file descriptor.
-                unsafe { libc::close(req.fd); }
-                continue;
-            }
-
-            // Wrap in a File so the fd is closed on drop.
-            // SAFETY: `req.fd` is a valid, owned file descriptor.
-            let file = unsafe { File::from_raw_fd(req.fd) };
-
-            eprintln!("[gpio] line {} opened for action {:?}", line_offset, action);
-            lines.push(GpioLine { file, action, active_high, pressed: false, polled: false });
         }
 
         // The chip fd is only needed for the ioctl calls above.
