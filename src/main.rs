@@ -1301,6 +1301,7 @@ fn main() {
                 ble_cfg.vid,
                 ble_cfg.pid,
                 ble_cfg.serial.clone(),
+                ble_cfg.key_release_delay,
             );
 
             // Intervals for the BLE connection-management timer.

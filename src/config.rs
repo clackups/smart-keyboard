@@ -414,14 +414,24 @@ pub struct BleOutputConfig {
     pub pid: u16,
     /// Optional USB serial string; when absent, the first matching device is used.
     pub serial: Option<String>,
+    /// Delay in microseconds between the key-press report and the key-release
+    /// report (K0000).  Gives the remote host time to register the key press
+    /// before the key is released.  Default: 20000 (20 ms).
+    #[serde(default = "BleOutputConfig::default_key_release_delay")]
+    pub key_release_delay: u32,
+}
+
+impl BleOutputConfig {
+    fn default_key_release_delay() -> u32 { 20000 }
 }
 
 impl Default for BleOutputConfig {
     fn default() -> Self {
         BleOutputConfig {
-            vid:    0x1209,
-            pid:    0xbbd1,
-            serial: None,
+            vid:               0x1209,
+            pid:               0xbbd1,
+            serial:            None,
+            key_release_delay: Self::default_key_release_delay(),
         }
     }
 }
