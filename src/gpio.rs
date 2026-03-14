@@ -111,6 +111,14 @@ pub enum GpioAction {
     ActivateEnter,
     /// Produce the Space output directly.
     ActivateSpace,
+    /// Produce the Left Arrow output directly.
+    ActivateArrowLeft,
+    /// Produce the Right Arrow output directly.
+    ActivateArrowRight,
+    /// Produce the Up Arrow output directly.
+    ActivateArrowUp,
+    /// Produce the Down Arrow output directly.
+    ActivateArrowDown,
     /// Move the selection to the center of the keyboard.
     NavigateCenter,
 }
@@ -168,6 +176,10 @@ impl GpioInput {
             (cfg.activate_altgr,  GpioAction::ActivateAltGr),
             (cfg.activate_enter,  GpioAction::ActivateEnter),
             (cfg.activate_space,  GpioAction::ActivateSpace),
+            (cfg.activate_arrow_left,  GpioAction::ActivateArrowLeft),
+            (cfg.activate_arrow_right, GpioAction::ActivateArrowRight),
+            (cfg.activate_arrow_up,    GpioAction::ActivateArrowUp),
+            (cfg.activate_arrow_down,  GpioAction::ActivateArrowDown),
             (cfg.navigate_center, GpioAction::NavigateCenter),
         ];
 

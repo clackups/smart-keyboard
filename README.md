@@ -156,6 +156,10 @@ printable characters they equal the lowercase ASCII code.
 | `activate_altgr` | *(disabled)* | Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | Produces the Enter output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | Produces the Space output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_arrow_left` | *(disabled)* | Produces the Left Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_arrow_right` | *(disabled)* | Produces the Right Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_arrow_up` | *(disabled)* | Produces the Up Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_arrow_down` | *(disabled)* | Produces the Down Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 **Example**
@@ -168,13 +172,17 @@ navigate_left  = 0xff51   # Key::Left
 navigate_right = 0xff53   # Key::Right
 activate       = 0x20     # Space
 menu           = 0x6d     # 'm'
-# activate_shift  = null
-# activate_ctrl   = null
-# activate_alt    = null
-# activate_altgr  = null
-# activate_enter  = null
-# activate_space  = null
-# navigate_center = null
+# activate_shift       = null
+# activate_ctrl        = null
+# activate_alt         = null
+# activate_altgr       = null
+# activate_enter       = null
+# activate_space       = null
+# activate_arrow_left  = null
+# activate_arrow_right = null
+# activate_arrow_up    = null
+# activate_arrow_down  = null
+# navigate_center      = null
 ```
 
 ---
@@ -212,6 +220,10 @@ a key to disable that action.
 | `activate_altgr` | *(disabled)* | Button index for activate-with-AltGr. Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | Button index for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | Button index for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_left` | *(disabled)* | Button index for activate-Left Arrow. Produces the Left Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_right` | *(disabled)* | Button index for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_up` | *(disabled)* | Button index for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_down` | *(disabled)* | Button index for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
@@ -254,13 +266,17 @@ activate = 0x05   # A/South button
 menu     = 0x08   # Start/Menu button
 
 # Activate-with-modifier buttons (comment out to disable)
-# activate_shift  = null
-# activate_ctrl   = null
-# activate_alt    = null
-# activate_altgr  = null
-# activate_enter  = null
-# activate_space  = null
-# navigate_center = null
+# activate_shift       = null
+# activate_ctrl        = null
+# activate_alt         = null
+# activate_altgr       = null
+# activate_enter       = null
+# activate_space       = null
+# activate_arrow_left  = null
+# activate_arrow_right = null
+# activate_arrow_up    = null
+# activate_arrow_down  = null
+# navigate_center      = null
 
 # Analog stick navigation
 # axis_navigate_horizontal = 0
@@ -324,6 +340,10 @@ Remove or set a field to `null` to disable that action.
 | `activate_altgr` | *(disabled)* | GPIO line number for activate-with-AltGr. Remove or set to `null` to disable. |
 | `activate_enter` | *(disabled)* | GPIO line number for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_space` | *(disabled)* | GPIO line number for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_left` | *(disabled)* | GPIO line number for activate-Left Arrow. Produces the Left Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_right` | *(disabled)* | GPIO line number for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_up` | *(disabled)* | GPIO line number for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_arrow_down` | *(disabled)* | GPIO line number for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | GPIO line number for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 **Example** — four directional buttons and an activate button using a pull-up

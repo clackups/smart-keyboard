@@ -2032,6 +2032,44 @@ fn main() {
                     return true;
                 }
 
+                // activate_arrow_left/right/up/down: directly produce the
+                // corresponding Arrow key output.
+                let which_arrow: Option<(Action, u16)> =
+                    if      nav_keys.activate_arrow_left .map_or(false, |ak| k == ak) { Some((Action::ArrowLeft,  0x69)) }
+                    else if nav_keys.activate_arrow_right.map_or(false, |ak| k == ak) { Some((Action::ArrowRight, 0x6a)) }
+                    else if nav_keys.activate_arrow_up   .map_or(false, |ak| k == ak) { Some((Action::ArrowUp,    0x67)) }
+                    else if nav_keys.activate_arrow_down .map_or(false, |ak| k == ak) { Some((Action::ArrowDown,  0x6c)) }
+                    else { None };
+
+                if let Some((arrow_action, arrow_sc)) = which_arrow {
+                    let key_str = execute_action(
+                        arrow_action, arrow_sc,
+                        *layout_idx_c.borrow(),
+                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
+                    );
+                    *active_nav_key_c.borrow_mut() = Some((arrow_sc, key_str));
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            );
+                        }
+                    }
+                    return true;
+                }
+
                 // activate_shift / ctrl / alt / altgr: force the modifier on,
                 // then activate the currently selected key as if that modifier
                 // were already held.  The modifier is auto-released by
@@ -2113,7 +2151,11 @@ fn main() {
                     || nav_keys.activate_alt   .map_or(false, |ak| k == ak)
                     || nav_keys.activate_altgr .map_or(false, |ak| k == ak)
                     || nav_keys.activate_enter .map_or(false, |ak| k == ak)
-                    || nav_keys.activate_space .map_or(false, |ak| k == ak);
+                    || nav_keys.activate_space .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_left .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_right.map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_up   .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_arrow_down .map_or(false, |ak| k == ak);
                 if is_activate_variant {
                     if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                         hook_c.on_key_release(sc, &ks);
@@ -2427,6 +2469,50 @@ fn main() {
                                 show_text_display_gp,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::ActivateArrowLeft
+                    | GamepadAction::ActivateArrowRight
+                    | GamepadAction::ActivateArrowUp
+                    | GamepadAction::ActivateArrowDown => {
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        let (arrow_action, arrow_sc) = match evt.action {
+                            GamepadAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
+                            GamepadAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
+                            GamepadAction::ActivateArrowUp    => (Action::ArrowUp,    0x67u16),
+                            _                                 => (Action::ArrowDown,  0x6cu16),
+                        };
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                arrow_action, arrow_sc,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((arrow_sc, key_str));
                             if gp_center_after_activate {
                                 if let Some(center) = {
                                     let ab = all_btns_c.borrow();
@@ -2900,6 +2986,49 @@ fn main() {
                                 show_text_display_gpio,
                             );
                             *active_nav_key_c.borrow_mut() = Some((0x39, key_str));
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::ActivateArrowLeft
+                    | GpioAction::ActivateArrowRight
+                    | GpioAction::ActivateArrowUp
+                    | GpioAction::ActivateArrowDown => {
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        let (arrow_action, arrow_sc) = match evt.action {
+                            GpioAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
+                            GpioAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
+                            GpioAction::ActivateArrowUp    => (Action::ArrowUp,    0x67u16),
+                            _                              => (Action::ArrowDown,  0x6cu16),
+                        };
+                        if evt.pressed {
+                            let key_str = execute_action(
+                                arrow_action, arrow_sc,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((arrow_sc, key_str));
                             if gpio_center_after_activate {
                                 if let Some(center) = {
                                     let ab = all_btns_c.borrow();
