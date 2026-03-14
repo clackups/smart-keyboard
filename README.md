@@ -19,7 +19,7 @@ recommended compositor, although Weston, Sway and others can also be
 used.
 
 
-## Build prerequisites (Debian / Ubuntu)
+## Prerequisites (Debian / Ubuntu)
 
 ```sh
 sudo apt install -y \
@@ -28,6 +28,11 @@ sudo apt install -y \
     libwayland-dev wayland-protocols \
     libxkbcommon-dev libcairo2-dev libpango1.0-dev libudev-dev \
     libxfixes-dev libxcursor-dev libxinerama-dev libdbus-1-dev
+
+# Optional packages to enable audio output
+sudo apt install -y \
+    dbus-user-session pipewire pipewire-pulse wireplumber \
+    pipewire-alsa alsa-utils pulseaudio-utils
 ```
 
 ## Setting up a kiosk display
@@ -38,6 +43,7 @@ As described in [Cage wiki](https://github.com/cage-kiosk/cage/wiki/Starting-Cag
 sudo -i
 
 useradd -c 'Cage Kiosk' -d /opt/smartkbd -m -r -s /bin/bash smartkbd
+loginctl enable-linger smartkbd
 
 cat >/etc/systemd/system/smartkbd@.service <<'EOT'
 # This is a system unit for launching Cage with auto-login as the
@@ -99,6 +105,9 @@ cp target/release/smart-keyboard $HOME/bin/
 cp config.toml keymap_*.toml $HOME/etc
 cp -r audio/ $HOME/share/
 
+# Optionally, enable audio
+systemctl --user daemon-reload
+systemctl --user --now enable pipewire pipewire-pulse wireplumber
 # finished, goo back to root
 exit
 
@@ -116,7 +125,6 @@ journalctl -u smartkbd@tty1.service -f
 journalctl -f
 
 # The keyboard opens full-screen on the active Wayland display.
-# TODO: audio
 ```
 
 
