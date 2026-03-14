@@ -807,9 +807,12 @@ fn label_to_audio_slug(label: &str) -> String {
 /// directory.  Returns an empty string for actions that carry no narration
 /// (e.g. [`Action::Noop`]).
 ///
-/// When `shifted` is `true` and the key has a non-empty `label_shifted`,
-/// the slug is computed from the shifted label instead of the unshifted one.
-/// Letter keys (whose `label_shifted` is empty) always use the unshifted slug
+/// When `shifted` is `true` and the key has a non-empty `insert_shifted`,
+/// the slug is computed from `insert_shifted` instead of `label_unshifted`.
+/// `insert_shifted` is used in preference to `label_shifted` because some
+/// keymaps use FLTK escape sequences in `label_shifted` (e.g. `"@@"` for `@`
+/// or `"&&"` for `&`), while `insert_shifted` always holds the plain character.
+/// Letter keys (whose `insert_shifted` is empty) always use the unshifted slug
 /// regardless of `shifted`.
 fn action_audio_slug(action: Action, layout_idx: usize, shifted: bool) -> String {
     match action {
@@ -817,8 +820,8 @@ fn action_audio_slug(action: Action, layout_idx: usize, shifted: bool) -> String
             let layout = &keyboards::get_layouts()[layout_idx];
             let layout_name = layout.name.to_lowercase();
             let key = &layout.keys[slot];
-            let label = if shifted && !key.label_shifted.is_empty() {
-                key.label_shifted.as_str()
+            let label = if shifted && !key.insert_shifted.is_empty() {
+                key.insert_shifted.as_str()
             } else {
                 key.label_unshifted.as_str()
             };
@@ -864,7 +867,7 @@ fn action_audio_slug(action: Action, layout_idx: usize, shifted: bool) -> String
 /// Return the audio-file slug for the current navigation selection.
 ///
 /// When `shifted` is `true`, delegates to [`action_audio_slug`] with
-/// `shifted = true` so that keys with a non-empty `label_shifted` produce the
+/// `shifted = true` so that keys with a non-empty `insert_shifted` produce the
 /// shifted slug.  Language-toggle buttons are never affected by shift.
 fn nav_audio_slug(
     sel: NavSel,
@@ -1012,7 +1015,7 @@ fn nav_tone_freq(
 /// * If `do_rumble` is set and a gamepad is connected, triggers a short rumble.
 /// * Plays the audio cue (narration clip or tone) for the new selection.
 ///   When `shifted` is `true` and the focused key has a non-empty
-///   `label_shifted`, the shifted audio clip is attempted first; if the file
+///   `insert_shifted`, the shifted audio clip is attempted first; if the file
 ///   does not exist on disk, the unshifted clip is played as a fallback.
 ///
 /// Does nothing when `changed` is `false`.
