@@ -1054,13 +1054,13 @@ fn on_nav_changed(
 fn main() {
     let cfg = config::Config::load();
 
-    // Determine config path for keymap file lookup.
-    let config_path = std::env::var("SMART_KBD_CONFIG_PATH")
-        .unwrap_or_else(|_| "config.toml".into());
+    // Determine config directory for keymap file lookup.
+    let config_dir = std::env::var("SMART_KBD_CONFIG_PATH")
+        .unwrap_or_else(|_| ".".into());
 
     // Load active layouts (from TOML files or built-in fallbacks).
     let active_keymaps = cfg.ui.active_keymaps.clone();
-    let loaded_layouts = keyboards::load_active_layouts(&active_keymaps, &config_path);
+    let loaded_layouts = keyboards::load_active_layouts(&active_keymaps, &config_dir);
     keyboards::set_layouts(loaded_layouts);
     let layouts = keyboards::get_layouts();
 

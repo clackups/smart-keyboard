@@ -1,8 +1,8 @@
 // src/config.rs
 //
-// Loads input and output configuration from a TOML file.  The path is taken
-// from the SMART_KBD_CONFIG_PATH environment variable; if unset, "config.toml"
-// in the current working directory is used.
+// Loads input and output configuration from a TOML file.  The directory is
+// taken from the SMART_KBD_CONFIG_PATH environment variable; if unset, the
+// current working directory is used.  The file name is always "config.toml".
 // Falls back to built-in defaults if the file is missing or unparseable.
 
 use std::env;
@@ -737,13 +737,14 @@ impl Default for Config {
 // =============================================================================
 
 impl Config {
-    /// Load configuration from the path given by the `SMART_KBD_CONFIG_PATH`
-    /// environment variable, or from `config.toml` in the current working
-    /// directory if the variable is not set.
+    /// Load configuration from `config.toml` inside the directory given by the
+    /// `SMART_KBD_CONFIG_PATH` environment variable, or from `config.toml` in
+    /// the current working directory if the variable is not set.
     /// Falls back silently to built-in defaults on any error.
     pub fn load() -> Self {
-        let path = env::var("SMART_KBD_CONFIG_PATH")
-            .unwrap_or_else(|_| "config.toml".into());
+        let dir = env::var("SMART_KBD_CONFIG_PATH")
+            .unwrap_or_else(|_| ".".into());
+        let path = std::path::Path::new(&dir).join("config.toml");
         let content = match fs::read_to_string(&path) {
             Ok(s) => s,
             Err(_) => return Self::default(),

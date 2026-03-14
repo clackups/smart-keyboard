@@ -512,11 +512,10 @@ pub fn builtin_layout(name: &str) -> Option<LayoutDef> {
 // TOML file loading
 // ---------------------------------------------------------------------------
 
-/// Load a keymap TOML file from the same directory as `config_path`.
+/// Load a keymap TOML file from `config_dir`.
 /// Looks for `keymap_{name}.toml`.
-pub fn load_layout_from_toml(config_path: &str, name: &str) -> Option<LayoutDef> {
-    let dir = std::path::Path::new(config_path).parent()
-        .unwrap_or(std::path::Path::new("."));
+pub fn load_layout_from_toml(config_dir: &str, name: &str) -> Option<LayoutDef> {
+    let dir = std::path::Path::new(config_dir);
     let filename = format!("keymap_{}.toml", name);
     let path = dir.join(&filename);
     let content = std::fs::read_to_string(&path).ok()?;
@@ -531,10 +530,10 @@ pub fn load_layout_from_toml(config_path: &str, name: &str) -> Option<LayoutDef>
 }
 
 /// Load active layouts from TOML files (falling back to built-ins).
-pub fn load_active_layouts(active_keymaps: &[String], config_path: &str) -> Vec<LayoutDef> {
+pub fn load_active_layouts(active_keymaps: &[String], config_dir: &str) -> Vec<LayoutDef> {
     let mut layouts = Vec::new();
     for name in active_keymaps {
-        if let Some(layout) = load_layout_from_toml(config_path, name) {
+        if let Some(layout) = load_layout_from_toml(config_dir, name) {
             layouts.push(layout);
         } else if let Some(layout) = builtin_layout(name) {
             layouts.push(layout);

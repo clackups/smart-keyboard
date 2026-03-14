@@ -114,12 +114,12 @@ journalctl -f
 
 ## Configuration
 
-The application reads its configuration from `config.toml` in the current
-working directory. You can override the path with the
+The application reads its configuration from `config.toml` inside the current
+working directory. You can override the directory with the
 `SMART_KBD_CONFIG_PATH` environment variable:
 
 ```sh
-SMART_KBD_CONFIG_PATH=/etc/smart-keyboard/config.toml cargo run --release
+SMART_KBD_CONFIG_PATH=/etc/smart-keyboard cargo run --release
 ```
 
 If the file is missing or cannot be parsed, built-in defaults are used
@@ -129,7 +129,7 @@ silently.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMART_KBD_CONFIG_PATH` | `config.toml` | Path to the TOML configuration file. If unset, `config.toml` in the current working directory is used. If the file is absent or unparseable, built-in defaults are used silently. |
+| `SMART_KBD_CONFIG_PATH` | `.` (current directory) | Directory that contains `config.toml` and the `keymap_*.toml` files. If unset, the current working directory is used. If the file is absent or unparseable, built-in defaults are used silently. |
 | `SMART_KBD_AUDIO_PATH` | `audio` | Directory that contains the WAV narration clips used by `audio = "narrate"` mode. Each clip is named `<layout>_<key>.wav` (e.g. `us_a.wav`, `ua_u0430.wav`) or `<action>.wav` (e.g. `enter.wav`, `backspace.wav`). If unset, the `audio/` sub-directory of the current working directory is used. |
 
 ---
