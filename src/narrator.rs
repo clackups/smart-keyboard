@@ -39,6 +39,28 @@ impl Narrator {
         Narrator { mode, audio_dir, child: None }
     }
 
+    /// Like [`play`], but in `Narrate` mode tries `slug` first and falls back
+    /// to `fallback_slug` if `<audio_dir>/<slug>.wav` does not exist on disk.
+    ///
+    /// This is used to implement shift-aware narration: the caller passes the
+    /// shifted slug as `slug` and the unshifted slug as `fallback_slug`.  For
+    /// layouts that do not have a shifted audio clip the fallback (unshifted)
+    /// clip is used automatically.  In `Tone`/`ToneHint`/`None` modes the
+    /// fallback is ignored and the call is identical to [`play`].
+    pub fn play_with_fallback(&mut self, slug: &str, fallback_slug: &str, tone_hz: f32) {
+        if let AudioMode::Narrate = self.mode {
+            let path = format!("{}/{}.wav", self.audio_dir, slug);
+            let effective = if !slug.is_empty() && std::path::Path::new(&path).exists() {
+                slug
+            } else {
+                fallback_slug
+            };
+            self.play(effective, tone_hz);
+        } else {
+            self.play(slug, tone_hz);
+        }
+    }
+
     /// Provide audio feedback for the currently focused element.
     ///
     /// * In `Narrate` mode, `slug` is used to locate `<audio_dir>/<slug>.wav`

@@ -196,6 +196,12 @@ impl ModState {
 
     fn is_active(&self, action: Action) -> bool { *self.slot(action) }
 
+    /// Returns `true` when either Shift key is held (Left or Right Shift).
+    ///
+    /// CapsLock is intentionally excluded: it only affects letter keys (which
+    /// always use the unshifted label for narration), not punctuation keys.
+    fn is_shifted(&self) -> bool { self.lshift || self.rshift }
+
     fn slot(&self, action: Action) -> &bool {
         match action {
             Action::CapsLock => &self.caps,
@@ -800,11 +806,22 @@ fn label_to_audio_slug(label: &str) -> String {
 /// The slug is the stem of the corresponding `.wav` file inside the audio
 /// directory.  Returns an empty string for actions that carry no narration
 /// (e.g. [`Action::Noop`]).
-fn action_audio_slug(action: Action, layout_idx: usize) -> String {
+///
+/// When `shifted` is `true` and the key has a non-empty `label_shifted`,
+/// the slug is computed from the shifted label instead of the unshifted one.
+/// Letter keys (whose `label_shifted` is empty) always use the unshifted slug
+/// regardless of `shifted`.
+fn action_audio_slug(action: Action, layout_idx: usize, shifted: bool) -> String {
     match action {
         Action::Regular(slot) => {
-            let layout_name = keyboards::get_layouts()[layout_idx].name.to_lowercase();
-            let label = keyboards::get_layouts()[layout_idx].keys[slot].label_unshifted.as_str();
+            let layout = &keyboards::get_layouts()[layout_idx];
+            let layout_name = layout.name.to_lowercase();
+            let key = &layout.keys[slot];
+            let label = if shifted && !key.label_shifted.is_empty() {
+                key.label_shifted.as_str()
+            } else {
+                key.label_unshifted.as_str()
+            };
             format!("{}_{}", layout_name, label_to_audio_slug(label))
         }
         Action::Backspace  => "backspace".to_string(),
@@ -845,16 +862,21 @@ fn action_audio_slug(action: Action, layout_idx: usize) -> String {
 }
 
 /// Return the audio-file slug for the current navigation selection.
+///
+/// When `shifted` is `true`, delegates to [`action_audio_slug`] with
+/// `shifted = true` so that keys with a non-empty `label_shifted` produce the
+/// shifted slug.  Language-toggle buttons are never affected by shift.
 fn nav_audio_slug(
     sel: NavSel,
     layout_idx: usize,
     all_btns: &[Vec<(Button, Action, u16, Color)>],
+    shifted: bool,
 ) -> String {
     match sel {
         NavSel::Lang(li) => {
             format!("lang_{}", keyboards::get_layouts()[li].name.to_lowercase())
         }
-        NavSel::Key(row, col) => action_audio_slug(all_btns[row][col].1, layout_idx),
+        NavSel::Key(row, col) => action_audio_slug(all_btns[row][col].1, layout_idx, shifted),
     }
 }
 
@@ -989,6 +1011,9 @@ fn nav_tone_freq(
 /// When `changed` is `true`:
 /// * If `do_rumble` is set and a gamepad is connected, triggers a short rumble.
 /// * Plays the audio cue (narration clip or tone) for the new selection.
+///   When `shifted` is `true` and the focused key has a non-empty
+///   `label_shifted`, the shifted audio clip is attempted first; if the file
+///   does not exist on disk, the unshifted clip is played as a fallback.
 ///
 /// Does nothing when `changed` is `false`.
 fn on_nav_changed(
@@ -1000,6 +1025,7 @@ fn on_nav_changed(
     layout_idx: usize,
     narrator:   &Rc<RefCell<Narrator>>,
     audio_mode: &config::AudioMode,
+    shifted:    bool,
 ) {
     if !changed { return; }
     if do_rumble {
@@ -1009,8 +1035,11 @@ fn on_nav_changed(
     }
     let cur_sel = *sel.borrow();
     let ab = all_btns.borrow();
-    narrator.borrow_mut().play(
-        &nav_audio_slug(cur_sel, layout_idx, &ab),
+    let slug     = nav_audio_slug(cur_sel, layout_idx, &ab, shifted);
+    let fallback = if shifted { nav_audio_slug(cur_sel, layout_idx, &ab, false) } else { String::new() };
+    narrator.borrow_mut().play_with_fallback(
+        &slug,
+        &fallback,
         nav_tone_freq(cur_sel, &ab, audio_mode),
     );
 }
@@ -1627,8 +1656,12 @@ fn main() {
                             if changed {
                                 let sel = *sel_c.borrow();
                                 let ab  = all_btns_c.borrow();
-                                narrator_c.borrow_mut().play(
-                                    &nav_audio_slug(sel, *layout_idx_c.borrow(), &ab),
+                                let shifted_c = mod_state_c.borrow().is_shifted();
+                                let slug = nav_audio_slug(sel, *layout_idx_c.borrow(), &ab, shifted_c);
+                                let fallback = if shifted_c { nav_audio_slug(sel, *layout_idx_c.borrow(), &ab, false) } else { String::new() };
+                                narrator_c.borrow_mut().play_with_fallback(
+                                    &slug,
+                                    &fallback,
                                     nav_tone_freq(sel, &ab, &audio_mode_c),
                                 );
                             }
@@ -1640,8 +1673,12 @@ fn main() {
                         false
                     };
                     if !jumped {
-                        narrator_c.borrow_mut().play(
-                            &action_audio_slug(action, *layout_idx_c.borrow()),
+                        let shifted_c = mod_state_c.borrow().is_shifted();
+                        let slug = action_audio_slug(action, *layout_idx_c.borrow(), shifted_c);
+                        let fallback = if shifted_c { action_audio_slug(action, *layout_idx_c.borrow(), false) } else { String::new() };
+                        narrator_c.borrow_mut().play_with_fallback(
+                            &slug,
+                            &fallback,
                             action_tone_hz(action, &audio_mode_c),
                         );
                     }
@@ -1712,7 +1749,7 @@ fn main() {
     {
         let ab = all_btns.borrow();
         narrator.borrow_mut().play(
-            &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab),
+            &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab, false),
             nav_tone_freq(NavSel::Key(init_row, init_col), &ab, &audio_mode),
         );
     }
@@ -1909,6 +1946,7 @@ fn main() {
                     on_nav_changed(
                         changed, gp_rumble, &gp_cell_c, &sel_c,
                         &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                        mod_state_c.borrow().is_shifted(),
                     );
                     return true;
                 }
@@ -1963,6 +2001,7 @@ fn main() {
                             on_nav_changed(
                                 changed, gp_rumble, &gp_cell_c, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
@@ -2007,6 +2046,7 @@ fn main() {
                         on_nav_changed(
                             changed, gp_rumble, &gp_cell_c, &sel_c,
                             &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                            mod_state_c.borrow().is_shifted(),
                         );
                     }
                     return true;
@@ -2036,6 +2076,7 @@ fn main() {
                             on_nav_changed(
                                 changed, gp_rumble, &gp_cell_c, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
@@ -2066,6 +2107,7 @@ fn main() {
                             on_nav_changed(
                                 changed, gp_rumble, &gp_cell_c, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
@@ -2104,6 +2146,7 @@ fn main() {
                             on_nav_changed(
                                 changed, gp_rumble, &gp_cell_c, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
@@ -2167,6 +2210,7 @@ fn main() {
                             on_nav_changed(
                                 changed, gp_rumble, &gp_cell_c, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
@@ -2391,6 +2435,7 @@ fn main() {
                         on_nav_changed(
                             changed, gp_rumble, &gp_cell_t, &sel_c,
                             &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                            mod_state_c.borrow().is_shifted(),
                         );
                     }
                     GamepadAction::Activate => {
@@ -2452,6 +2497,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, gp_rumble, &gp_cell_t, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -2488,6 +2534,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, gp_rumble, &gp_cell_t, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -2523,6 +2570,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, gp_rumble, &gp_cell_t, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -2567,6 +2615,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, gp_rumble, &gp_cell_t, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -2634,6 +2683,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, gp_rumble, &gp_cell_t, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -2667,6 +2717,7 @@ fn main() {
                             on_nav_changed(
                                 changed, gp_rumble, &gp_cell_t, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
@@ -2767,6 +2818,7 @@ fn main() {
                         on_nav_changed(
                             changed, gp_rumble, &gp_cell_t, &sel_c,
                             &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                            mod_state_c.borrow().is_shifted(),
                         );
                     }
                 }
@@ -2916,6 +2968,7 @@ fn main() {
                         on_nav_changed(
                             changed, false, &gp_cell_gpio, &sel_c,
                             &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                            mod_state_c.borrow().is_shifted(),
                         );
                     }
                     GpioAction::Activate => {
@@ -2972,6 +3025,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, false, &gp_cell_gpio, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -3006,6 +3060,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, false, &gp_cell_gpio, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -3040,6 +3095,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, false, &gp_cell_gpio, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -3083,6 +3139,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, false, &gp_cell_gpio, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -3147,6 +3204,7 @@ fn main() {
                                     on_nav_changed(
                                         changed, false, &gp_cell_gpio, &sel_c,
                                         &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
                                     );
                                 }
                             }
@@ -3178,6 +3236,7 @@ fn main() {
                             on_nav_changed(
                                 changed, false, &gp_cell_gpio, &sel_c,
                                 &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                mod_state_c.borrow().is_shifted(),
                             );
                         }
                     }
