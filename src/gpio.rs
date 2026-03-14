@@ -20,8 +20,6 @@ use crate::config::{GpioInputConfig, GpioPull, GpioSignal};
 
 /// `GPIOHANDLE_REQUEST_INPUT`: configure the line as an input.
 const GPIOHANDLE_REQUEST_INPUT: u32 = 1 << 0;
-/// `GPIOHANDLE_REQUEST_BIAS_DISABLE`: disable pull resistors (kernel >= 5.5).
-const GPIOHANDLE_REQUEST_BIAS_DISABLE: u32 = 1 << 3;
 /// `GPIOHANDLE_REQUEST_BIAS_PULL_DOWN`: enable pull-down resistor (kernel >= 5.5).
 const GPIOHANDLE_REQUEST_BIAS_PULL_DOWN: u32 = 1 << 4;
 /// `GPIOHANDLE_REQUEST_BIAS_PULL_UP`: enable pull-up resistor (kernel >= 5.5).
@@ -210,10 +208,13 @@ impl GpioInput {
         let active_high = matches!(cfg.gpio_signal, GpioSignal::High);
 
         // Translate pull configuration to handleflags bits.
+        // Note: GPIOHANDLE_REQUEST_BIAS_PULL_UP / _PULL_DOWN require kernel >= 5.5.
+        // When gpio_pull = "null" (the default), no bias flags are set so that
+        // the ioctl succeeds on all kernel versions.
         let bias_flags: u32 = match cfg.gpio_pull {
             GpioPull::Up   => GPIOHANDLE_REQUEST_BIAS_PULL_UP,
             GpioPull::Down => GPIOHANDLE_REQUEST_BIAS_PULL_DOWN,
-            GpioPull::Null => GPIOHANDLE_REQUEST_BIAS_DISABLE,
+            GpioPull::Null => 0,
         };
         let handle_flags = GPIOHANDLE_REQUEST_INPUT | bias_flags;
 
@@ -241,6 +242,23 @@ impl GpioInput {
             // expects exactly that type at that size (48 bytes).
             let ret = unsafe {
                 libc::ioctl(chip_fd, GPIO_GET_LINEEVENT_IOCTL, &mut req)
+            };
+            // Capture errno immediately so it is not overwritten by later calls.
+            let first_err = std::io::Error::last_os_error();
+
+            // If the request with bias flags fails (EINVAL on kernels < 5.5),
+            // retry without bias flags so the line can still be used.
+            let ret = if ret < 0 && bias_flags != 0
+                && first_err.raw_os_error() == Some(libc::EINVAL)
+            {
+                eprintln!(
+                    "[gpio] Warning: bias flags not supported for line {} ({:?}), retrying without pull resistor",
+                    line_offset, action,
+                );
+                req.handleflags = GPIOHANDLE_REQUEST_INPUT;
+                unsafe { libc::ioctl(chip_fd, GPIO_GET_LINEEVENT_IOCTL, &mut req) }
+            } else {
+                ret
             };
 
             if ret < 0 {

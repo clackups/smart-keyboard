@@ -92,7 +92,8 @@ enabled = false
 # "up"   - enable internal pull-up resistor
 # "down" - enable internal pull-down resistor
 # "null" - no internal pull resistor (floating; default)
-# Requires Linux kernel >= 5.5.  On older kernels the setting is ignored.
+# "up" and "down" require Linux kernel >= 5.5.  On older kernels those
+# settings are ignored and the line is opened without a pull resistor.
 # gpio_pull = "null"
 
 
