@@ -367,7 +367,7 @@ pub fn default_switch_scancode_for(name: &str) -> Vec<u8> {
 // Built-in fallback layout definitions
 // ---------------------------------------------------------------------------
 
-fn make_lk(lu: &str, iu: &str, ls: &str, is: &str) -> LayoutKey {
+fn make_layout_key(lu: &str, iu: &str, ls: &str, is: &str) -> LayoutKey {
     LayoutKey {
         label_unshifted:  lu.to_string(),
         insert_unshifted: iu.to_string(),
@@ -381,59 +381,59 @@ fn builtin_us_layout() -> LayoutDef {
         name: "US".to_string(),
         keys: vec![
             // slots 0-12: number row
-            make_lk("`",  "`",  "~",  "~"),   // 0
-            make_lk("1",  "1",  "!",  "!"),   // 1
-            make_lk("2",  "2",  "@@", "@"),   // 2
-            make_lk("3",  "3",  "#",  "#"),   // 3
-            make_lk("4",  "4",  "$",  "$"),   // 4
-            make_lk("5",  "5",  "%",  "%"),   // 5
-            make_lk("6",  "6",  "^",  "^"),   // 6
-            make_lk("7",  "7",  "&&", "&"),   // 7
-            make_lk("8",  "8",  "*",  "*"),   // 8
-            make_lk("9",  "9",  "(",  "("),   // 9
-            make_lk("0",  "0",  ")",  ")"),   // 10
-            make_lk("-",  "-",  "_",  "_"),   // 11
-            make_lk("=",  "=",  "+",  "+"),   // 12
+            make_layout_key("`",  "`",  "~",  "~"),   // 0
+            make_layout_key("1",  "1",  "!",  "!"),   // 1
+            make_layout_key("2",  "2",  "@@", "@"),   // 2
+            make_layout_key("3",  "3",  "#",  "#"),   // 3
+            make_layout_key("4",  "4",  "$",  "$"),   // 4
+            make_layout_key("5",  "5",  "%",  "%"),   // 5
+            make_layout_key("6",  "6",  "^",  "^"),   // 6
+            make_layout_key("7",  "7",  "&&", "&"),   // 7
+            make_layout_key("8",  "8",  "*",  "*"),   // 8
+            make_layout_key("9",  "9",  "(",  "("),   // 9
+            make_layout_key("0",  "0",  ")",  ")"),   // 10
+            make_layout_key("-",  "-",  "_",  "_"),   // 11
+            make_layout_key("=",  "=",  "+",  "+"),   // 12
             // slots 13-22: top alpha row (q-p)
-            make_lk("q",  "q",  "",   ""),    // 13
-            make_lk("w",  "w",  "",   ""),    // 14
-            make_lk("e",  "e",  "",   ""),    // 15
-            make_lk("r",  "r",  "",   ""),    // 16
-            make_lk("t",  "t",  "",   ""),    // 17
-            make_lk("y",  "y",  "",   ""),    // 18
-            make_lk("u",  "u",  "",   ""),    // 19
-            make_lk("i",  "i",  "",   ""),    // 20
-            make_lk("o",  "o",  "",   ""),    // 21
-            make_lk("p",  "p",  "",   ""),    // 22
+            make_layout_key("q",  "q",  "",   ""),    // 13
+            make_layout_key("w",  "w",  "",   ""),    // 14
+            make_layout_key("e",  "e",  "",   ""),    // 15
+            make_layout_key("r",  "r",  "",   ""),    // 16
+            make_layout_key("t",  "t",  "",   ""),    // 17
+            make_layout_key("y",  "y",  "",   ""),    // 18
+            make_layout_key("u",  "u",  "",   ""),    // 19
+            make_layout_key("i",  "i",  "",   ""),    // 20
+            make_layout_key("o",  "o",  "",   ""),    // 21
+            make_layout_key("p",  "p",  "",   ""),    // 22
             // slots 23-25: top-row punctuation
-            make_lk("[",  "[",  "{",  "{"),   // 23
-            make_lk("]",  "]",  "}",  "}"),   // 24
-            make_lk("\\", "\\", "|",  "|"),   // 25
+            make_layout_key("[",  "[",  "{",  "{"),   // 23
+            make_layout_key("]",  "]",  "}",  "}"),   // 24
+            make_layout_key("\\", "\\", "|",  "|"),   // 25
             // slots 26-34: home alpha row (a-l)
-            make_lk("a",  "a",  "",   ""),    // 26
-            make_lk("s",  "s",  "",   ""),    // 27
-            make_lk("d",  "d",  "",   ""),    // 28
-            make_lk("f",  "f",  "",   ""),    // 29
-            make_lk("g",  "g",  "",   ""),    // 30
-            make_lk("h",  "h",  "",   ""),    // 31
-            make_lk("j",  "j",  "",   ""),    // 32
-            make_lk("k",  "k",  "",   ""),    // 33
-            make_lk("l",  "l",  "",   ""),    // 34
+            make_layout_key("a",  "a",  "",   ""),    // 26
+            make_layout_key("s",  "s",  "",   ""),    // 27
+            make_layout_key("d",  "d",  "",   ""),    // 28
+            make_layout_key("f",  "f",  "",   ""),    // 29
+            make_layout_key("g",  "g",  "",   ""),    // 30
+            make_layout_key("h",  "h",  "",   ""),    // 31
+            make_layout_key("j",  "j",  "",   ""),    // 32
+            make_layout_key("k",  "k",  "",   ""),    // 33
+            make_layout_key("l",  "l",  "",   ""),    // 34
             // slots 35-36: home-row punctuation
-            make_lk(";",  ";",  ":",  ":"),   // 35
-            make_lk("'",  "'",  "\"", "\""),  // 36
+            make_layout_key(";",  ";",  ":",  ":"),   // 35
+            make_layout_key("'",  "'",  "\"", "\""),  // 36
             // slots 37-43: lower alpha row (z-m)
-            make_lk("z",  "z",  "",   ""),    // 37
-            make_lk("x",  "x",  "",   ""),    // 38
-            make_lk("c",  "c",  "",   ""),    // 39
-            make_lk("v",  "v",  "",   ""),    // 40
-            make_lk("b",  "b",  "",   ""),    // 41
-            make_lk("n",  "n",  "",   ""),    // 42
-            make_lk("m",  "m",  "",   ""),    // 43
+            make_layout_key("z",  "z",  "",   ""),    // 37
+            make_layout_key("x",  "x",  "",   ""),    // 38
+            make_layout_key("c",  "c",  "",   ""),    // 39
+            make_layout_key("v",  "v",  "",   ""),    // 40
+            make_layout_key("b",  "b",  "",   ""),    // 41
+            make_layout_key("n",  "n",  "",   ""),    // 42
+            make_layout_key("m",  "m",  "",   ""),    // 43
             // slots 44-46: lower-row punctuation
-            make_lk(",",  ",",  "<",  "<"),   // 44
-            make_lk(".",  ".",  ">",  ">"),   // 45
-            make_lk("/",  "/",  "?",  "?"),   // 46
+            make_layout_key(",",  ",",  "<",  "<"),   // 44
+            make_layout_key(".",  ".",  ">",  ">"),   // 45
+            make_layout_key("/",  "/",  "?",  "?"),   // 46
         ],
     }
 }
@@ -443,59 +443,59 @@ fn builtin_ua_layout() -> LayoutDef {
         name: "UA".to_string(),
         keys: vec![
             // slots 0-12: number row
-            make_lk("\u{0027}", "\u{0027}", "\u{20b4}", "\u{20b4}"),  // 0  ` -> apostrophe
-            make_lk("1",        "1",        "!",        "!"),         // 1
-            make_lk("2",        "2",        "\"",       "\""),        // 2
-            make_lk("3",        "3",        "\u{2116}", "\u{2116}"),  // 3  numero sign
-            make_lk("4",        "4",        ";",        ";"),         // 4
-            make_lk("5",        "5",        "%",        "%"),         // 5
-            make_lk("6",        "6",        ":",        ":"),         // 6
-            make_lk("7",        "7",        "?",        "?"),         // 7
-            make_lk("8",        "8",        "*",        "*"),         // 8
-            make_lk("9",        "9",        "(",        "("),         // 9
-            make_lk("0",        "0",        ")",        ")"),         // 10
-            make_lk("-",        "-",        "_",        "_"),         // 11
-            make_lk("=",        "=",        "+",        "+"),         // 12
+            make_layout_key("\u{0027}", "\u{0027}", "\u{20b4}", "\u{20b4}"),  // 0  ` -> apostrophe
+            make_layout_key("1",        "1",        "!",        "!"),         // 1
+            make_layout_key("2",        "2",        "\"",       "\""),        // 2
+            make_layout_key("3",        "3",        "\u{2116}", "\u{2116}"),  // 3  numero sign
+            make_layout_key("4",        "4",        ";",        ";"),         // 4
+            make_layout_key("5",        "5",        "%",        "%"),         // 5
+            make_layout_key("6",        "6",        ":",        ":"),         // 6
+            make_layout_key("7",        "7",        "?",        "?"),         // 7
+            make_layout_key("8",        "8",        "*",        "*"),         // 8
+            make_layout_key("9",        "9",        "(",        "("),         // 9
+            make_layout_key("0",        "0",        ")",        ")"),         // 10
+            make_layout_key("-",        "-",        "_",        "_"),         // 11
+            make_layout_key("=",        "=",        "+",        "+"),         // 12
             // slots 13-22: top alpha row (Cyrillic)
-            make_lk("\u{0439}", "\u{0439}", "", ""),  // 13  q -> J
-            make_lk("\u{0446}", "\u{0446}", "", ""),  // 14  w -> Ts
-            make_lk("\u{0443}", "\u{0443}", "", ""),  // 15  e -> U
-            make_lk("\u{043A}", "\u{043A}", "", ""),  // 16  r -> K
-            make_lk("\u{0435}", "\u{0435}", "", ""),  // 17  t -> Ye
-            make_lk("\u{043D}", "\u{043D}", "", ""),  // 18  y -> N
-            make_lk("\u{0433}", "\u{0433}", "", ""),  // 19  u -> G
-            make_lk("\u{0448}", "\u{0448}", "", ""),  // 20  i -> Sh
-            make_lk("\u{0449}", "\u{0449}", "", ""),  // 21  o -> Shch
-            make_lk("\u{0437}", "\u{0437}", "", ""),  // 22  p -> Z
+            make_layout_key("\u{0439}", "\u{0439}", "", ""),  // 13  q -> J
+            make_layout_key("\u{0446}", "\u{0446}", "", ""),  // 14  w -> Ts
+            make_layout_key("\u{0443}", "\u{0443}", "", ""),  // 15  e -> U
+            make_layout_key("\u{043A}", "\u{043A}", "", ""),  // 16  r -> K
+            make_layout_key("\u{0435}", "\u{0435}", "", ""),  // 17  t -> Ye
+            make_layout_key("\u{043D}", "\u{043D}", "", ""),  // 18  y -> N
+            make_layout_key("\u{0433}", "\u{0433}", "", ""),  // 19  u -> G
+            make_layout_key("\u{0448}", "\u{0448}", "", ""),  // 20  i -> Sh
+            make_layout_key("\u{0449}", "\u{0449}", "", ""),  // 21  o -> Shch
+            make_layout_key("\u{0437}", "\u{0437}", "", ""),  // 22  p -> Z
             // slots 23-25
-            make_lk("\u{0445}", "\u{0445}", "", ""),  // 23  [ -> Kh
-            make_lk("\u{0457}", "\u{0457}", "", ""),  // 24  ] -> Yi
-            make_lk("\\",       "\\",       "|", "|"), // 25  \
+            make_layout_key("\u{0445}", "\u{0445}", "", ""),  // 23  [ -> Kh
+            make_layout_key("\u{0457}", "\u{0457}", "", ""),  // 24  ] -> Yi
+            make_layout_key("\\",       "\\",       "|", "|"), // 25  \
             // slots 26-34: home alpha row (Cyrillic)
-            make_lk("\u{0444}", "\u{0444}", "", ""),  // 26  a -> F
-            make_lk("\u{0456}", "\u{0456}", "", ""),  // 27  s -> I
-            make_lk("\u{0432}", "\u{0432}", "", ""),  // 28  d -> V
-            make_lk("\u{0430}", "\u{0430}", "", ""),  // 29  f -> A
-            make_lk("\u{043F}", "\u{043F}", "", ""),  // 30  g -> P
-            make_lk("\u{0440}", "\u{0440}", "", ""),  // 31  h -> R
-            make_lk("\u{043E}", "\u{043E}", "", ""),  // 32  j -> O
-            make_lk("\u{043B}", "\u{043B}", "", ""),  // 33  k -> L
-            make_lk("\u{0434}", "\u{0434}", "", ""),  // 34  l -> D
+            make_layout_key("\u{0444}", "\u{0444}", "", ""),  // 26  a -> F
+            make_layout_key("\u{0456}", "\u{0456}", "", ""),  // 27  s -> I
+            make_layout_key("\u{0432}", "\u{0432}", "", ""),  // 28  d -> V
+            make_layout_key("\u{0430}", "\u{0430}", "", ""),  // 29  f -> A
+            make_layout_key("\u{043F}", "\u{043F}", "", ""),  // 30  g -> P
+            make_layout_key("\u{0440}", "\u{0440}", "", ""),  // 31  h -> R
+            make_layout_key("\u{043E}", "\u{043E}", "", ""),  // 32  j -> O
+            make_layout_key("\u{043B}", "\u{043B}", "", ""),  // 33  k -> L
+            make_layout_key("\u{0434}", "\u{0434}", "", ""),  // 34  l -> D
             // slots 35-36
-            make_lk("\u{0436}", "\u{0436}", "", ""),  // 35  ; -> Zh
-            make_lk("\u{0454}", "\u{0454}", "", ""),  // 36  ' -> Ye
+            make_layout_key("\u{0436}", "\u{0436}", "", ""),  // 35  ; -> Zh
+            make_layout_key("\u{0454}", "\u{0454}", "", ""),  // 36  ' -> Ye
             // slots 37-43: lower alpha row (Cyrillic)
-            make_lk("\u{044F}", "\u{044F}", "", ""),  // 37  z -> Ya
-            make_lk("\u{0447}", "\u{0447}", "", ""),  // 38  x -> Ch
-            make_lk("\u{0441}", "\u{0441}", "", ""),  // 39  c -> S
-            make_lk("\u{043C}", "\u{043C}", "", ""),  // 40  v -> M
-            make_lk("\u{0438}", "\u{0438}", "", ""),  // 41  b -> I
-            make_lk("\u{0442}", "\u{0442}", "", ""),  // 42  n -> T
-            make_lk("\u{044C}", "\u{044C}", "", ""),  // 43  m -> soft sign
+            make_layout_key("\u{044F}", "\u{044F}", "", ""),  // 37  z -> Ya
+            make_layout_key("\u{0447}", "\u{0447}", "", ""),  // 38  x -> Ch
+            make_layout_key("\u{0441}", "\u{0441}", "", ""),  // 39  c -> S
+            make_layout_key("\u{043C}", "\u{043C}", "", ""),  // 40  v -> M
+            make_layout_key("\u{0438}", "\u{0438}", "", ""),  // 41  b -> I
+            make_layout_key("\u{0442}", "\u{0442}", "", ""),  // 42  n -> T
+            make_layout_key("\u{044C}", "\u{044C}", "", ""),  // 43  m -> soft sign
             // slots 44-46
-            make_lk("\u{0431}", "\u{0431}", "", ""),  // 44  , -> B
-            make_lk("\u{044E}", "\u{044E}", "", ""),  // 45  . -> Yu
-            make_lk(".",        ".",        ",", ","), // 46  / -> FULL STOP
+            make_layout_key("\u{0431}", "\u{0431}", "", ""),  // 44  , -> B
+            make_layout_key("\u{044E}", "\u{044E}", "", ""),  // 45  . -> Yu
+            make_layout_key(".",        ".",        ",", ","), // 46  / -> FULL STOP
         ],
     }
 }
@@ -520,9 +520,13 @@ pub fn load_layout_from_toml(config_path: &str, name: &str) -> Option<LayoutDef>
     let filename = format!("keymap_{}.toml", name);
     let path = dir.join(&filename);
     let content = std::fs::read_to_string(&path).ok()?;
-    let toml_data: KeymapFileToml = toml::from_str(&content)
-        .map_err(|e| eprintln!("[keymap] failed to parse {}: {}", path.display(), e))
-        .ok()?;
+    let toml_data: KeymapFileToml = match toml::from_str(&content) {
+        Ok(d)  => d,
+        Err(e) => {
+            eprintln!("[keymap] failed to parse {}: {}", path.display(), e);
+            return None;
+        }
+    };
     Some(LayoutDef { name: toml_data.name, keys: toml_data.keys })
 }
 
