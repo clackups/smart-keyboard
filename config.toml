@@ -96,6 +96,7 @@ enabled = false
 # gpio_pull = "null"
 
 
+[navigate]
 # When rollover = true, navigation wraps around at the edges of the keyboard:
 # moving left past the first column brings the cursor to the last column of the
 # same row, and vice-versa; moving down past the last row brings the cursor back
@@ -149,6 +150,7 @@ pid = 0xbbd1
 # top of the keyboard window.  When false (the default) the display is hidden
 # and no CPU is spent updating the text buffer.
 # show_text_display = false
+# active_keymaps = ["us", "ua", "de", "fr"]
 
 [ui.colors]
 # All colour values are 6-digit hex strings ("#RRGGBB").
@@ -195,3 +197,19 @@ pid = 0xbbd1
 # key_label_normal      = "#141414"
 # Text label colour on modifier / function keys (light text on dark background).
 # key_label_mod         = "#d2d2d2"
+
+[keymap.us]
+# Ctrl+Shift+1 (modifier=0x03, HID keycode 0x1e)
+switch_scancode = [0x03, 0x1e]
+
+[keymap.ua]
+# Ctrl+Shift+4 (modifier=0x03, HID keycode 0x21)
+switch_scancode = [0x03, 0x21]
+
+[keymap.de]
+# Ctrl+Shift+3 (modifier=0x03, HID keycode 0x20)
+switch_scancode = [0x03, 0x20]
+
+[keymap.fr]
+# Ctrl+Shift+2 (modifier=0x03, HID keycode 0x1f)
+switch_scancode = [0x03, 0x1f]

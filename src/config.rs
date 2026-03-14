@@ -1,8 +1,8 @@
 // src/config.rs
 //
-// Loads input and output configuration from a TOML file.  The path is taken
-// from the SMART_KBD_CONFIG_PATH environment variable; if unset, "config.toml"
-// in the current working directory is used.
+// Loads input and output configuration from a TOML file.  The directory is
+// taken from the SMART_KBD_CONFIG_PATH environment variable; if unset, the
+// current working directory is used.  The file name is always "config.toml".
 // Falls back to built-in defaults if the file is missing or unparseable.
 
 use std::env;
@@ -557,7 +557,21 @@ impl Default for ColorsConfig {
     }
 }
 
-#[derive(Deserialize, Default)]
+fn default_active_keymaps() -> Vec<String> {
+    vec!["us".to_string(), "ua".to_string()]
+}
+
+/// Per-keymap configuration (switch scancode, etc.).
+#[derive(Deserialize, Default, Clone)]
+pub struct KeymapConfig {
+    /// Switch scancode bytes: [modifier_byte, hid_keycode, ...].
+    /// Sent to the output when the user switches to this keymap.
+    /// If empty (default), nothing is sent.
+    #[serde(default)]
+    pub switch_scancode: Vec<u8>,
+}
+
+#[derive(Deserialize)]
 pub struct UiConfig {
     /// UI colour palette.
     #[serde(default)]
@@ -567,6 +581,20 @@ pub struct UiConfig {
     /// is spent updating the text buffer.
     #[serde(default)]
     pub show_text_display: bool,
+    /// List of keymap names to display in the UI.
+    /// Default: ["us", "ua"].
+    #[serde(default = "default_active_keymaps")]
+    pub active_keymaps: Vec<String>,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        UiConfig {
+            colors:            ColorsConfig::default(),
+            show_text_display: false,
+            active_keymaps:    default_active_keymaps(),
+        }
+    }
 }
 
 fn default_center_key() -> String { "h".to_string() }
@@ -614,6 +642,9 @@ pub struct Config {
     pub ui: UiConfig,
     #[serde(default)]
     pub navigate: NavigateConfig,
+    /// Per-keymap configuration (switch scancode, etc.).
+    #[serde(default)]
+    pub keymap: std::collections::HashMap<String, KeymapConfig>,
 }
 
 // =============================================================================
@@ -696,6 +727,7 @@ impl Default for Config {
             output:   OutputConfig::default(),
             ui:       UiConfig::default(),
             navigate: NavigateConfig::default(),
+            keymap:   std::collections::HashMap::new(),
         }
     }
 }
@@ -705,13 +737,14 @@ impl Default for Config {
 // =============================================================================
 
 impl Config {
-    /// Load configuration from the path given by the `SMART_KBD_CONFIG_PATH`
-    /// environment variable, or from `config.toml` in the current working
-    /// directory if the variable is not set.
+    /// Load configuration from `config.toml` inside the directory given by the
+    /// `SMART_KBD_CONFIG_PATH` environment variable, or from `config.toml` in
+    /// the current working directory if the variable is not set.
     /// Falls back silently to built-in defaults on any error.
     pub fn load() -> Self {
-        let path = env::var("SMART_KBD_CONFIG_PATH")
-            .unwrap_or_else(|_| "config.toml".into());
+        let dir = env::var("SMART_KBD_CONFIG_PATH")
+            .unwrap_or_else(|_| ".".into());
+        let path = std::path::Path::new(&dir).join("config.toml");
         let content = match fs::read_to_string(&path) {
             Ok(s) => s,
             Err(_) => return Self::default(),

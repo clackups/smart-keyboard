@@ -114,12 +114,12 @@ journalctl -f
 
 ## Configuration
 
-The application reads its configuration from `config.toml` in the current
-working directory. You can override the path with the
+The application reads its configuration from `config.toml` inside the current
+working directory. You can override the directory with the
 `SMART_KBD_CONFIG_PATH` environment variable:
 
 ```sh
-SMART_KBD_CONFIG_PATH=/etc/smart-keyboard/config.toml cargo run --release
+SMART_KBD_CONFIG_PATH=/etc/smart-keyboard cargo run --release
 ```
 
 If the file is missing or cannot be parsed, built-in defaults are used
@@ -129,7 +129,7 @@ silently.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMART_KBD_CONFIG_PATH` | `config.toml` | Path to the TOML configuration file. If unset, `config.toml` in the current working directory is used. If the file is absent or unparseable, built-in defaults are used silently. |
+| `SMART_KBD_CONFIG_PATH` | `.` (current directory) | Directory that contains `config.toml` and the `keymap_*.toml` files. If unset, the current working directory is used. If the file is absent or unparseable, built-in defaults are used silently. |
 | `SMART_KBD_AUDIO_PATH` | `audio` | Directory that contains the WAV narration clips used by `audio = "narrate"` mode. Each clip is named `<layout>_<key>.wav` (e.g. `us_a.wav`, `ua_u0430.wav`) or `<action>.wav` (e.g. `enter.wav`, `backspace.wav`). If unset, the `audio/` sub-directory of the current working directory is used. |
 
 ---
@@ -371,7 +371,7 @@ line is successfully registered.
 
 ---
 
-
+### `[navigate]`
 
 Controls navigation behaviour.
 
@@ -465,12 +465,14 @@ General UI settings.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `show_text_display` | `false` | When `true`, a read-only text display is shown at the top of the keyboard window, reflecting the characters typed so far. Pressing Enter clears the display. When `false` (the default) the display is hidden and no CPU is spent updating the text buffer. |
+| `active_keymaps` | `["us", "ua"]` | Ordered list of keymap names to show in the language strip at the bottom of the keyboard. Each name must have a corresponding built-in layout or a `keymap_<name>.toml` file in the config directory. The first entry is the default layout shown on startup. |
 
 **Example**
 
 ```toml
 [ui]
 show_text_display = true
+active_keymaps    = ["us", "ua"]
 ```
 
 ---
@@ -544,4 +546,114 @@ key_label_mod    = "#333333"
 nav_sel        = "#0078d7"
 disp_bg        = "#ffffff"
 disp_text      = "#003300"
+```
+
+---
+
+### `[keymap.xx]`
+
+Per-keymap configuration in `config.toml`.  Replace `xx` with the keymap name
+(e.g. `us`, `ua`, `de`, `fr`).  Each keymap listed in `[ui] active_keymaps`
+may have an optional `[keymap.xx]` section.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `switch_scancode` | *(empty)* | Raw HID report bytes sent to the output device when the user switches to this keymap (e.g. by pressing its language button). The array is `[modifier_byte, keycode, ...]` — the same format as a USB HID keyboard report. When empty (the default), no scancode is sent on switch. |
+
+**Example** — send Ctrl+Shift+1 when switching to the US layout,
+Ctrl+Shift+4 when switching to Ukrainian, Ctrl+Shift+3 for German, and
+Ctrl+Shift+2 for French:
+
+```toml
+[keymap.us]
+# Ctrl+Shift+1 (modifier=0x03, HID keycode 0x1e)
+switch_scancode = [0x03, 0x1e]
+
+[keymap.ua]
+# Ctrl+Shift+4 (modifier=0x03, HID keycode 0x21)
+switch_scancode = [0x03, 0x21]
+
+[keymap.de]
+# Ctrl+Shift+3 (modifier=0x03, HID keycode 0x20)
+switch_scancode = [0x03, 0x20]
+
+[keymap.fr]
+# Ctrl+Shift+2 (modifier=0x03, HID keycode 0x1f)
+switch_scancode = [0x03, 0x1f]
+```
+
+---
+
+### Keymap TOML files
+
+Each active keymap may have a TOML file named `keymap_<name>.toml` placed in
+the same directory as `config.toml`.  If such a file exists it takes
+precedence over the built-in layout for that name.  If no file is found, the
+application falls back to the built-in layout (currently available for `us`
+and `ua`).  If neither exists, the keymap is skipped with a warning.
+
+The following keymap TOML files are included in the repository:
+
+| File | Layout | Description |
+|------|--------|-------------|
+| `keymap_us.toml` | US | Standard US QWERTY layout |
+| `keymap_ua.toml` | UA | Ukrainian QWERTY layout |
+| `keymap_de.toml` | DE | German QWERTZ layout |
+| `keymap_fr.toml` | FR | French AZERTY layout |
+
+Narrator WAV clips for all four layouts are provided in the `audio/`
+directory.  For a new layout you add yourself, create the corresponding
+`audio/<lang>_<slug>.wav` clips and a `audio/lang_<lang>.wav` clip for the
+language-button announcement (where `<lang>` is the lowercase `name` field
+from the keymap file).
+
+A keymap file must contain a `name` string (the human-readable label shown on
+the language button) and a `[[keys]]` array listing every key in the keyboard
+grid, in row-major order (left to right, top to bottom).
+
+Each `[[keys]]` entry supports the following fields:
+
+| Field | Description |
+|-------|-------------|
+| `label_unshifted` | Text displayed on the button face in the unshifted state. |
+| `insert_unshifted` | String inserted when the key is activated without Shift. Required; must be present in every `[[keys]]` entry. |
+| `label_shifted` | Text displayed on the button face in the shifted state. Use an empty string for letter keys — the display will use the automatic uppercase of `insert_unshifted`. |
+| `insert_shifted` | String inserted when Shift is held. Use an empty string for letter keys — the inserted text will be the automatic uppercase of `insert_unshifted`. |
+
+**Example** — a snippet from the German (`de`) keymap showing a regular letter
+key (auto-uppercased on Shift) and a non-letter key with an explicit shifted
+character:
+
+```toml
+name = "DE"
+
+# Letter key: leave label_shifted/insert_shifted empty — Shift gives Ä automatically
+[[keys]]
+label_unshifted = "\u00e4"
+insert_unshifted = "\u00e4"
+label_shifted = ""
+insert_shifted = ""
+
+# Non-letter key: provide explicit shifted character
+[[keys]]
+label_unshifted = "\u00df"
+insert_unshifted = "\u00df"
+label_shifted = "?"
+insert_shifted = "?"
+```
+
+Place the file alongside your `config.toml` and add `"de"` (or `"fr"`, etc.)
+to `[ui] active_keymaps`:
+
+```toml
+[ui]
+active_keymaps = ["us", "de", "fr"]
+
+[keymap.de]
+# Ctrl+Shift+3 switches the OS input method to German
+switch_scancode = [0x03, 0x20]
+
+[keymap.fr]
+# Ctrl+Shift+2 switches the OS input method to French
+switch_scancode = [0x03, 0x1f]
 ```
