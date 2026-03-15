@@ -193,7 +193,6 @@ pub struct GamepadInputConfig {
     /// Axis index for the activate action.
     /// Positive axis values above `axis_threshold` trigger Activate.
     /// Absent / `null` means disabled.
-    /// Default: 0x05.
     #[serde(default = "default_axis_activate")]
     pub axis_activate: Option<u32>,
     /// Axis index for the menu action.
@@ -275,7 +274,7 @@ fn default_activate()                 -> Option<u32>        { Some(0x05) }
 fn default_menu()                     -> Option<u32>        { Some(0x08) }
 fn default_axis_navigate_horizontal() -> Option<AxisConfig> { Some(AxisConfig { axis: 0, inverted: false }) }
 fn default_axis_navigate_vertical()   -> Option<AxisConfig> { Some(AxisConfig { axis: 1, inverted: false }) }
-fn default_axis_activate()            -> Option<u32>        { Some(0x05) }
+fn default_axis_activate()            -> Option<u32>        { None }
 fn default_axis_threshold()           -> i32  { 16384 }
 fn default_rumble_duration_ms()       -> u16  { 50 }
 fn default_rumble_magnitude()         -> u16  { 0x4000 }

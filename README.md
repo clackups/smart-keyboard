@@ -270,7 +270,7 @@ a key to disable that action.
 |-----|---------|-------------|
 | `axis_navigate_horizontal` | `[0, "normal"]` | Axis configuration for left/right navigation (left stick X on most gamepads). Accepts either a plain axis index (e.g. `0`) or a two-element array `[axis_index, transformation]` where transformation is `"normal"` (default) or `"inverted"`. With `"normal"`: negative values → Left, positive → Right. With `"inverted"` the directions are swapped. Remove/null to disable. |
 | `axis_navigate_vertical` | `[1, "normal"]` | Axis configuration for up/down navigation (left stick Y on most gamepads). Accepts either a plain axis index (e.g. `1`) or a two-element array `[axis_index, transformation]` where transformation is `"normal"` (default) or `"inverted"`. With `"normal"`: negative values → Up, positive → Down. With `"inverted"` the directions are swapped. Remove/null to disable. |
-| `axis_activate` | `0x05` | Axis index whose positive values trigger Activate (e.g. a trigger axis). Remove/null to disable. |
+| `axis_activate` | *(disabled)* | Axis index whose positive values trigger Activate (e.g. a trigger axis). Remove/null to disable. |
 | `axis_menu` | *(disabled)* | Axis index whose positive values trigger Menu (e.g. a trigger axis). Remove/null to disable. |
 | `axis_threshold` | `16384` | Minimum absolute axis value (0–32767) required to register a direction or activation. Raw axis values range from −32767 to +32767; `16384` corresponds to approximately half-deflection. |
 
@@ -330,7 +330,7 @@ menu     = 0x08   # Start/Menu button
 # axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]
 # axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]
 # axis_threshold           = 16384
-axis_activate = 0x05
+# axis_activate = null
 # axis_menu     = null
 
 # Absolute-axes mode (for touchpad-style controllers)
