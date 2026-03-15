@@ -1053,7 +1053,6 @@ pub struct UiHandles {
     pub menu_group:        Group,
     pub buf:               TextBuffer,
     pub disp:              TextDisplay,
-    pub conn_status:       Frame,
     pub gamepad_status:    Option<Frame>,
     pub gpio_status:       Option<Frame>,
     pub gp_cell:           Rc<RefCell<Option<Gamepad>>>,
@@ -1617,8 +1616,8 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 mod_btns.borrow_mut().push(ModBtn {
                     btn:      btn.clone(),
                     action:   phys.action,
-                    base_col: base_col,
-                    status:   status,
+                    base_col,
+                    status,
                 });
             }
 
@@ -2197,7 +2196,6 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         menu_group,
         buf,
         disp,
-        conn_status,
         gamepad_status,
         gpio_status,
         gp_cell,
