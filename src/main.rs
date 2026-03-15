@@ -1,9 +1,12 @@
 mod config;
+mod display;
 mod gamepad;
 mod gpio;
 mod keyboards;
 mod narrator;
 mod output;
+
+use display::{Colors, ModBtn};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -250,73 +253,7 @@ impl ModState {
     }
 }
 
-// =============================================================================
-// UI colour palette (resolved from config)
-// =============================================================================
 
-/// All UI colours resolved from [`config::ColorsConfig`] into FLTK [`Color`] values.
-/// Implements `Copy` because [`Color`] is a newtype over `u32`.
-#[derive(Clone, Copy)]
-struct Colors {
-    key_normal:              Color,
-    key_mod:                 Color,
-    mod_active:              Color,
-    nav_sel:                 Color,
-    status_bar_bg:           Color,
-    status_ind_bg:           Color,
-    status_ind_text:         Color,
-    status_ind_active_text:  Color,
-    conn_disconnected:       Color,
-    conn_connecting:         Color,
-    conn_connected:          Color,
-    win_bg:                  Color,
-    disp_bg:                 Color,
-    disp_text:               Color,
-    lang_btn_inactive:       Color,
-    lang_btn_label:          Color,
-    key_label_normal:        Color,
-    key_label_mod:           Color,
-}
-
-impl Colors {
-    fn from_config(cfg: &config::ColorsConfig) -> Self {
-        let c = |rgb: &config::ColorRgb| Color::from_rgb(rgb.0, rgb.1, rgb.2);
-        Colors {
-            key_normal:              c(&cfg.key_normal),
-            key_mod:                 c(&cfg.key_mod),
-            mod_active:              c(&cfg.mod_active),
-            nav_sel:                 c(&cfg.nav_sel),
-            status_bar_bg:           c(&cfg.status_bar_bg),
-            status_ind_bg:           c(&cfg.status_ind_bg),
-            status_ind_text:         c(&cfg.status_ind_text),
-            status_ind_active_text:  c(&cfg.status_ind_active_text),
-            conn_disconnected:       c(&cfg.conn_disconnected),
-            conn_connecting:         c(&cfg.conn_connecting),
-            conn_connected:          c(&cfg.conn_connected),
-            win_bg:                  c(&cfg.win_bg),
-            disp_bg:                 c(&cfg.disp_bg),
-            disp_text:               c(&cfg.disp_text),
-            lang_btn_inactive:       c(&cfg.lang_btn_inactive),
-            lang_btn_label:          c(&cfg.lang_btn_label),
-            key_label_normal:        c(&cfg.key_label_normal),
-            key_label_mod:           c(&cfg.key_label_mod),
-        }
-    }
-}
-
-// =============================================================================
-// Modifier button descriptor
-// =============================================================================
-
-/// A modifier-key button together with its action and base (inactive) color.
-/// Stored in a shared list so execute_action can update visual state.
-struct ModBtn {
-    btn:      Button,
-    action:   Action,
-    base_col: Color,
-    /// Corresponding status-bar indicator frame (shared between LShift & RShift).
-    status:   Option<Frame>,
-}
 
 // =============================================================================
 // Navigation selection
