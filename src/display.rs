@@ -607,6 +607,26 @@ pub fn find_center_key(
     None
 }
 
+/// Find the `(row, col)` position of the first button whose action matches
+/// `target_action`, or `None` if no button has that action.
+///
+/// Used to locate buttons for non-selection activate actions (Enter, Space,
+/// Arrow keys) so their background can be temporarily highlighted when the
+/// corresponding gamepad / GPIO button is pressed.
+pub fn find_btn_by_action(
+    all_btns:      &[Vec<(Button, Action, u16, Color)>],
+    target_action: Action,
+) -> Option<(usize, usize)> {
+    for (r, row) in all_btns.iter().enumerate() {
+        for (c, entry) in row.iter().enumerate() {
+            if entry.1 == target_action {
+                return Some((r, c));
+            }
+        }
+    }
+    None
+}
+
 // =============================================================================
 // Action execution
 // =============================================================================
@@ -1046,6 +1066,11 @@ pub struct UiHandles {
     pub mod_state:         Rc<RefCell<ModState>>,
     pub mod_btns:          Rc<RefCell<Vec<ModBtn>>>,
     pub active_nav_key:    Rc<RefCell<Option<(u16, String)>>>,
+    /// Position `(row, col)` of a button that has been temporarily highlighted
+    /// because a gamepad / GPIO activate-action button is currently pressed.
+    /// Set on press, cleared on release.  `None` for the regular `Activate`
+    /// action (the nav-selection button is already highlighted by navigation).
+    pub active_btn_pressed: Rc<RefCell<Option<(usize, usize)>>>,
     pub preferred_cx:      Rc<RefCell<i32>>,
     pub menu_sel:          Rc<RefCell<Option<usize>>>,
     pub menu_item_defs:    Rc<Vec<MenuItemDef>>,
@@ -1299,6 +1324,10 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     // Tracks the (scancode, key_str) of the key currently "held" by the keyboard
     // activation key or gamepad action button.  Set on press, cleared on release.
     let active_nav_key: Rc<RefCell<Option<(u16, String)>>> = Rc::new(RefCell::new(None));
+    // Tracks the (row, col) of a button that has been temporarily highlighted
+    // because a gamepad / GPIO non-selection activate action is pressed (e.g.
+    // ActivateEnter highlights the Enter button).  Cleared and restored on release.
+    let active_btn_pressed: Rc<RefCell<Option<(usize, usize)>>> = Rc::new(RefCell::new(None));
     let buf  = TextBuffer::default();
     // --- Text display (read-only) ---
     let mut disp = TextDisplay::new(pad_left, pad_top, sw - 2 * pad_left, display_h, "");
@@ -2189,6 +2218,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         mod_state,
         mod_btns,
         active_nav_key,
+        active_btn_pressed,
         preferred_cx,
         menu_sel,
         menu_item_defs,

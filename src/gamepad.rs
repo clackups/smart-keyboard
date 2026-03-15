@@ -209,11 +209,13 @@ pub struct Gamepad {
     activate_arrow_down:  Option<u32>,
     navigate_center: Option<u32>,
     // Axis configuration
-    axis_horizontal: Option<u32>,         // axis index for left/right (None = disabled)
-    axis_vertical:   Option<u32>,         // axis index for up/down (None = disabled)
-    axis_activate:   Option<u32>,         // axis index for activate (None = disabled)
-    axis_menu:       Option<u32>,         // axis index for menu (None = disabled)
-    axis_threshold:  i32,                 // minimum |value| to register as active
+    axis_horizontal:          Option<u32>,  // axis index for left/right (None = disabled)
+    axis_horizontal_inverted: bool,         // when true: negative->Right, positive->Left
+    axis_vertical:            Option<u32>,  // axis index for up/down (None = disabled)
+    axis_vertical_inverted:   bool,         // when true: negative->Down, positive->Up
+    axis_activate:   Option<u32>,           // axis index for activate (None = disabled)
+    axis_menu:       Option<u32>,           // axis index for menu (None = disabled)
+    axis_threshold:  i32,                   // minimum |value| to register as active
     // Axis state (tracks previous active direction to generate press/release)
     horiz_dir:   Option<AxisDir>,
     vert_dir:    Option<AxisDir>,
@@ -286,8 +288,12 @@ impl Gamepad {
             activate_arrow_up:    cfg.activate_arrow_up,
             activate_arrow_down:  cfg.activate_arrow_down,
             navigate_center: cfg.navigate_center,
-            axis_horizontal: cfg.axis_navigate_horizontal,
-            axis_vertical:   cfg.axis_navigate_vertical,
+            axis_horizontal:          cfg.axis_navigate_horizontal.as_ref().map(|a| a.axis),
+            axis_horizontal_inverted: cfg.axis_navigate_horizontal.as_ref()
+                .map_or(false, |a| a.inverted),
+            axis_vertical:            cfg.axis_navigate_vertical.as_ref().map(|a| a.axis),
+            axis_vertical_inverted:   cfg.axis_navigate_vertical.as_ref()
+                .map_or(false, |a| a.inverted),
             axis_activate:   cfg.axis_activate,
             axis_menu:       cfg.axis_menu,
             axis_threshold:  cfg.axis_threshold,
@@ -467,10 +473,21 @@ impl Gamepad {
             if self.axis_horizontal == Some(axis) {
                 if value != self.abs_horiz_raw {
                     self.abs_horiz_raw = value;
+                    // Apply inversion to the fractional position.
+                    let horiz_frac = if self.axis_horizontal_inverted {
+                        1.0 - raw_to_frac(self.abs_horiz_raw)
+                    } else {
+                        raw_to_frac(self.abs_horiz_raw)
+                    };
+                    let vert_frac = if self.axis_vertical_inverted {
+                        1.0 - raw_to_frac(self.abs_vert_raw)
+                    } else {
+                        raw_to_frac(self.abs_vert_raw)
+                    };
                     out.push(GamepadEvent {
                         action: GamepadAction::AbsolutePos {
-                            horiz: raw_to_frac(self.abs_horiz_raw),
-                            vert:  raw_to_frac(self.abs_vert_raw),
+                            horiz: horiz_frac,
+                            vert:  vert_frac,
                         },
                         pressed: false,
                     });
@@ -478,10 +495,20 @@ impl Gamepad {
             } else if self.axis_vertical == Some(axis) {
                 if value != self.abs_vert_raw {
                     self.abs_vert_raw = value;
+                    let horiz_frac = if self.axis_horizontal_inverted {
+                        1.0 - raw_to_frac(self.abs_horiz_raw)
+                    } else {
+                        raw_to_frac(self.abs_horiz_raw)
+                    };
+                    let vert_frac = if self.axis_vertical_inverted {
+                        1.0 - raw_to_frac(self.abs_vert_raw)
+                    } else {
+                        raw_to_frac(self.abs_vert_raw)
+                    };
                     out.push(GamepadEvent {
                         action: GamepadAction::AbsolutePos {
-                            horiz: raw_to_frac(self.abs_horiz_raw),
-                            vert:  raw_to_frac(self.abs_vert_raw),
+                            horiz: horiz_frac,
+                            vert:  vert_frac,
                         },
                         pressed: false,
                     });
@@ -510,7 +537,9 @@ impl Gamepad {
 
         // --- Relative (threshold) mode ---
         if self.axis_horizontal == Some(axis) {
-            let new_dir = axis_dir(v, self.axis_threshold);
+            // Apply inversion by negating the effective value.
+            let eff_v = if self.axis_horizontal_inverted { -v } else { v };
+            let new_dir = axis_dir(eff_v, self.axis_threshold);
             if new_dir != self.horiz_dir {
                 // Release previous direction.
                 if let Some(prev) = self.horiz_dir {
@@ -536,7 +565,9 @@ impl Gamepad {
                 };
             }
         } else if self.axis_vertical == Some(axis) {
-            let new_dir = axis_dir(v, self.axis_threshold);
+            // Apply inversion by negating the effective value.
+            let eff_v = if self.axis_vertical_inverted { -v } else { v };
+            let new_dir = axis_dir(eff_v, self.axis_threshold);
             if new_dir != self.vert_dir {
                 // Release previous direction.
                 if let Some(prev) = self.vert_dir {

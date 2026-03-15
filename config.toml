@@ -43,8 +43,9 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Analog stick / axis navigation; comment out or remove to disable
-# axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
-# axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
+# axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Left/positive=Right (or swapped if inverted)
+# axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Up/positive=Down   (or swapped if inverted)
+# (A plain integer is also accepted and defaults to "normal", e.g. axis_navigate_horizontal = 0)
 # axis_threshold            = 16384  # minimum |value| to register (0-32767)
 axis_activate             = 0x05  # axis index for Activate (positive only); comment out or remove to disable
 # axis_menu                 = null   # axis index for Menu (positive only); comment out or remove to disable
