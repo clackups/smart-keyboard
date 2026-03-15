@@ -144,6 +144,10 @@ pub struct KeyboardInputConfig {
     /// Produces the Down Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
+    /// FLTK key code for "activate Backspace" (default: None / disabled).
+    /// Produces the Backspace output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_bksp: Option<u32>,
     /// FLTK key code for "navigate center" (default: None / disabled).
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
@@ -250,6 +254,9 @@ pub struct GamepadInputConfig {
     /// Button index for "activate Arrow Down"; absent / `null` means disabled.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
+    /// Button index for "activate Backspace"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_bksp: Option<u32>,
     /// Button index for "navigate center"; absent / `null` means disabled.
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
@@ -371,6 +378,10 @@ pub struct GpioInputConfig {
     /// Produces the Down Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
+    /// GPIO line number for "activate Backspace"; `null` / absent = disabled.
+    /// Produces the Backspace output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_bksp: Option<u32>,
     /// GPIO line number for "navigate center"; `null` / absent = disabled.
     /// Moves the selection to the key configured by `[navigate] center_key`.
     #[serde(default)]
@@ -414,6 +425,7 @@ impl Default for GpioInputConfig {
             activate_arrow_right: None,
             activate_arrow_up:    None,
             activate_arrow_down:  None,
+            activate_bksp:        None,
             navigate_center: None,
             gpio_signal:     GpioSignal::Low,
             gpio_pull:       GpioPull::Null,
@@ -774,6 +786,7 @@ impl Default for KeyboardInputConfig {
             activate_arrow_right: None,
             activate_arrow_up:    None,
             activate_arrow_down:  None,
+            activate_bksp:        None,
             navigate_center: None,
         }
     }
@@ -809,6 +822,7 @@ impl Default for GamepadInputConfig {
             activate_arrow_right:     None,
             activate_arrow_up:        None,
             activate_arrow_down:      None,
+            activate_bksp:            None,
             navigate_center:          None,
             repeat_delay_ms:          default_repeat_delay_ms(),
             repeat_interval_ms:       default_repeat_interval_ms(),
@@ -891,6 +905,8 @@ pub struct NavKeys {
     pub activate_arrow_up: Option<Key>,
     /// Key that produces the Down Arrow output directly (None = disabled).
     pub activate_arrow_down: Option<Key>,
+    /// Key that produces the Backspace output directly (None = disabled).
+    pub activate_bksp: Option<Key>,
     /// Key that moves the selection to the center of the keyboard (None = disabled).
     pub navigate_center: Option<Key>,
 }
@@ -917,6 +933,7 @@ impl NavKeys {
             activate_arrow_right: cfg.activate_arrow_right.map(|v| Key::from_i32(v as i32)),
             activate_arrow_up:    cfg.activate_arrow_up   .map(|v| Key::from_i32(v as i32)),
             activate_arrow_down:  cfg.activate_arrow_down .map(|v| Key::from_i32(v as i32)),
+            activate_bksp:        cfg.activate_bksp       .map(|v| Key::from_i32(v as i32)),
             navigate_center: cfg.navigate_center.map(|v| Key::from_i32(v as i32)),
         }
     }

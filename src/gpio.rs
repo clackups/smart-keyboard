@@ -81,6 +81,8 @@ pub enum GpioAction {
     ActivateArrowUp,
     /// Produce the Down Arrow output directly.
     ActivateArrowDown,
+    /// Produce the Backspace output directly.
+    ActivateBksp,
     /// Move the selection to the center of the keyboard.
     NavigateCenter,
 }
@@ -241,6 +243,7 @@ impl GpioInput {
             (cfg.activate_arrow_right,  GpioAction::ActivateArrowRight),
             (cfg.activate_arrow_up,     GpioAction::ActivateArrowUp),
             (cfg.activate_arrow_down,   GpioAction::ActivateArrowDown),
+            (cfg.activate_bksp,         GpioAction::ActivateBksp),
             (cfg.navigate_center,       GpioAction::NavigateCenter),
         ];
 

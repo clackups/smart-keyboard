@@ -195,6 +195,7 @@ printable characters they equal the lowercase ASCII code.
 | `activate_arrow_right` | *(disabled)* | Produces the Right Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_arrow_up` | *(disabled)* | Produces the Up Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_arrow_down` | *(disabled)* | Produces the Down Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_bksp` | *(disabled)* | Produces the Backspace output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 **Example**
@@ -217,6 +218,7 @@ menu           = 0x6d     # 'm'
 # activate_arrow_right = null
 # activate_arrow_up    = null
 # activate_arrow_down  = null
+# activate_bksp        = null
 # navigate_center      = null
 ```
 
@@ -259,6 +261,7 @@ a key to disable that action.
 | `activate_arrow_right` | *(disabled)* | Button index for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_up` | *(disabled)* | Button index for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_down` | *(disabled)* | Button index for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_bksp` | *(disabled)* | Button index for activate-Backspace. Produces the Backspace output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
@@ -320,6 +323,7 @@ menu     = 0x08   # Start/Menu button
 # activate_arrow_right = null
 # activate_arrow_up    = null
 # activate_arrow_down  = null
+# activate_bksp        = null
 # navigate_center      = null
 
 # Analog stick navigation
@@ -392,6 +396,7 @@ Remove or set a field to `null` to disable that action.
 | `activate_arrow_right` | *(disabled)* | GPIO line number for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_up` | *(disabled)* | GPIO line number for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_down` | *(disabled)* | GPIO line number for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_bksp` | *(disabled)* | GPIO line number for activate-Backspace. Produces the Backspace output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | GPIO line number for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 #### Auto-repeat

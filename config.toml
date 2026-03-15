@@ -18,6 +18,7 @@ menu           = 0x6d     # 'm'
 # activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
+# activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null # moves selection to center of keyboard; null/absent = disabled
 # Example: navigate_center = 0x63  # 'c'
 
@@ -41,6 +42,7 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
+# activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Left/positive=Right (or swapped if inverted)
@@ -89,6 +91,7 @@ enabled = false
 # activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
+# activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Which GPIO signal level means "pressed": "high" or "low" (default: "low").
 # A low signal is typical when using a pull-up resistor and a button that pulls

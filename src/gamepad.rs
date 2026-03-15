@@ -52,6 +52,8 @@ pub enum GamepadAction {
     ActivateArrowUp,
     /// Produce the Down Arrow output directly.
     ActivateArrowDown,
+    /// Produce the Backspace output directly.
+    ActivateBksp,
     /// Move the selection to the center of the keyboard.
     NavigateCenter,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
@@ -207,6 +209,7 @@ pub struct Gamepad {
     activate_arrow_right: Option<u32>,
     activate_arrow_up:    Option<u32>,
     activate_arrow_down:  Option<u32>,
+    activate_bksp:        Option<u32>,
     navigate_center: Option<u32>,
     // Axis configuration
     axis_horizontal:          Option<u32>,  // axis index for left/right (None = disabled)
@@ -287,6 +290,7 @@ impl Gamepad {
             activate_arrow_right: cfg.activate_arrow_right,
             activate_arrow_up:    cfg.activate_arrow_up,
             activate_arrow_down:  cfg.activate_arrow_down,
+            activate_bksp:        cfg.activate_bksp,
             navigate_center: cfg.navigate_center,
             axis_horizontal:          cfg.axis_navigate_horizontal.as_ref().map(|a| a.axis),
             axis_horizontal_inverted: cfg.axis_navigate_horizontal.as_ref()
@@ -449,6 +453,7 @@ impl Gamepad {
         if self.activate_arrow_right == Some(code) { return Some(GamepadAction::ActivateArrowRight); }
         if self.activate_arrow_up    == Some(code) { return Some(GamepadAction::ActivateArrowUp);    }
         if self.activate_arrow_down  == Some(code) { return Some(GamepadAction::ActivateArrowDown);  }
+        if self.activate_bksp        == Some(code) { return Some(GamepadAction::ActivateBksp);       }
         if self.navigate_center == Some(code) { return Some(GamepadAction::NavigateCenter);  }
         None
     }

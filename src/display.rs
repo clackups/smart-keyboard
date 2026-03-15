@@ -2094,6 +2094,37 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                     return true;
                 }
 
+                // activate_bksp: directly produce the Backspace output.
+                if nav_keys.activate_bksp.map_or(false, |ak| k == ak) {
+                    let key_str = execute_action(
+                        Action::Backspace, 0x0e,
+                        *layout_idx_c.borrow(),
+                        &mut buf_c, &mut disp_c, &hook_c,
+                        &mod_state_c, &mod_btns_c.borrow(), colors,
+                        show_text_display_kbd,
+                    );
+                    *active_nav_key_c.borrow_mut() = Some((0x0e, key_str));
+                    if center_after_activate {
+                        if let Some(center) = {
+                            let ab = all_btns_c.borrow();
+                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
+                        } {
+                            let changed = {
+                                let mut ab = all_btns_c.borrow_mut();
+                                let mut lb = lang_btns_c.borrow_mut();
+                                let mut s  = sel_c.borrow_mut();
+                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                            };
+                            on_nav_changed(
+                                changed, gp_rumble, &gp_cell_c, &sel_c,
+                                &all_btns_c, *layout_idx_c.borrow(), &narrator_c, &audio_mode_c,
+                                mod_state_c.borrow().is_shifted(),
+                            );
+                        }
+                    }
+                    return true;
+                }
+
                 // activate_shift / ctrl / alt / altgr: force the modifier on,
                 // then activate the currently selected key as if that modifier
                 // were already held.  The modifier is auto-released by
@@ -2180,7 +2211,8 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                     || nav_keys.activate_arrow_left .map_or(false, |ak| k == ak)
                     || nav_keys.activate_arrow_right.map_or(false, |ak| k == ak)
                     || nav_keys.activate_arrow_up   .map_or(false, |ak| k == ak)
-                    || nav_keys.activate_arrow_down .map_or(false, |ak| k == ak);
+                    || nav_keys.activate_arrow_down .map_or(false, |ak| k == ak)
+                    || nav_keys.activate_bksp       .map_or(false, |ak| k == ak);
                 if is_activate_variant {
                     if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                         hook_c.on_key_release(sc, &ks);
