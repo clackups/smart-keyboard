@@ -918,7 +918,7 @@ fn is_null_assignment(line: &str) -> bool {
 /// Pre-process raw TOML text so that bare `null` values (which TOML 1.0 does
 /// not support) are silently removed.  Removing a key causes serde to fall
 /// back to the `#[serde(default)]` value for that field.
-fn strip_null_values(content: &str) -> std::borrow::Cow<str> {
+fn strip_null_values(content: &str) -> std::borrow::Cow<'_, str> {
     // Fast path: avoid allocation when no null values are present.
     if !content.contains("null") {
         return std::borrow::Cow::Borrowed(content);
