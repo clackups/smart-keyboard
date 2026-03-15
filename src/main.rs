@@ -437,9 +437,8 @@ fn main() {
                         if menu_sel_gp.borrow().is_some() { continue; }
                         if evt.pressed {
                             // Highlight the Enter button while it is "pressed".
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), Action::Enter,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Enter);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gp.borrow_mut() = Some((r, c));
                             }
@@ -489,9 +488,8 @@ fn main() {
                         if menu_sel_gp.borrow().is_some() { continue; }
                         if evt.pressed {
                             // Highlight the Space button while it is "pressed".
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), Action::Space,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Space);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gp.borrow_mut() = Some((r, c));
                             }
@@ -550,9 +548,8 @@ fn main() {
                         };
                         if evt.pressed {
                             // Highlight the corresponding arrow button.
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), arrow_action,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), arrow_action);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gp.borrow_mut() = Some((r, c));
                             }
@@ -602,9 +599,8 @@ fn main() {
                         if menu_sel_gp.borrow().is_some() { continue; }
                         if evt.pressed {
                             // Highlight the Backspace button while it is "pressed".
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), Action::Backspace,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Backspace);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gp.borrow_mut() = Some((r, c));
                             }
@@ -1067,9 +1063,8 @@ fn main() {
                         if menu_sel_gpio.borrow().is_some() { continue; }
                         if evt.pressed {
                             // Highlight the Enter button while it is "pressed".
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), Action::Enter,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Enter);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
                             }
@@ -1118,9 +1113,8 @@ fn main() {
                         if menu_sel_gpio.borrow().is_some() { continue; }
                         if evt.pressed {
                             // Highlight the Space button while it is "pressed".
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), Action::Space,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Space);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
                             }
@@ -1178,9 +1172,8 @@ fn main() {
                         };
                         if evt.pressed {
                             // Highlight the corresponding arrow button.
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), arrow_action,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), arrow_action);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
                             }
@@ -1229,9 +1222,8 @@ fn main() {
                         if menu_sel_gpio.borrow().is_some() { continue; }
                         if evt.pressed {
                             // Highlight the Backspace button while it is "pressed".
-                            if let Some((r, c)) = find_btn_by_action(
-                                &all_btns_c.borrow(), Action::Backspace,
-                            ) {
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Backspace);
+                            if let Some((r, c)) = btn_pos {
                                 all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
                                 *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
                             }
