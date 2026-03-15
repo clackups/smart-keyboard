@@ -867,8 +867,71 @@ impl Config {
             Ok(s) => s,
             Err(_) => return Self::default(),
         };
-        toml::from_str(&content).unwrap_or_default()
+        // TOML 1.0 has no null type.  Pre-process the content so that lines
+        // of the form `key = null` (which users write to mean "disabled") are
+        // treated as absent keys, causing serde to apply the configured defaults.
+        let processed = strip_null_values(&content);
+        toml::from_str(processed.as_ref()).unwrap_or_else(|e| {
+            eprintln!("[config] warning: failed to parse config.toml: {}; using built-in defaults", e);
+            Self::default()
+        })
     }
+}
+
+/// Return `true` when `line` is a TOML key-value assignment whose value is the
+/// bare word `null`.  TOML 1.0 has no null type; users write this to mean
+/// "disabled / use the default".
+///
+/// Handles optional trailing inline comments (`# ...`).
+fn is_null_assignment(line: &str) -> bool {
+    let trimmed = line.trim();
+    // Comment lines and empty lines are never assignments.
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return false;
+    }
+    // Must contain an `=` assignment.
+    let eq = match trimmed.find('=') {
+        Some(i) => i,
+        None => return false,
+    };
+    // The key (left of `=`) must look like a plain identifier, not a table
+    // header (`[section]`) or a quoted string key.
+    let key = trimmed[..eq].trim();
+    if key.is_empty() || key.starts_with('[') || key.starts_with('"') || key.starts_with('\'') {
+        return false;
+    }
+    // The value (right of `=`) must be the bare word "null", optionally
+    // followed by whitespace and/or a `#` comment.
+    let value_part = trimmed[eq + 1..].trim_start();
+    if !value_part.starts_with("null") {
+        return false;
+    }
+    let after_null = &value_part[4..]; // text after the four chars "null"
+    after_null.is_empty()
+        || after_null.starts_with('#')
+        || after_null.starts_with(' ')
+        || after_null.starts_with('\t')
+}
+
+/// Pre-process raw TOML text so that bare `null` values (which TOML 1.0 does
+/// not support) are silently removed.  Removing a key causes serde to fall
+/// back to the `#[serde(default)]` value for that field.
+fn strip_null_values(content: &str) -> std::borrow::Cow<str> {
+    // Fast path: avoid allocation when no null values are present.
+    if !content.contains("null") {
+        return std::borrow::Cow::Borrowed(content);
+    }
+    let mut out = String::with_capacity(content.len());
+    for line in content.lines() {
+        if is_null_assignment(line) {
+            // Replace with an empty line to keep subsequent line numbers intact.
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 // =============================================================================
