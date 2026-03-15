@@ -6,10 +6,75 @@
 // Falls back to built-in defaults if the file is missing or unparseable.
 
 use std::env;
+use std::fmt;
 use std::fs;
 
 use fltk::enums::Key;
 use serde::Deserialize;
+
+// =============================================================================
+// Axis navigation configuration
+// =============================================================================
+
+/// Configuration for a single analog navigation axis.
+///
+/// Can be specified in `config.toml` as:
+/// * A plain integer — just the axis index, transformation defaults to "normal".
+/// * A two-element array `[axis_index, "normal" | "inverted"]`.
+///
+/// When `inverted` is `true` the sense of the axis is reversed:
+///   * Negative axis values → Right (horizontal) or Down (vertical).
+///   * Positive axis values → Left  (horizontal) or Up   (vertical).
+#[derive(Clone)]
+pub struct AxisConfig {
+    pub axis:     u32,
+    pub inverted: bool,
+}
+
+impl<'de> serde::Deserialize<'de> for AxisConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Vis;
+        impl<'de> serde::de::Visitor<'de> for Vis {
+            type Value = AxisConfig;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "an axis index (integer) or \
+                     [axis_index, \"normal\"|\"inverted\"]",
+                )
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<AxisConfig, E> {
+                if v < 0 {
+                    return Err(E::custom("axis index must be non-negative"));
+                }
+                Ok(AxisConfig { axis: v as u32, inverted: false })
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<AxisConfig, E> {
+                Ok(AxisConfig { axis: v as u32, inverted: false })
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<AxisConfig, A::Error> {
+                let axis: u32 = seq
+                    .next_element::<u32>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let transform: Option<String> = seq.next_element()?;
+                let inverted = match transform.as_deref().unwrap_or("normal") {
+                    "normal"   => false,
+                    "inverted" => true,
+                    other => {
+                        return Err(serde::de::Error::unknown_variant(
+                            other,
+                            &["normal", "inverted"],
+                        ))
+                    }
+                };
+                Ok(AxisConfig { axis, inverted })
+            }
+        }
+        deserializer.deserialize_any(Vis)
+    }
+}
 
 // FLTK key code constants (X11 KeySym values) used as defaults.
 // These match the values returned by `fltk::app::event_key().bits()`.
@@ -79,6 +144,10 @@ pub struct KeyboardInputConfig {
     /// Produces the Down Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
+    /// FLTK key code for "activate Backspace" (default: None / disabled).
+    /// Produces the Backspace output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_bksp: Option<u32>,
     /// FLTK key code for "navigate center" (default: None / disabled).
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
@@ -109,22 +178,21 @@ pub struct GamepadInputConfig {
     /// Default: 0x08.
     #[serde(default = "default_menu")]
     pub menu: Option<u32>,
-    /// Axis index used for left/right navigation.
-    /// Negative axis values -> Left, positive -> Right.
+    /// Axis configuration used for left/right navigation.
+    /// Negative axis values -> Left, positive -> Right (unless inverted).
     /// Absent / `null` means disabled.
-    /// Default: 0 (left stick X on most gamepads).
+    /// Default: axis 0 with "normal" transformation (left stick X on most gamepads).
     #[serde(default = "default_axis_navigate_horizontal")]
-    pub axis_navigate_horizontal: Option<u32>,
-    /// Axis index used for up/down navigation.
-    /// Negative axis values -> Up, positive -> Down.
+    pub axis_navigate_horizontal: Option<AxisConfig>,
+    /// Axis configuration used for up/down navigation.
+    /// Negative axis values -> Up, positive -> Down (unless inverted).
     /// Absent / `null` means disabled.
-    /// Default: 1 (left stick Y on most gamepads).
+    /// Default: axis 1 with "normal" transformation (left stick Y on most gamepads).
     #[serde(default = "default_axis_navigate_vertical")]
-    pub axis_navigate_vertical: Option<u32>,
+    pub axis_navigate_vertical: Option<AxisConfig>,
     /// Axis index for the activate action.
     /// Positive axis values above `axis_threshold` trigger Activate.
     /// Absent / `null` means disabled.
-    /// Default: 0x05.
     #[serde(default = "default_axis_activate")]
     pub axis_activate: Option<u32>,
     /// Axis index for the menu action.
@@ -185,6 +253,9 @@ pub struct GamepadInputConfig {
     /// Button index for "activate Arrow Down"; absent / `null` means disabled.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
+    /// Button index for "activate Backspace"; absent / `null` means disabled.
+    #[serde(default)]
+    pub activate_bksp: Option<u32>,
     /// Button index for "navigate center"; absent / `null` means disabled.
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
@@ -199,11 +270,11 @@ pub struct GamepadInputConfig {
     pub repeat_interval_ms: u64,
 }
 
-fn default_activate()                 -> Option<u32> { Some(0x05) }
-fn default_menu()                     -> Option<u32> { Some(0x08) }
-fn default_axis_navigate_horizontal() -> Option<u32> { Some(0) }
-fn default_axis_navigate_vertical()   -> Option<u32> { Some(1) }
-fn default_axis_activate()            -> Option<u32> { Some(0x05) }
+fn default_activate()                 -> Option<u32>        { Some(0x05) }
+fn default_menu()                     -> Option<u32>        { Some(0x08) }
+fn default_axis_navigate_horizontal() -> Option<AxisConfig> { Some(AxisConfig { axis: 0, inverted: false }) }
+fn default_axis_navigate_vertical()   -> Option<AxisConfig> { Some(AxisConfig { axis: 1, inverted: false }) }
+fn default_axis_activate()            -> Option<u32>        { None }
 fn default_axis_threshold()           -> i32  { 16384 }
 fn default_rumble_duration_ms()       -> u16  { 50 }
 fn default_rumble_magnitude()         -> u16  { 0x4000 }
@@ -306,6 +377,10 @@ pub struct GpioInputConfig {
     /// Produces the Down Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
+    /// GPIO line number for "activate Backspace"; `null` / absent = disabled.
+    /// Produces the Backspace output regardless of the current keyboard selection.
+    #[serde(default)]
+    pub activate_bksp: Option<u32>,
     /// GPIO line number for "navigate center"; `null` / absent = disabled.
     /// Moves the selection to the key configured by `[navigate] center_key`.
     #[serde(default)]
@@ -349,6 +424,7 @@ impl Default for GpioInputConfig {
             activate_arrow_right: None,
             activate_arrow_up:    None,
             activate_arrow_down:  None,
+            activate_bksp:        None,
             navigate_center: None,
             gpio_signal:     GpioSignal::Low,
             gpio_pull:       GpioPull::Null,
@@ -709,6 +785,7 @@ impl Default for KeyboardInputConfig {
             activate_arrow_right: None,
             activate_arrow_up:    None,
             activate_arrow_down:  None,
+            activate_bksp:        None,
             navigate_center: None,
         }
     }
@@ -744,6 +821,7 @@ impl Default for GamepadInputConfig {
             activate_arrow_right:     None,
             activate_arrow_up:        None,
             activate_arrow_down:      None,
+            activate_bksp:            None,
             navigate_center:          None,
             repeat_delay_ms:          default_repeat_delay_ms(),
             repeat_interval_ms:       default_repeat_interval_ms(),
@@ -780,7 +858,9 @@ impl Config {
     /// Load configuration from `config.toml` inside the directory given by the
     /// `SMART_KBD_CONFIG_PATH` environment variable, or from `config.toml` in
     /// the current working directory if the variable is not set.
-    /// Falls back silently to built-in defaults on any error.
+    /// Falls back to built-in defaults when the file is absent.
+    /// Aborts with a detailed error message when the file exists but contains
+    /// syntax errors.
     pub fn load() -> Self {
         let dir = env::var("SMART_KBD_CONFIG_PATH")
             .unwrap_or_else(|_| ".".into());
@@ -789,8 +869,71 @@ impl Config {
             Ok(s) => s,
             Err(_) => return Self::default(),
         };
-        toml::from_str(&content).unwrap_or_default()
+        // TOML 1.0 has no null type.  Pre-process the content so that lines
+        // of the form `key = null` (which users write to mean "disabled") are
+        // treated as absent keys, causing serde to apply the configured defaults.
+        let processed = strip_null_values(&content);
+        toml::from_str(processed.as_ref()).unwrap_or_else(|e| {
+            eprintln!("error: failed to parse {}: {}", path.display(), e);
+            std::process::exit(1);
+        })
     }
+}
+
+/// Return `true` when `line` is a TOML key-value assignment whose value is the
+/// bare word `null`.  TOML 1.0 has no null type; users write this to mean
+/// "disabled / use the default".
+///
+/// Handles optional trailing inline comments (`# ...`).
+fn is_null_assignment(line: &str) -> bool {
+    let trimmed = line.trim();
+    // Comment lines and empty lines are never assignments.
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return false;
+    }
+    // Must contain an `=` assignment.
+    let eq = match trimmed.find('=') {
+        Some(i) => i,
+        None => return false,
+    };
+    // The key (left of `=`) must look like a plain identifier, not a table
+    // header (`[section]`) or a quoted string key.
+    let key = trimmed[..eq].trim();
+    if key.is_empty() || key.starts_with('[') || key.starts_with('"') || key.starts_with('\'') {
+        return false;
+    }
+    // The value (right of `=`) must be the bare word "null", optionally
+    // followed by whitespace and/or a `#` comment.
+    let value_part = trimmed[eq + 1..].trim_start();
+    if !value_part.starts_with("null") {
+        return false;
+    }
+    let after_null = &value_part[4..]; // text after the four chars "null"
+    after_null.is_empty()
+        || after_null.starts_with('#')
+        || after_null.starts_with(' ')
+        || after_null.starts_with('\t')
+}
+
+/// Pre-process raw TOML text so that bare `null` values (which TOML 1.0 does
+/// not support) are silently removed.  Removing a key causes serde to fall
+/// back to the `#[serde(default)]` value for that field.
+fn strip_null_values(content: &str) -> std::borrow::Cow<'_, str> {
+    // Fast path: avoid allocation when no null values are present.
+    if !content.contains("null") {
+        return std::borrow::Cow::Borrowed(content);
+    }
+    let mut out = String::with_capacity(content.len());
+    for line in content.lines() {
+        if is_null_assignment(line) {
+            // Replace with an empty line to keep subsequent line numbers intact.
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 // =============================================================================
@@ -826,6 +969,8 @@ pub struct NavKeys {
     pub activate_arrow_up: Option<Key>,
     /// Key that produces the Down Arrow output directly (None = disabled).
     pub activate_arrow_down: Option<Key>,
+    /// Key that produces the Backspace output directly (None = disabled).
+    pub activate_bksp: Option<Key>,
     /// Key that moves the selection to the center of the keyboard (None = disabled).
     pub navigate_center: Option<Key>,
 }
@@ -852,6 +997,7 @@ impl NavKeys {
             activate_arrow_right: cfg.activate_arrow_right.map(|v| Key::from_i32(v as i32)),
             activate_arrow_up:    cfg.activate_arrow_up   .map(|v| Key::from_i32(v as i32)),
             activate_arrow_down:  cfg.activate_arrow_down .map(|v| Key::from_i32(v as i32)),
+            activate_bksp:        cfg.activate_bksp       .map(|v| Key::from_i32(v as i32)),
             navigate_center: cfg.navigate_center.map(|v| Key::from_i32(v as i32)),
         }
     }

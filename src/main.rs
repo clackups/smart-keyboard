@@ -17,7 +17,7 @@ use narrator::Narrator;
 use display::{
     NavSel, MenuItemDef,
     menu_first_enabled, menu_move_sel, menu_set_item_colors,
-    nav_set, nav_move, find_center_key,
+    nav_set, nav_move, find_center_key, find_btn_by_action,
     execute_action,
     on_nav_changed,
     BuildUiParams, build_ui,
@@ -217,6 +217,7 @@ fn main() {
         let mut disp_c        = ui.disp.clone();
         let hook_c            = Rc::clone(&hook);
         let active_nav_key_c  = ui.active_nav_key.clone();
+        let active_btn_pressed_gp = ui.active_btn_pressed.clone();
         let mut gamepad_status_t = ui.gamepad_status.clone();
         let gp_cell_t         = ui.gp_cell.clone();
         let narrator_t        = narrator.clone();
@@ -399,8 +400,11 @@ fn main() {
                                     // sent when the gamepad button is released.
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
+                                    // Re-apply nav_sel (execute_action may have changed
+                                    // the colour for modifier keys) and redraw.
                                     all_btns_c.borrow_mut()[row][col]
                                         .0.set_color(colors.nav_sel);
+                                    app::redraw();
                                 }
                             }
                             if gp_center_after_activate {
@@ -432,6 +436,12 @@ fn main() {
                         // Ignore while menu is open.
                         if menu_sel_gp.borrow().is_some() { continue; }
                         if evt.pressed {
+                            // Highlight the Enter button while it is "pressed".
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Enter);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gp.borrow_mut() = Some((r, c));
+                            }
                             let key_str = execute_action(
                                 Action::Enter, 0x1c,
                                 *layout_idx_c.borrow(),
@@ -459,6 +469,15 @@ fn main() {
                                 }
                             }
                         } else {
+                            if let Some((r, c)) = active_btn_pressed_gp.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
@@ -468,6 +487,12 @@ fn main() {
                         // Ignore while menu is open.
                         if menu_sel_gp.borrow().is_some() { continue; }
                         if evt.pressed {
+                            // Highlight the Space button while it is "pressed".
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Space);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gp.borrow_mut() = Some((r, c));
+                            }
                             let key_str = execute_action(
                                 Action::Space, 0x39,
                                 *layout_idx_c.borrow(),
@@ -495,6 +520,15 @@ fn main() {
                                 }
                             }
                         } else {
+                            if let Some((r, c)) = active_btn_pressed_gp.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
@@ -513,6 +547,12 @@ fn main() {
                             _                                 => (Action::ArrowDown,  0x6cu16),
                         };
                         if evt.pressed {
+                            // Highlight the corresponding arrow button.
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), arrow_action);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gp.borrow_mut() = Some((r, c));
+                            }
                             let key_str = execute_action(
                                 arrow_action, arrow_sc,
                                 *layout_idx_c.borrow(),
@@ -540,6 +580,66 @@ fn main() {
                                 }
                             }
                         } else {
+                            if let Some((r, c)) = active_btn_pressed_gp.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GamepadAction::ActivateBksp => {
+                        // Ignore while menu is open.
+                        if menu_sel_gp.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            // Highlight the Backspace button while it is "pressed".
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Backspace);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gp.borrow_mut() = Some((r, c));
+                            }
+                            let key_str = execute_action(
+                                Action::Backspace, 0x0e,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gp,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((0x0e, key_str));
+                            if gp_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gp_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, gp_rumble, &gp_cell_t, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((r, c)) = active_btn_pressed_gp.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
@@ -587,6 +687,7 @@ fn main() {
                                         Some((scancode, key_str));
                                     all_btns_c.borrow_mut()[row][col]
                                         .0.set_color(colors.nav_sel);
+                                    app::redraw();
                                 }
                             }
                             if gp_center_after_activate {
@@ -773,6 +874,7 @@ fn main() {
         let mut disp_c        = ui.disp.clone();
         let hook_c            = Rc::clone(&hook);
         let active_nav_key_c  = ui.active_nav_key.clone();
+        let active_btn_pressed_gpio = ui.active_btn_pressed.clone();
         let mut gpio_status_t = ui.gpio_status.clone();
         let gpio_cell_t       = gpio_cell.clone();
         let gp_cell_gpio      = ui.gp_cell.clone();
@@ -927,8 +1029,10 @@ fn main() {
                                     );
                                     *active_nav_key_c.borrow_mut() =
                                         Some((scancode, key_str));
+                                    // Re-apply nav_sel and redraw.
                                     all_btns_c.borrow_mut()[row][col]
                                         .0.set_color(colors.nav_sel);
+                                    app::redraw();
                                 }
                             }
                             if gpio_center_after_activate {
@@ -958,6 +1062,12 @@ fn main() {
                     GpioAction::ActivateEnter => {
                         if menu_sel_gpio.borrow().is_some() { continue; }
                         if evt.pressed {
+                            // Highlight the Enter button while it is "pressed".
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Enter);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
+                            }
                             let key_str = execute_action(
                                 Action::Enter, 0x1c,
                                 *layout_idx_c.borrow(),
@@ -985,6 +1095,15 @@ fn main() {
                                 }
                             }
                         } else {
+                            if let Some((r, c)) = active_btn_pressed_gpio.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
@@ -993,6 +1112,12 @@ fn main() {
                     GpioAction::ActivateSpace => {
                         if menu_sel_gpio.borrow().is_some() { continue; }
                         if evt.pressed {
+                            // Highlight the Space button while it is "pressed".
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Space);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
+                            }
                             let key_str = execute_action(
                                 Action::Space, 0x39,
                                 *layout_idx_c.borrow(),
@@ -1020,6 +1145,15 @@ fn main() {
                                 }
                             }
                         } else {
+                            if let Some((r, c)) = active_btn_pressed_gpio.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
@@ -1037,6 +1171,12 @@ fn main() {
                             _                              => (Action::ArrowDown,  0x6cu16),
                         };
                         if evt.pressed {
+                            // Highlight the corresponding arrow button.
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), arrow_action);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
+                            }
                             let key_str = execute_action(
                                 arrow_action, arrow_sc,
                                 *layout_idx_c.borrow(),
@@ -1064,6 +1204,65 @@ fn main() {
                                 }
                             }
                         } else {
+                            if let Some((r, c)) = active_btn_pressed_gpio.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
+                            if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
+                                hook_c.on_key_release(sc, &ks);
+                            }
+                        }
+                    }
+                    GpioAction::ActivateBksp => {
+                        if menu_sel_gpio.borrow().is_some() { continue; }
+                        if evt.pressed {
+                            // Highlight the Backspace button while it is "pressed".
+                            let btn_pos = find_btn_by_action(&all_btns_c.borrow(), Action::Backspace);
+                            if let Some((r, c)) = btn_pos {
+                                all_btns_c.borrow_mut()[r][c].0.set_color(colors.nav_sel);
+                                *active_btn_pressed_gpio.borrow_mut() = Some((r, c));
+                            }
+                            let key_str = execute_action(
+                                Action::Backspace, 0x0e,
+                                *layout_idx_c.borrow(),
+                                &mut buf_c, &mut disp_c, &hook_c,
+                                &mod_state_c, &mod_btns_c.borrow(), colors,
+                                show_text_display_gpio,
+                            );
+                            *active_nav_key_c.borrow_mut() = Some((0x0e, key_str));
+                            if gpio_center_after_activate {
+                                if let Some(center) = {
+                                    let ab = all_btns_c.borrow();
+                                    find_center_key(&ab, *layout_idx_c.borrow(), &gpio_center_key)
+                                } {
+                                    let changed = {
+                                        let mut ab = all_btns_c.borrow_mut();
+                                        let mut lb = lang_btns_c.borrow_mut();
+                                        let mut s  = sel_c.borrow_mut();
+                                        nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
+                                    };
+                                    on_nav_changed(
+                                        changed, false, &gp_cell_gpio, &sel_c,
+                                        &all_btns_c, *layout_idx_c.borrow(), &narrator_t, &audio_mode_t,
+                                        mod_state_c.borrow().is_shifted(),
+                                    );
+                                }
+                            }
+                        } else {
+                            if let Some((r, c)) = active_btn_pressed_gpio.borrow_mut().take() {
+                                let restore = {
+                                    let ab = all_btns_c.borrow();
+                                    if *sel_c.borrow() == NavSel::Key(r, c) { colors.nav_sel }
+                                    else { ab[r][c].3 }
+                                };
+                                all_btns_c.borrow_mut()[r][c].0.set_color(restore);
+                                app::redraw();
+                            }
                             if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                                 hook_c.on_key_release(sc, &ks);
                             }
@@ -1108,6 +1307,7 @@ fn main() {
                                         Some((scancode, key_str));
                                     all_btns_c.borrow_mut()[row][col]
                                         .0.set_color(colors.nav_sel);
+                                    app::redraw();
                                 }
                             }
                             if gpio_center_after_activate {

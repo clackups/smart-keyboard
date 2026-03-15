@@ -195,6 +195,7 @@ printable characters they equal the lowercase ASCII code.
 | `activate_arrow_right` | *(disabled)* | Produces the Right Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_arrow_up` | *(disabled)* | Produces the Up Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_arrow_down` | *(disabled)* | Produces the Down Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
+| `activate_bksp` | *(disabled)* | Produces the Backspace output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 **Example**
@@ -217,6 +218,7 @@ menu           = 0x6d     # 'm'
 # activate_arrow_right = null
 # activate_arrow_up    = null
 # activate_arrow_down  = null
+# activate_bksp        = null
 # navigate_center      = null
 ```
 
@@ -259,15 +261,16 @@ a key to disable that action.
 | `activate_arrow_right` | *(disabled)* | Button index for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_up` | *(disabled)* | Button index for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_down` | *(disabled)* | Button index for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_bksp` | *(disabled)* | Button index for activate-Backspace. Produces the Backspace output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 #### Analog stick / axis navigation
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `axis_navigate_horizontal` | `0` | Axis index for left/right navigation (left stick X on most gamepads). Negative values → Left, positive → Right. Remove/null to disable. |
-| `axis_navigate_vertical` | `1` | Axis index for up/down navigation (left stick Y on most gamepads). Negative values → Up, positive → Down. Remove/null to disable. |
-| `axis_activate` | `0x05` | Axis index whose positive values trigger Activate (e.g. a trigger axis). Remove/null to disable. |
+| `axis_navigate_horizontal` | `[0, "normal"]` | Axis configuration for left/right navigation (left stick X on most gamepads). Accepts either a plain axis index (e.g. `0`) or a two-element array `[axis_index, transformation]` where transformation is `"normal"` (default) or `"inverted"`. With `"normal"`: negative values → Left, positive → Right. With `"inverted"` the directions are swapped. Remove/null to disable. |
+| `axis_navigate_vertical` | `[1, "normal"]` | Axis configuration for up/down navigation (left stick Y on most gamepads). Accepts either a plain axis index (e.g. `1`) or a two-element array `[axis_index, transformation]` where transformation is `"normal"` (default) or `"inverted"`. With `"normal"`: negative values → Up, positive → Down. With `"inverted"` the directions are swapped. Remove/null to disable. |
+| `axis_activate` | *(disabled)* | Axis index whose positive values trigger Activate (e.g. a trigger axis). Remove/null to disable. |
 | `axis_menu` | *(disabled)* | Axis index whose positive values trigger Menu (e.g. a trigger axis). Remove/null to disable. |
 | `axis_threshold` | `16384` | Minimum absolute axis value (0–32767) required to register a direction or activation. Raw axis values range from −32767 to +32767; `16384` corresponds to approximately half-deflection. |
 
@@ -320,13 +323,14 @@ menu     = 0x08   # Start/Menu button
 # activate_arrow_right = null
 # activate_arrow_up    = null
 # activate_arrow_down  = null
+# activate_bksp        = null
 # navigate_center      = null
 
 # Analog stick navigation
-# axis_navigate_horizontal = 0
-# axis_navigate_vertical   = 1
+# axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]
+# axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]
 # axis_threshold           = 16384
-axis_activate = 0x05
+# axis_activate = null
 # axis_menu     = null
 
 # Absolute-axes mode (for touchpad-style controllers)
@@ -392,6 +396,7 @@ Remove or set a field to `null` to disable that action.
 | `activate_arrow_right` | *(disabled)* | GPIO line number for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_up` | *(disabled)* | GPIO line number for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_arrow_down` | *(disabled)* | GPIO line number for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
+| `activate_bksp` | *(disabled)* | GPIO line number for activate-Backspace. Produces the Backspace output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | GPIO line number for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
 
 #### Auto-repeat

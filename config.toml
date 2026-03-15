@@ -18,6 +18,7 @@ menu           = 0x6d     # 'm'
 # activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
+# activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null # moves selection to center of keyboard; null/absent = disabled
 # Example: navigate_center = 0x63  # 'c'
 
@@ -41,12 +42,14 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
+# activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Analog stick / axis navigation; comment out or remove to disable
-# axis_navigate_horizontal = 0    # axis index: negative = Left, positive = Right
-# axis_navigate_vertical   = 1    # axis index: negative = Up,   positive = Down
+# axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Left/positive=Right (or swapped if inverted)
+# axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Up/positive=Down   (or swapped if inverted)
+# (A plain integer is also accepted and defaults to "normal", e.g. axis_navigate_horizontal = 0)
 # axis_threshold            = 16384  # minimum |value| to register (0-32767)
-axis_activate             = 0x05  # axis index for Activate (positive only); comment out or remove to disable
+# axis_activate             = null   # axis index for Activate (positive only); null or absent = disabled (default)
 # axis_menu                 = null   # axis index for Menu (positive only); comment out or remove to disable
 # When absolute_axes = true the raw horizontal/vertical axis values are mapped
 # directly to keyboard positions rather than being treated as directional inputs.
@@ -88,6 +91,7 @@ enabled = false
 # activate_arrow_right = null  # produces the Right Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_up    = null  # produces the Up Arrow output regardless of selection; null/absent = disabled
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
+# activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
 # Which GPIO signal level means "pressed": "high" or "low" (default: "low").
 # A low signal is typical when using a pull-up resistor and a button that pulls
