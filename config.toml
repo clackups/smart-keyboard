@@ -49,7 +49,7 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Up/positive=Down   (or swapped if inverted)
 # (A plain integer is also accepted and defaults to "normal", e.g. axis_navigate_horizontal = 0)
 # axis_threshold            = 16384  # minimum |value| to register (0-32767)
-# axis_activate             = null   # axis index for Activate (positive only); comment out or remove to disable
+# axis_activate             = null   # axis index for Activate (positive only); null or absent = disabled (default)
 # axis_menu                 = null   # axis index for Menu (positive only); comment out or remove to disable
 # When absolute_axes = true the raw horizontal/vertical axis values are mapped
 # directly to keyboard positions rather than being treated as directional inputs.

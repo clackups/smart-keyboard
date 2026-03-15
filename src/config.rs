@@ -858,7 +858,9 @@ impl Config {
     /// Load configuration from `config.toml` inside the directory given by the
     /// `SMART_KBD_CONFIG_PATH` environment variable, or from `config.toml` in
     /// the current working directory if the variable is not set.
-    /// Falls back silently to built-in defaults on any error.
+    /// Falls back to built-in defaults when the file is absent.
+    /// Aborts with a detailed error message when the file exists but contains
+    /// syntax errors.
     pub fn load() -> Self {
         let dir = env::var("SMART_KBD_CONFIG_PATH")
             .unwrap_or_else(|_| ".".into());
@@ -872,8 +874,8 @@ impl Config {
         // treated as absent keys, causing serde to apply the configured defaults.
         let processed = strip_null_values(&content);
         toml::from_str(processed.as_ref()).unwrap_or_else(|e| {
-            eprintln!("[config] warning: failed to parse config.toml: {}; using built-in defaults", e);
-            Self::default()
+            eprintln!("error: failed to parse {}: {}", path.display(), e);
+            std::process::exit(1);
         })
     }
 }
