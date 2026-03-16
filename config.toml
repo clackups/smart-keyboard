@@ -25,13 +25,15 @@ menu           = 0x6d     # 'm'
 [input.gamepad]
 enabled = true
 device  = "auto"        # Auto-detect first connected gamepad
-# Gamepad button codes (numeric, hexadecimal); comment out or remove to disable
+# Gamepad inputs (button or axis); comment out or remove to disable.
+# A plain integer specifies a button ID; the string "a:N" specifies axis N
+# (positive values above axis_threshold trigger the action, like analog triggers).
 # navigate_up    = 0x00
 # navigate_down  = 0x01
 # navigate_left  = 0x02
 # navigate_right = 0x03
-activate       = 0x05   # A/South button; comment out or remove to disable
-menu           = 0x08   # Menu/Start button; comment out or remove to disable
+# activate       = 0x05   # A/South button; comment out or remove to disable
+# menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_shift = null   # equivalent to activate when Shift is held; null/absent = disabled
 # activate_ctrl  = null   # equivalent to activate when Ctrl is held; null/absent = disabled
 # activate_alt   = null   # equivalent to activate when Alt is held; null/absent = disabled
@@ -44,13 +46,14 @@ menu           = 0x08   # Menu/Start button; comment out or remove to disable
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
+# Examples using axis specifiers (analog triggers):
+# activate = "a:2"   # axis 2 positive -> Activate
+# menu     = "a:5"   # axis 5 positive -> Menu
 # Analog stick / axis navigation; comment out or remove to disable
 # axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Left/positive=Right (or swapped if inverted)
 # axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]: negative=Up/positive=Down   (or swapped if inverted)
 # (A plain integer is also accepted and defaults to "normal", e.g. axis_navigate_horizontal = 0)
 # axis_threshold            = 16384  # minimum |value| to register (0-32767)
-# axis_activate             = null   # axis index for Activate (positive only); null or absent = disabled (default)
-# axis_menu                 = null   # axis index for Menu (positive only); comment out or remove to disable
 # When absolute_axes = true the raw horizontal/vertical axis values are mapped
 # directly to keyboard positions rather than being treated as directional inputs.
 # The full axis range (-32767 ... +32767) is divided evenly across the available

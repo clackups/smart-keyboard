@@ -14,7 +14,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::config::GamepadInputConfig;
+use crate::config::{ButtonOrAxis, GamepadInputConfig};
 
 /// Maximum number of joystick device indices to probe during auto-detection.
 const MAX_JOYSTICK_DEVICES: u8 = 8;
@@ -190,6 +190,14 @@ const _: () = assert!(EVIOCSFF == 0x40304580);
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum AxisDir { Negative, Positive }
 
+/// A button-mapped action that is triggered by an analog axis instead of a
+/// button.  Positive axis values above `axis_threshold` trigger the action.
+struct AxisAction {
+    axis:   u32,
+    action: GamepadAction,
+    active: bool,
+}
+
 /// Non-blocking reader for a Linux joystick device (`/dev/input/js*`).
 pub struct Gamepad {
     file:           File,
@@ -216,14 +224,12 @@ pub struct Gamepad {
     axis_horizontal_inverted: bool,         // when true: negative->Right, positive->Left
     axis_vertical:            Option<u32>,  // axis index for up/down (None = disabled)
     axis_vertical_inverted:   bool,         // when true: negative->Down, positive->Up
-    axis_activate:   Option<u32>,           // axis index for activate (None = disabled)
-    axis_menu:       Option<u32>,           // axis index for menu (None = disabled)
+    // Axis-mapped button actions (positive-only threshold trigger)
+    axis_actions:    Vec<AxisAction>,
     axis_threshold:  i32,                   // minimum |value| to register as active
     // Axis state (tracks previous active direction to generate press/release)
     horiz_dir:   Option<AxisDir>,
     vert_dir:    Option<AxisDir>,
-    act_active:  bool,
-    menu_active: bool,
     // Repeat timers: `Some(t)` means "fire next repeat event at time t".
     horiz_repeat_at: Option<Instant>,
     vert_repeat_at:  Option<Instant>,
@@ -274,37 +280,34 @@ impl Gamepad {
 
         Some(Gamepad {
             file,
-            navigate_up:    cfg.navigate_up,
-            navigate_down:  cfg.navigate_down,
-            navigate_left:  cfg.navigate_left,
-            navigate_right: cfg.navigate_right,
-            activate:       cfg.activate,
-            menu:           cfg.menu,
-            activate_shift: cfg.activate_shift,
-            activate_ctrl:  cfg.activate_ctrl,
-            activate_alt:   cfg.activate_alt,
-            activate_altgr: cfg.activate_altgr,
-            activate_enter: cfg.activate_enter,
-            activate_space: cfg.activate_space,
-            activate_arrow_left:  cfg.activate_arrow_left,
-            activate_arrow_right: cfg.activate_arrow_right,
-            activate_arrow_up:    cfg.activate_arrow_up,
-            activate_arrow_down:  cfg.activate_arrow_down,
-            activate_bksp:        cfg.activate_bksp,
-            navigate_center: cfg.navigate_center,
+            navigate_up:    btn(&cfg.navigate_up),
+            navigate_down:  btn(&cfg.navigate_down),
+            navigate_left:  btn(&cfg.navigate_left),
+            navigate_right: btn(&cfg.navigate_right),
+            activate:       btn(&cfg.activate),
+            menu:           btn(&cfg.menu),
+            activate_shift: btn(&cfg.activate_shift),
+            activate_ctrl:  btn(&cfg.activate_ctrl),
+            activate_alt:   btn(&cfg.activate_alt),
+            activate_altgr: btn(&cfg.activate_altgr),
+            activate_enter: btn(&cfg.activate_enter),
+            activate_space: btn(&cfg.activate_space),
+            activate_arrow_left:  btn(&cfg.activate_arrow_left),
+            activate_arrow_right: btn(&cfg.activate_arrow_right),
+            activate_arrow_up:    btn(&cfg.activate_arrow_up),
+            activate_arrow_down:  btn(&cfg.activate_arrow_down),
+            activate_bksp:        btn(&cfg.activate_bksp),
+            navigate_center: btn(&cfg.navigate_center),
             axis_horizontal:          cfg.axis_navigate_horizontal.as_ref().map(|a| a.axis),
             axis_horizontal_inverted: cfg.axis_navigate_horizontal.as_ref()
                 .map_or(false, |a| a.inverted),
             axis_vertical:            cfg.axis_navigate_vertical.as_ref().map(|a| a.axis),
             axis_vertical_inverted:   cfg.axis_navigate_vertical.as_ref()
                 .map_or(false, |a| a.inverted),
-            axis_activate:   cfg.axis_activate,
-            axis_menu:       cfg.axis_menu,
+            axis_actions:    build_axis_actions(cfg),
             axis_threshold:  cfg.axis_threshold,
             horiz_dir:       None,
             vert_dir:        None,
-            act_active:      false,
-            menu_active:     false,
             horiz_repeat_at: None,
             vert_repeat_at:  None,
             repeat_delay:    Duration::from_millis(cfg.repeat_delay_ms),
@@ -518,24 +521,8 @@ impl Gamepad {
                         pressed: false,
                     });
                 }
-            } else if self.axis_activate == Some(axis) {
-                let active = v > self.axis_threshold;
-                if active != self.act_active {
-                    out.push(GamepadEvent {
-                        action:  GamepadAction::Activate,
-                        pressed: active,
-                    });
-                    self.act_active = active;
-                }
-            } else if self.axis_menu == Some(axis) {
-                let active = v > self.axis_threshold;
-                if active != self.menu_active {
-                    out.push(GamepadEvent {
-                        action:  GamepadAction::Menu,
-                        pressed: active,
-                    });
-                    self.menu_active = active;
-                }
+            } else {
+                self.handle_axis_actions(axis, v, out);
             }
             return;
         }
@@ -597,26 +584,27 @@ impl Gamepad {
                     None
                 };
             }
-        } else if self.axis_activate == Some(axis) {
-            // Activate uses positive values only; this matches the physical
-            // behaviour of analog triggers (range 0 -> +32767).
-            let active = v > self.axis_threshold;
-            if active != self.act_active {
-                out.push(GamepadEvent {
-                    action:  GamepadAction::Activate,
-                    pressed: active,
-                });
-                self.act_active = active;
-            }
-        } else if self.axis_menu == Some(axis) {
-            // Menu uses positive values only.
-            let active = v > self.axis_threshold;
-            if active != self.menu_active {
-                out.push(GamepadEvent {
-                    action:  GamepadAction::Menu,
-                    pressed: active,
-                });
-                self.menu_active = active;
+        } else {
+            self.handle_axis_actions(axis, v, out);
+        }
+    }
+
+    /// Handle a single axis event against the axis-mapped button actions.
+    ///
+    /// Each entry in `axis_actions` is a button-mapped action that was
+    /// configured with an `"a:N"` axis specifier.  Positive axis values above
+    /// `axis_threshold` trigger a press; values at or below release it.
+    fn handle_axis_actions(&mut self, axis: u32, v: i32, out: &mut Vec<GamepadEvent>) {
+        let threshold = self.axis_threshold;
+        for aa in &mut self.axis_actions {
+            if aa.axis == axis {
+                // Uses positive values only; this matches the physical behaviour
+                // of analog triggers (range 0 -> +32767).
+                let active = v > threshold;
+                if active != aa.active {
+                    out.push(GamepadEvent { action: aa.action, pressed: active });
+                    aa.active = active;
+                }
             }
         }
     }
@@ -714,6 +702,51 @@ fn open_rumble(
 // =============================================================================
 // Axis helpers
 // =============================================================================
+
+/// Extract the button index from a `ButtonOrAxis` if it is a `Button` variant.
+fn btn(boa: &Option<ButtonOrAxis>) -> Option<u32> {
+    match boa {
+        Some(ButtonOrAxis::Button(n)) => Some(*n),
+        _ => None,
+    }
+}
+
+/// Build the list of axis-mapped actions from a `GamepadInputConfig`.
+///
+/// Each field that is configured as `ButtonOrAxis::Axis(n)` produces one entry
+/// in the returned `Vec`.  The returned entries are checked in `handle_axis`
+/// whenever an axis event arrives.
+fn build_axis_actions(cfg: &GamepadInputConfig) -> Vec<AxisAction> {
+    let pairs: &[(&Option<ButtonOrAxis>, GamepadAction)] = &[
+        (&cfg.navigate_up,          GamepadAction::Up),
+        (&cfg.navigate_down,        GamepadAction::Down),
+        (&cfg.navigate_left,        GamepadAction::Left),
+        (&cfg.navigate_right,       GamepadAction::Right),
+        (&cfg.activate,             GamepadAction::Activate),
+        (&cfg.menu,                 GamepadAction::Menu),
+        (&cfg.activate_shift,       GamepadAction::ActivateShift),
+        (&cfg.activate_ctrl,        GamepadAction::ActivateCtrl),
+        (&cfg.activate_alt,         GamepadAction::ActivateAlt),
+        (&cfg.activate_altgr,       GamepadAction::ActivateAltGr),
+        (&cfg.activate_enter,       GamepadAction::ActivateEnter),
+        (&cfg.activate_space,       GamepadAction::ActivateSpace),
+        (&cfg.activate_arrow_left,  GamepadAction::ActivateArrowLeft),
+        (&cfg.activate_arrow_right, GamepadAction::ActivateArrowRight),
+        (&cfg.activate_arrow_up,    GamepadAction::ActivateArrowUp),
+        (&cfg.activate_arrow_down,  GamepadAction::ActivateArrowDown),
+        (&cfg.activate_bksp,        GamepadAction::ActivateBksp),
+        (&cfg.navigate_center,      GamepadAction::NavigateCenter),
+    ];
+    pairs.iter()
+        .filter_map(|(boa, action)| {
+            if let Some(ButtonOrAxis::Axis(n)) = boa {
+                Some(AxisAction { axis: *n, action: *action, active: false })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
 
 /// Map a raw axis value to an [`AxisDir`] based on `threshold`.
 ///
