@@ -215,6 +215,10 @@ pub struct KeyboardInputConfig {
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
     pub navigate_center: Option<u32>,
+    /// FLTK key code for "mouse toggle" (default: None / disabled).
+    /// Toggles between keyboard-navigation mode and mouse mode.
+    #[serde(default)]
+    pub mouse_toggle: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -329,6 +333,11 @@ pub struct GamepadInputConfig {
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
     pub navigate_center: Option<ButtonOrAxis>,
+    /// Button or axis for "mouse toggle"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
+    /// Toggles between keyboard-navigation mode and mouse mode.
+    #[serde(default)]
+    pub mouse_toggle: Option<ButtonOrAxis>,
     /// Time in milliseconds that a directional input must be held before the
     /// first auto-repeat event fires.  Default: 300.
     #[serde(default = "default_repeat_delay_ms")]
@@ -451,6 +460,10 @@ pub struct GpioInputConfig {
     /// Moves the selection to the key configured by `[navigate] center_key`.
     #[serde(default)]
     pub navigate_center: Option<u32>,
+    /// GPIO line number for "mouse toggle"; `null` / absent = disabled.
+    /// Toggles between keyboard-navigation mode and mouse mode.
+    #[serde(default)]
+    pub mouse_toggle: Option<u32>,
     /// Which signal level on the GPIO line means "pressed".
     /// `"high"` = rising edge triggers press; `"low"` = falling edge (default).
     #[serde(default)]
@@ -492,6 +505,7 @@ impl Default for GpioInputConfig {
             activate_arrow_down:  None,
             activate_bksp:        None,
             navigate_center: None,
+            mouse_toggle:    None,
             gpio_signal:     GpioSignal::Low,
             gpio_pull:       GpioPull::Null,
             repeat_delay_ms:    default_repeat_delay_ms(),
@@ -814,6 +828,38 @@ impl Default for NavigateConfig {
     }
 }
 
+fn default_move_max_size()  -> i8  { 20 }
+fn default_move_max_time()  -> u64 { 1000 }
+fn default_mouse_repeat_interval() -> u64 { 20 }
+
+/// Mouse mode configuration: speed and timing of mouse movement events.
+#[derive(Deserialize, Clone)]
+pub struct MouseConfig {
+    /// Maximum delta (pixels) sent in each mouse-movement report.
+    /// Movement ramps linearly from 1 pixel up to this value over
+    /// `move_max_time` milliseconds.  Default: 8.
+    #[serde(default = "default_move_max_size")]
+    pub move_max_size: i8,
+    /// Interval in milliseconds between successive mouse-movement reports
+    /// while a direction is held.  Default: 50.
+    #[serde(default = "default_mouse_repeat_interval")]
+    pub repeat_interval: u64,
+    /// Time in milliseconds over which the movement delta ramps from 1 to
+    /// `move_max_size`.  Default: 300.
+    #[serde(default = "default_move_max_time")]
+    pub move_max_time: u64,
+}
+
+impl Default for MouseConfig {
+    fn default() -> Self {
+        MouseConfig {
+            move_max_size:   default_move_max_size(),
+            repeat_interval: default_mouse_repeat_interval(),
+            move_max_time:   default_move_max_time(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct Config {
     pub input: InputConfig,
@@ -823,6 +869,9 @@ pub struct Config {
     pub ui: UiConfig,
     #[serde(default)]
     pub navigate: NavigateConfig,
+    /// Mouse mode movement and timing configuration.
+    #[serde(default)]
+    pub mouse: MouseConfig,
     /// Per-keymap configuration (switch scancode, etc.).
     #[serde(default)]
     pub keymap: std::collections::HashMap<String, KeymapConfig>,
@@ -853,6 +902,7 @@ impl Default for KeyboardInputConfig {
             activate_arrow_down:  None,
             activate_bksp:        None,
             navigate_center: None,
+            mouse_toggle:    None,
         }
     }
 }
@@ -887,6 +937,7 @@ impl Default for GamepadInputConfig {
             activate_arrow_down:      None,
             activate_bksp:            None,
             navigate_center:          None,
+            mouse_toggle:             None,
             repeat_delay_ms:          default_repeat_delay_ms(),
             repeat_interval_ms:       default_repeat_interval_ms(),
         }
@@ -909,6 +960,7 @@ impl Default for Config {
             output:   OutputConfig::default(),
             ui:       UiConfig::default(),
             navigate: NavigateConfig::default(),
+            mouse:    MouseConfig::default(),
             keymap:   std::collections::HashMap::new(),
         }
     }
@@ -1037,6 +1089,8 @@ pub struct NavKeys {
     pub activate_bksp: Option<Key>,
     /// Key that moves the selection to the center of the keyboard (None = disabled).
     pub navigate_center: Option<Key>,
+    /// Key that toggles mouse mode on/off (None = disabled).
+    pub mouse_toggle: Option<Key>,
 }
 
 impl NavKeys {
@@ -1063,6 +1117,7 @@ impl NavKeys {
             activate_arrow_down:  cfg.activate_arrow_down .map(|v| Key::from_i32(v as i32)),
             activate_bksp:        cfg.activate_bksp       .map(|v| Key::from_i32(v as i32)),
             navigate_center: cfg.navigate_center.map(|v| Key::from_i32(v as i32)),
+            mouse_toggle:    cfg.mouse_toggle   .map(|v| Key::from_i32(v as i32)),
         }
     }
 }

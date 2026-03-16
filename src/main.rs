@@ -8,6 +8,7 @@ mod output;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 use fltk::{app, prelude::*};
 use keyboards::{Action, REGULAR_KEY_COUNT};
@@ -75,6 +76,15 @@ pub trait KeyHook {
     /// If len < 2, nothing should be sent.
     fn on_lang_switch(&self, switch_scancodes: &[u8]) {
         let _ = switch_scancodes;
+    }
+
+    /// Called to send a mouse HID movement/click report.
+    ///
+    /// `buttons` is the USB HID mouse button byte (bit 0 = left, bit 1 = right,
+    /// bit 2 = middle).  `dx` / `dy` are signed pixel deltas.
+    /// The default implementation does nothing.
+    fn on_mouse_report(&self, buttons: u8, dx: i8, dy: i8) {
+        let _ = (buttons, dx, dy);
     }
 }
 
@@ -231,9 +241,19 @@ fn main() {
         let gp_center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_gp         = ui.preferred_cx.clone();
         let show_text_display_gp    = ui.show_text_display;
+        let mouse_mode_gp           = ui.mouse_mode.clone();
+        let mut mouse_mode_ind_gp   = ui.mouse_mode_ind.clone();
+        let mouse_cfg_gp            = cfg.mouse.clone();
 
         // Reuse a single Vec across poll calls to avoid repeated allocation.
         let mut gp_evt_buf: Vec<GamepadEvent> = Vec::new();
+
+        // Mouse mode movement state: direction (dx, dy), time of first press,
+        // and time of the next movement report.
+        let mut mouse_dx_gp: i8 = 0;
+        let mut mouse_dy_gp: i8 = 0;
+        let mut mouse_move_start_gp: Option<Instant> = None;
+        let mut mouse_move_next_gp:  Option<Instant> = None;
 
         // Poll at ~60 Hz; this keeps input latency low without burning CPU
         // the way an idle callback would.  When the gamepad is disconnected
@@ -311,6 +331,21 @@ fn main() {
                     | GamepadAction::Right => {
                         // Only navigate on button press, not release.
                         if !evt.pressed {
+                            // Release: stop mouse movement in this direction.
+                            if *mouse_mode_gp.borrow() {
+                                let (ddx, ddy) = match evt.action {
+                                    GamepadAction::Up    => (0i8, -1i8),
+                                    GamepadAction::Down  => (0i8,  1i8),
+                                    GamepadAction::Left  => (-1i8, 0i8),
+                                    _                    => ( 1i8, 0i8),
+                                };
+                                if ddx != 0 && mouse_dx_gp == ddx { mouse_dx_gp = 0; }
+                                if ddy != 0 && mouse_dy_gp == ddy { mouse_dy_gp = 0; }
+                                if mouse_dx_gp == 0 && mouse_dy_gp == 0 {
+                                    mouse_move_start_gp = None;
+                                    mouse_move_next_gp  = None;
+                                }
+                            }
                             continue;
                         }
                         // When menu is open, route vertical nav to menu.
@@ -331,6 +366,27 @@ fn main() {
                                 let _ = menu_item_btns_gp[next].take_focus();
                                 app::redraw();
                             }
+                            continue;
+                        }
+                        // Mouse mode: send a mouse movement report.
+                        if *mouse_mode_gp.borrow() {
+                            let (ddx, ddy) = match evt.action {
+                                GamepadAction::Up    => (0i8, -1i8),
+                                GamepadAction::Down  => (0i8,  1i8),
+                                GamepadAction::Left  => (-1i8, 0i8),
+                                _                    => ( 1i8, 0i8),
+                            };
+                            // Record direction for auto-repeat.
+                            if ddx != 0 { mouse_dx_gp = ddx; }
+                            if ddy != 0 { mouse_dy_gp = ddy; }
+                            let now = Instant::now();
+                            let is_fresh = mouse_move_start_gp.is_none();
+                            if is_fresh {
+                                mouse_move_start_gp = Some(now);
+                            }
+                            let interval = std::time::Duration::from_millis(mouse_cfg_gp.repeat_interval);
+                            mouse_move_next_gp = Some(now + interval);
+                            hook_c.on_mouse_report(0, ddx, ddy);
                             continue;
                         }
                         let (dr, dc) = match evt.action {
@@ -371,6 +427,11 @@ fn main() {
                                 menu_group_gp.hide();
                                 app::redraw();
                             }
+                            continue;
+                        }
+                        // Mouse mode: left button press/release.
+                        if *mouse_mode_gp.borrow() {
+                            hook_c.on_mouse_report(if evt.pressed { 0x01 } else { 0x00 }, 0, 0);
                             continue;
                         }
                         if evt.pressed {
@@ -651,6 +712,13 @@ fn main() {
                     | GamepadAction::ActivateAltGr => {
                         // Ignore while menu is open.
                         if menu_sel_gp.borrow().is_some() { continue; }
+                        // Mouse mode: ActivateShift = right mouse button.
+                        if *mouse_mode_gp.borrow()
+                            && evt.action == GamepadAction::ActivateShift
+                        {
+                            hook_c.on_mouse_report(if evt.pressed { 0x02 } else { 0x00 }, 0, 0);
+                            continue;
+                        }
                         if evt.pressed {
                             // Force-activate the relevant modifier, then run the
                             // same logic as the regular Activate button.
@@ -741,6 +809,25 @@ fn main() {
                                 mod_state_c.borrow().is_shifted(),
                             );
                         }
+                    }
+                    GamepadAction::MouseToggle => {
+                        // Only act on button press; ignore release.
+                        if !evt.pressed { continue; }
+                        let new_val = !*mouse_mode_gp.borrow();
+                        *mouse_mode_gp.borrow_mut() = new_val;
+                        // Stop any ongoing mouse movement when leaving mouse mode.
+                        if !new_val {
+                            mouse_dx_gp = 0;
+                            mouse_dy_gp = 0;
+                            mouse_move_start_gp = None;
+                            mouse_move_next_gp  = None;
+                        }
+                        if new_val {
+                            mouse_mode_ind_gp.set_label_color(colors.status_ind_active_text);
+                        } else {
+                            mouse_mode_ind_gp.set_label_color(colors.status_ind_text);
+                        }
+                        app::redraw();
                     }
                     GamepadAction::AbsolutePos { horiz, vert } => {
                         // Ignore absolute-position events while menu is open.
@@ -844,6 +931,25 @@ fn main() {
                     }
                 }
             }
+            // Phase 4 - mouse mode auto-repeat: send another movement report
+            // if a direction is currently active and the repeat interval has elapsed.
+            if mouse_dx_gp != 0 || mouse_dy_gp != 0 {
+                let now = Instant::now();
+                if let Some(next) = mouse_move_next_gp {
+                    if now >= next {
+                        let elapsed_ms = mouse_move_start_gp
+                            .map_or(0, |s| now.duration_since(s).as_millis() as u64);
+                        let max_size = mouse_cfg_gp.move_max_size.max(1) as u64;
+                        let ramp_ms  = mouse_cfg_gp.move_max_time.max(1);
+                        let delta = ((elapsed_ms.min(ramp_ms) * max_size / ramp_ms) as i8).max(1);
+                        let dx = if mouse_dx_gp > 0 { delta } else if mouse_dx_gp < 0 { -delta } else { 0i8 };
+                        let dy = if mouse_dy_gp > 0 { delta } else if mouse_dy_gp < 0 { -delta } else { 0i8 };
+                        hook_c.on_mouse_report(0, dx, dy);
+                        let interval = std::time::Duration::from_millis(mouse_cfg_gp.repeat_interval);
+                        mouse_move_next_gp = Some(now + interval);
+                    }
+                }
+            }
             app::repeat_timeout3(0.016, handle);
         });
     }
@@ -889,8 +995,17 @@ fn main() {
         let gpio_center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_gpio         = ui.preferred_cx.clone();
         let show_text_display_gpio    = ui.show_text_display;
+        let mouse_mode_gpio           = ui.mouse_mode.clone();
+        let mut mouse_mode_ind_gpio   = ui.mouse_mode_ind.clone();
+        let mouse_cfg_gpio            = cfg.mouse.clone();
 
         let mut gpio_evt_buf: Vec<GpioEvent> = Vec::new();
+
+        // Mouse mode movement state for GPIO.
+        let mut mouse_dx_gpio: i8 = 0;
+        let mut mouse_dy_gpio: i8 = 0;
+        let mut mouse_move_start_gpio: Option<Instant> = None;
+        let mut mouse_move_next_gpio:  Option<Instant> = None;
 
         // Poll at ~60 Hz.  When lines are not yet open, retry every 1 s.
         app::add_timeout3(0.016, move |handle| {
@@ -947,7 +1062,24 @@ fn main() {
                     | GpioAction::Down
                     | GpioAction::Left
                     | GpioAction::Right => {
-                        if !evt.pressed { continue; }
+                        if !evt.pressed {
+                            // Release: stop mouse movement in this direction.
+                            if *mouse_mode_gpio.borrow() {
+                                let (ddx, ddy) = match evt.action {
+                                    GpioAction::Up    => (0i8, -1i8),
+                                    GpioAction::Down  => (0i8,  1i8),
+                                    GpioAction::Left  => (-1i8, 0i8),
+                                    _                 => ( 1i8, 0i8),
+                                };
+                                if ddx != 0 && mouse_dx_gpio == ddx { mouse_dx_gpio = 0; }
+                                if ddy != 0 && mouse_dy_gpio == ddy { mouse_dy_gpio = 0; }
+                                if mouse_dx_gpio == 0 && mouse_dy_gpio == 0 {
+                                    mouse_move_start_gpio = None;
+                                    mouse_move_next_gpio  = None;
+                                }
+                            }
+                            continue;
+                        }
                         if menu_sel_gpio.borrow().is_some() {
                             let dir = match evt.action {
                                 GpioAction::Up   => -1i32,
@@ -965,6 +1097,25 @@ fn main() {
                                 let _ = menu_item_btns_gpio[next].take_focus();
                                 app::redraw();
                             }
+                            continue;
+                        }
+                        // Mouse mode: send a mouse movement report.
+                        if *mouse_mode_gpio.borrow() {
+                            let (ddx, ddy) = match evt.action {
+                                GpioAction::Up    => (0i8, -1i8),
+                                GpioAction::Down  => (0i8,  1i8),
+                                GpioAction::Left  => (-1i8, 0i8),
+                                _                 => ( 1i8, 0i8),
+                            };
+                            if ddx != 0 { mouse_dx_gpio = ddx; }
+                            if ddy != 0 { mouse_dy_gpio = ddy; }
+                            let now = Instant::now();
+                            if mouse_move_start_gpio.is_none() {
+                                mouse_move_start_gpio = Some(now);
+                            }
+                            let interval = std::time::Duration::from_millis(mouse_cfg_gpio.repeat_interval);
+                            mouse_move_next_gpio = Some(now + interval);
+                            hook_c.on_mouse_report(0, ddx, ddy);
                             continue;
                         }
                         let (dr, dc) = match evt.action {
@@ -1004,6 +1155,11 @@ fn main() {
                                 menu_group_gpio.hide();
                                 app::redraw();
                             }
+                            continue;
+                        }
+                        // Mouse mode: left button press/release.
+                        if *mouse_mode_gpio.borrow() {
+                            hook_c.on_mouse_report(if evt.pressed { 0x01 } else { 0x00 }, 0, 0);
                             continue;
                         }
                         if evt.pressed {
@@ -1273,6 +1429,13 @@ fn main() {
                     | GpioAction::ActivateAlt
                     | GpioAction::ActivateAltGr => {
                         if menu_sel_gpio.borrow().is_some() { continue; }
+                        // Mouse mode: ActivateShift = right mouse button.
+                        if *mouse_mode_gpio.borrow()
+                            && evt.action == GpioAction::ActivateShift
+                        {
+                            hook_c.on_mouse_report(if evt.pressed { 0x02 } else { 0x00 }, 0, 0);
+                            continue;
+                        }
                         if evt.pressed {
                             {
                                 let mut ms = mod_state_c.borrow_mut();
@@ -1359,6 +1522,41 @@ fn main() {
                                 mod_state_c.borrow().is_shifted(),
                             );
                         }
+                    }
+                    GpioAction::MouseToggle => {
+                        if !evt.pressed { continue; }
+                        let new_val = !*mouse_mode_gpio.borrow();
+                        *mouse_mode_gpio.borrow_mut() = new_val;
+                        if !new_val {
+                            mouse_dx_gpio = 0;
+                            mouse_dy_gpio = 0;
+                            mouse_move_start_gpio = None;
+                            mouse_move_next_gpio  = None;
+                        }
+                        if new_val {
+                            mouse_mode_ind_gpio.set_label_color(colors.status_ind_active_text);
+                        } else {
+                            mouse_mode_ind_gpio.set_label_color(colors.status_ind_text);
+                        }
+                        app::redraw();
+                    }
+                }
+            }
+            // Phase 4 - mouse mode auto-repeat.
+            if mouse_dx_gpio != 0 || mouse_dy_gpio != 0 {
+                let now = Instant::now();
+                if let Some(next) = mouse_move_next_gpio {
+                    if now >= next {
+                        let elapsed_ms = mouse_move_start_gpio
+                            .map_or(0, |s| now.duration_since(s).as_millis() as u64);
+                        let max_size = mouse_cfg_gpio.move_max_size.max(1) as u64;
+                        let ramp_ms  = mouse_cfg_gpio.move_max_time.max(1);
+                        let delta = ((elapsed_ms.min(ramp_ms) * max_size / ramp_ms) as i8).max(1);
+                        let dx = if mouse_dx_gpio > 0 { delta } else if mouse_dx_gpio < 0 { -delta } else { 0i8 };
+                        let dy = if mouse_dy_gpio > 0 { delta } else if mouse_dy_gpio < 0 { -delta } else { 0i8 };
+                        hook_c.on_mouse_report(0, dx, dy);
+                        let interval = std::time::Duration::from_millis(mouse_cfg_gpio.repeat_interval);
+                        mouse_move_next_gpio = Some(now + interval);
                     }
                 }
             }

@@ -56,6 +56,8 @@ pub enum GamepadAction {
     ActivateBksp,
     /// Move the selection to the center of the keyboard.
     NavigateCenter,
+    /// Toggle mouse mode on/off.
+    MouseToggle,
     /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
     /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
     /// value) ... `1.0` (max axis value).
@@ -219,6 +221,7 @@ pub struct Gamepad {
     activate_arrow_down:  Option<u32>,
     activate_bksp:        Option<u32>,
     navigate_center: Option<u32>,
+    mouse_toggle:    Option<u32>,
     // Axis configuration
     axis_horizontal:          Option<u32>,  // axis index for left/right (None = disabled)
     axis_horizontal_inverted: bool,         // when true: negative->Right, positive->Left
@@ -298,6 +301,7 @@ impl Gamepad {
             activate_arrow_down:  btn(&cfg.activate_arrow_down),
             activate_bksp:        btn(&cfg.activate_bksp),
             navigate_center: btn(&cfg.navigate_center),
+            mouse_toggle:    btn(&cfg.mouse_toggle),
             axis_horizontal:          cfg.axis_navigate_horizontal.as_ref().map(|a| a.axis),
             axis_horizontal_inverted: cfg.axis_navigate_horizontal.as_ref()
                 .map_or(false, |a| a.inverted),
@@ -458,6 +462,7 @@ impl Gamepad {
         if self.activate_arrow_down  == Some(code) { return Some(GamepadAction::ActivateArrowDown);  }
         if self.activate_bksp        == Some(code) { return Some(GamepadAction::ActivateBksp);       }
         if self.navigate_center == Some(code) { return Some(GamepadAction::NavigateCenter);  }
+        if self.mouse_toggle    == Some(code) { return Some(GamepadAction::MouseToggle);     }
         None
     }
 
@@ -736,6 +741,7 @@ fn build_axis_actions(cfg: &GamepadInputConfig) -> Vec<AxisAction> {
         (&cfg.activate_arrow_down,  GamepadAction::ActivateArrowDown),
         (&cfg.activate_bksp,        GamepadAction::ActivateBksp),
         (&cfg.navigate_center,      GamepadAction::NavigateCenter),
+        (&cfg.mouse_toggle,         GamepadAction::MouseToggle),
     ];
     pairs.iter()
         .filter_map(|(boa, action)| {

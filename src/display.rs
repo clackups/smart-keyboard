@@ -1083,6 +1083,10 @@ pub struct UiHandles {
     pub gp_cell:           Rc<RefCell<Option<Gamepad>>>,
     pub colors:            Colors,
     pub show_text_display: bool,
+    /// Whether mouse mode is currently active.
+    pub mouse_mode:        Rc<RefCell<bool>>,
+    /// Status-bar indicator frame for mouse mode ("MOUSE" pill).
+    pub mouse_mode_ind:    Frame,
 }
 
 /// Build the full keyboard UI: window, widgets, event handlers.
@@ -1187,7 +1191,8 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     let shift_status = make_ind(ind_x, "SHIFT"); ind_x += ind_w + ind_gap;
     let ctrl_status  = make_ind(ind_x, "CTRL");  ind_x += ind_w + ind_gap;
     let alt_status   = make_ind(ind_x, "ALT");   ind_x += ind_w + ind_gap;
-    let altgr_status = make_ind(ind_x, "ALTGR");
+    let altgr_status = make_ind(ind_x, "ALTGR"); ind_x += ind_w + ind_gap;
+    let mouse_mode_ind = make_ind(ind_x, "MOUSE");
 
     // Right-side status icons, built right-to-left:
     //   [gamepad icon (if enabled)] [BLE icon (if ble mode)]
@@ -1700,6 +1705,10 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     // handler and the gamepad polling timer can share the same instance.
     let gp_cell: Rc<RefCell<Option<Gamepad>>> = Rc::new(RefCell::new(None));
 
+    // Mouse mode: when true, directional inputs move the mouse pointer rather
+    // than navigating the on-screen keyboard.
+    let mouse_mode: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+
     // --- Menu state & UI ---
     // `menu_sel` tracks whether the pop-up menu is currently open (Some(i) =
     // open with item i selected; None = closed).
@@ -1819,6 +1828,8 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         let center_after_activate = cfg.navigate.center_after_activate;
         let preferred_cx_c        = preferred_cx.clone();
         let show_text_display_kbd = show_text_display;
+        let mouse_mode_c          = mouse_mode.clone();
+        let mut mouse_mode_ind_c  = mouse_mode_ind.clone();
 
         // false = Rust handler runs BEFORE FLTK routes the event to any child
         // widget, so arrow keys and spacebar are intercepted here regardless of
@@ -1874,6 +1885,14 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 if k == nav_keys.up || k == nav_keys.down
                     || k == nav_keys.left || k == nav_keys.right
                 {
+                    if *mouse_mode_c.borrow() {
+                        let (dx, dy): (i8, i8) = if k == nav_keys.up        { (0, -1) }
+                                       else if k == nav_keys.down  { (0,  1) }
+                                       else if k == nav_keys.left  { (-1, 0) }
+                                       else                        { (1,  0) };
+                        hook_c.on_mouse_report(0, dx, dy);
+                        return true;
+                    }
                     let (dr, dc) = if k == nav_keys.up        { (-1,  0) }
                                    else if k == nav_keys.down  { ( 1,  0) }
                                    else if k == nav_keys.left  { ( 0, -1) }
@@ -1894,6 +1913,12 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
 
                 // Activate key: fire the currently highlighted on-screen button.
                 if k == nav_keys.activate {
+                    // In mouse mode, Activate = left mouse button press.
+                    if *mouse_mode_c.borrow() {
+                        hook_c.on_mouse_report(0x01, 0, 0);
+                        *active_nav_key_c.borrow_mut() = Some((0xffff, "mouse_left".to_string()));
+                        return true;
+                    }
                     // Copy NavSel (it is Copy) so the borrow is released before any
                     // callback that may itself borrow sel_c (e.g. the lang callback).
                     let cur_sel = *sel_c.borrow();
@@ -1972,9 +1997,21 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                     return true;
                 }
 
+                // mouse_toggle: switch between keyboard-navigation and mouse mode.
+                if nav_keys.mouse_toggle.map_or(false, |mk| k == mk) {
+                    let new_val = !*mouse_mode_c.borrow();
+                    *mouse_mode_c.borrow_mut() = new_val;
+                    if new_val {
+                        mouse_mode_ind_c.set_label_color(colors.status_ind_active_text);
+                    } else {
+                        mouse_mode_ind_c.set_label_color(colors.status_ind_text);
+                    }
+                    app::redraw();
+                    return true;
+                }
+
                 // navigate_center: move selection to the configured center key.
-                if nav_keys.navigate_center.map_or(false, |nk| k == nk) {
-                    if let Some(center) = {
+                if nav_keys.navigate_center.map_or(false, |nk| k == nk) {                    if let Some(center) = {
                         let ab = all_btns_c.borrow();
                         find_center_key(&ab, *layout_idx_c.borrow(), &center_key_kbd)
                     } {
@@ -2129,6 +2166,14 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 // then activate the currently selected key as if that modifier
                 // were already held.  The modifier is auto-released by
                 // execute_action after the key fires.
+                // In mouse mode, activate_shift = right mouse button press.
+                if *mouse_mode_c.borrow()
+                    && nav_keys.activate_shift.map_or(false, |ak| k == ak)
+                {
+                    hook_c.on_mouse_report(0x02, 0, 0);
+                    *active_nav_key_c.borrow_mut() = Some((0xffff, "mouse_right".to_string()));
+                    return true;
+                }
                 let which_mod: Option<u8> =
                     if      nav_keys.activate_shift .map_or(false, |ak| k == ak) { Some(0) }
                     else if nav_keys.activate_ctrl  .map_or(false, |ak| k == ak) { Some(1) }
@@ -2195,8 +2240,30 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 }
                 // Activation key released: send the key-release event.
                 if k == nav_keys.activate {
+                    // In mouse mode, release left mouse button.
+                    if *mouse_mode_c.borrow() {
+                        let was_mouse = active_nav_key_c.borrow()
+                            .as_ref().map_or(false, |(_, ks)| ks == "mouse_left");
+                        if was_mouse {
+                            *active_nav_key_c.borrow_mut() = None;
+                            hook_c.on_mouse_report(0x00, 0, 0);
+                        }
+                        return true;
+                    }
                     if let Some((sc, ks)) = active_nav_key_c.borrow_mut().take() {
                         hook_c.on_key_release(sc, &ks);
+                    }
+                    return true;
+                }
+                // In mouse mode, activate_shift = right click release.
+                if *mouse_mode_c.borrow()
+                    && nav_keys.activate_shift.map_or(false, |ak| k == ak)
+                {
+                    let was_mouse = active_nav_key_c.borrow()
+                        .as_ref().map_or(false, |(_, ks)| ks == "mouse_right");
+                    if was_mouse {
+                        *active_nav_key_c.borrow_mut() = None;
+                        hook_c.on_mouse_report(0x00, 0, 0);
                     }
                     return true;
                 }
@@ -2263,5 +2330,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         gp_cell,
         colors,
         show_text_display,
+        mouse_mode,
+        mouse_mode_ind,
     }
 }
