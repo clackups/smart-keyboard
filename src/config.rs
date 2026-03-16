@@ -828,9 +828,9 @@ impl Default for NavigateConfig {
     }
 }
 
-fn default_move_max_size()  -> i8  { 8 }
-fn default_move_max_time()  -> u64 { 300 }
-fn default_mouse_repeat_interval() -> u64 { 50 }
+fn default_move_max_size()  -> i8  { 20 }
+fn default_move_max_time()  -> u64 { 1000 }
+fn default_mouse_repeat_interval() -> u64 { 20 }
 
 /// Mouse mode configuration: speed and timing of mouse movement events.
 #[derive(Deserialize, Clone)]

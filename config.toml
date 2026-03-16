@@ -21,6 +21,8 @@ menu           = 0x6d     # 'm'
 # activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null # moves selection to center of keyboard; null/absent = disabled
 # Example: navigate_center = 0x63  # 'c'
+# mouse_toggle = null   # toggle mouse-pointer mode on/off; null/absent = disabled
+# Example: mouse_toggle = 0xff57  # Key::F8
 
 [input.gamepad]
 enabled = true
@@ -46,6 +48,7 @@ device  = "auto"        # Auto-detect first connected gamepad
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
+# mouse_toggle   = null  # toggle mouse-pointer mode on/off; null/absent = disabled
 # Examples using axis specifiers (analog triggers):
 # activate = "a:2"   # axis 2 positive -> Activate
 # menu     = "a:5"   # axis 5 positive -> Menu
@@ -96,6 +99,7 @@ enabled = false
 # activate_arrow_down  = null  # produces the Down Arrow output regardless of selection; null/absent = disabled
 # activate_bksp        = null  # produces the Backspace output regardless of selection; null/absent = disabled
 # navigate_center = null  # moves selection to center of keyboard; null/absent = disabled
+# mouse_toggle   = null  # toggle mouse-pointer mode on/off; null/absent = disabled
 # Which GPIO signal level means "pressed": "high" or "low" (default: "low").
 # A low signal is typical when using a pull-up resistor and a button that pulls
 # the line to ground on press.
@@ -113,6 +117,21 @@ enabled = false
 # Interval in ms between successive repeat events once repeating starts (default: 100).
 # repeat_interval_ms = 100
 
+
+[mouse]
+# Settings for mouse-pointer mode, activated by the mouse_toggle action.
+# When mouse mode is active, directional navigation inputs move the pointer
+# instead of navigating the on-screen keyboard.  The activate action sends a
+# left-click and activate_shift sends a right-click.
+# Maximum pointer delta (pixels) per HID report when direction is held.
+# The speed ramps linearly from 1 px to move_max_size over move_max_time ms.
+# Default: 20.
+# move_max_size = 20
+# Interval in milliseconds between successive HID reports while a direction
+# is held.  Default: 20.
+# repeat_interval = 20
+# Time in milliseconds to ramp from 1 px to move_max_size.  Default: 1000.
+# move_max_time = 1000
 
 [navigate]
 # When rollover = true, navigation wraps around at the edges of the keyboard:

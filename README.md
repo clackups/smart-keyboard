@@ -197,6 +197,7 @@ printable characters they equal the lowercase ASCII code.
 | `activate_arrow_down` | *(disabled)* | Produces the Down Arrow output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `activate_bksp` | *(disabled)* | Produces the Backspace output regardless of which key is currently selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
+| `mouse_toggle` | *(disabled)* | Toggle mouse-pointer mode on/off. When active, directional keys move the mouse pointer; `activate` sends a left-click and `activate_shift` sends a right-click. Remove or set to `null` to disable. |
 
 **Example**
 
@@ -220,6 +221,7 @@ menu           = 0x6d     # 'm'
 # activate_arrow_down  = null
 # activate_bksp        = null
 # navigate_center      = null
+# mouse_toggle         = null
 ```
 
 ---
@@ -265,6 +267,7 @@ All options default to `null` (disabled); remove or set to `null` to disable.
 | `activate_arrow_down` | *(disabled)* | Button or axis input for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. |
 | `activate_bksp` | *(disabled)* | Button or axis input for activate-Backspace. Produces the Backspace output regardless of which key is selected. |
 | `navigate_center` | *(disabled)* | Button or axis input for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). |
+| `mouse_toggle` | *(disabled)* | Button or axis input to toggle mouse-pointer mode on/off. When active, directional inputs move the mouse pointer; `activate` sends a left-click and `activate_shift` sends a right-click. |
 
 #### Analog stick / axis navigation
 
@@ -327,6 +330,7 @@ device  = "auto"
 # activate_arrow_down  = null
 # activate_bksp        = null
 # navigate_center      = null
+# mouse_toggle         = null
 
 # Analog stick navigation
 # axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]
@@ -398,6 +402,7 @@ Remove or set a field to `null` to disable that action.
 | `activate_arrow_down` | *(disabled)* | GPIO line number for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
 | `activate_bksp` | *(disabled)* | GPIO line number for activate-Backspace. Produces the Backspace output regardless of which key is selected. Remove or set to `null` to disable. |
 | `navigate_center` | *(disabled)* | GPIO line number for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
+| `mouse_toggle` | *(disabled)* | GPIO line number to toggle mouse-pointer mode on/off. When active, directional buttons move the mouse pointer; `activate` sends a left-click and `activate_shift` sends a right-click. Remove or set to `null` to disable. |
 
 #### Auto-repeat
 
@@ -435,6 +440,37 @@ activate       = 24
 status bar (left of the gamepad icon when the gamepad is also enabled).  The
 icon is red when no GPIO lines could be opened and green once at least one
 line is successfully registered.
+
+---
+
+### `[mouse]`
+
+Controls the behaviour of mouse-pointer mode.  Mouse mode is activated and
+deactivated by the `mouse_toggle` action (configured in `[input.keyboard]`,
+`[input.gamepad]`, or `[input.gpio]`).  While active, the **MOUSE** indicator
+in the status bar is highlighted and directional inputs move the system mouse
+pointer instead of navigating the on-screen keyboard.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `move_max_size` | `20` | Maximum pointer delta in pixels sent in a single HID mouse report. Movement speed ramps linearly from 1 px up to this value over `move_max_time` milliseconds while a direction is held. |
+| `repeat_interval` | `20` | Interval in milliseconds between successive HID mouse movement reports while a directional input is held. Lower values produce smoother movement. |
+| `move_max_time` | `1000` | Time in milliseconds over which the pointer speed ramps from 1 px to `move_max_size`. Set to `0` to jump immediately to `move_max_size`. |
+
+While mouse mode is active:
+- **Directional inputs** (Up / Down / Left / Right, gamepad stick / D-pad, GPIO buttons) move the pointer.
+- **`activate`** sends a left mouse button click (press on key-down, release on key-up).
+- **`activate_shift`** sends a right mouse button click.
+- All other keyboard-navigation actions are suppressed until mouse mode is toggled off.
+
+**Example**
+
+```toml
+[mouse]
+move_max_size   = 20
+repeat_interval = 20
+move_max_time   = 1000
+```
 
 ---
 
