@@ -237,32 +237,34 @@ API for rumble.
 | `enabled` | `true` | Enable gamepad input. Set to `false` to disable entirely. |
 | `device` | `"auto"` | Path to the joystick device (e.g. `"/dev/input/js0"`). `"auto"` opens the first available `/dev/input/js0`–`js7`. |
 
-#### Button navigation
+#### Button / axis navigation
 
-Button indices are reported by the driver.  Use a tool such as `jstest` to
-find the index for a specific button on your gamepad.  Remove or comment out
-a key to disable that action.
+Each of the following options accepts either a **button index** (plain integer,
+e.g. `0x05`) or an **axis specifier** (string `"a:N"`, where N is the axis
+index; positive axis values above `axis_threshold` trigger the action, like
+analog triggers).  Use `jstest` to find button/axis indices for your gamepad.
+All options default to `null` (disabled); remove or set to `null` to disable.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `navigate_up` | *(disabled)* | Button index for move-up |
-| `navigate_down` | *(disabled)* | Button index for move-down |
-| `navigate_left` | *(disabled)* | Button index for move-left |
-| `navigate_right` | *(disabled)* | Button index for move-right |
-| `activate` | `0x05` | Button index for activate (type selected key). `0x05` is the A/South button on most gamepads. |
-| `menu` | `0x08` | Button index for opening the application pop-up menu. `0x08` is typically the Start/Menu button. Remove or set to `null` to disable. |
-| `activate_shift` | *(disabled)* | Button index for activate-with-Shift. Equivalent to `activate` when Shift is held. Remove or set to `null` to disable. |
-| `activate_ctrl` | *(disabled)* | Button index for activate-with-Ctrl. Equivalent to `activate` when Ctrl is held. Remove or set to `null` to disable. |
-| `activate_alt` | *(disabled)* | Button index for activate-with-Alt. Equivalent to `activate` when Alt is held. Remove or set to `null` to disable. |
-| `activate_altgr` | *(disabled)* | Button index for activate-with-AltGr. Equivalent to `activate` when AltGr is held. Remove or set to `null` to disable. |
-| `activate_enter` | *(disabled)* | Button index for activate-Enter. Produces the Enter output regardless of which key is selected. Remove or set to `null` to disable. |
-| `activate_space` | *(disabled)* | Button index for activate-Space. Produces the Space output regardless of which key is selected. Remove or set to `null` to disable. |
-| `activate_arrow_left` | *(disabled)* | Button index for activate-Left Arrow. Produces the Left Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
-| `activate_arrow_right` | *(disabled)* | Button index for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
-| `activate_arrow_up` | *(disabled)* | Button index for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
-| `activate_arrow_down` | *(disabled)* | Button index for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. Remove or set to `null` to disable. |
-| `activate_bksp` | *(disabled)* | Button index for activate-Backspace. Produces the Backspace output regardless of which key is selected. Remove or set to `null` to disable. |
-| `navigate_center` | *(disabled)* | Button index for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). Remove or set to `null` to disable. |
+| `navigate_up` | *(disabled)* | Button or axis input for move-up |
+| `navigate_down` | *(disabled)* | Button or axis input for move-down |
+| `navigate_left` | *(disabled)* | Button or axis input for move-left |
+| `navigate_right` | *(disabled)* | Button or axis input for move-right |
+| `activate` | *(disabled)* | Button or axis input for activate (type selected key). |
+| `menu` | *(disabled)* | Button or axis input for opening the application pop-up menu. |
+| `activate_shift` | *(disabled)* | Button or axis input for activate-with-Shift. Equivalent to `activate` when Shift is held. |
+| `activate_ctrl` | *(disabled)* | Button or axis input for activate-with-Ctrl. Equivalent to `activate` when Ctrl is held. |
+| `activate_alt` | *(disabled)* | Button or axis input for activate-with-Alt. Equivalent to `activate` when Alt is held. |
+| `activate_altgr` | *(disabled)* | Button or axis input for activate-with-AltGr. Equivalent to `activate` when AltGr is held. |
+| `activate_enter` | *(disabled)* | Button or axis input for activate-Enter. Produces the Enter output regardless of which key is selected. |
+| `activate_space` | *(disabled)* | Button or axis input for activate-Space. Produces the Space output regardless of which key is selected. |
+| `activate_arrow_left` | *(disabled)* | Button or axis input for activate-Left Arrow. Produces the Left Arrow output regardless of which key is selected. |
+| `activate_arrow_right` | *(disabled)* | Button or axis input for activate-Right Arrow. Produces the Right Arrow output regardless of which key is selected. |
+| `activate_arrow_up` | *(disabled)* | Button or axis input for activate-Up Arrow. Produces the Up Arrow output regardless of which key is selected. |
+| `activate_arrow_down` | *(disabled)* | Button or axis input for activate-Down Arrow. Produces the Down Arrow output regardless of which key is selected. |
+| `activate_bksp` | *(disabled)* | Button or axis input for activate-Backspace. Produces the Backspace output regardless of which key is selected. |
+| `navigate_center` | *(disabled)* | Button or axis input for navigate-center. Moves the selection to the key configured by `[navigate] center_key` (default: `"h"`). |
 
 #### Analog stick / axis navigation
 
@@ -270,8 +272,6 @@ a key to disable that action.
 |-----|---------|-------------|
 | `axis_navigate_horizontal` | `[0, "normal"]` | Axis configuration for left/right navigation (left stick X on most gamepads). Accepts either a plain axis index (e.g. `0`) or a two-element array `[axis_index, transformation]` where transformation is `"normal"` (default) or `"inverted"`. With `"normal"`: negative values → Left, positive → Right. With `"inverted"` the directions are swapped. Remove/null to disable. |
 | `axis_navigate_vertical` | `[1, "normal"]` | Axis configuration for up/down navigation (left stick Y on most gamepads). Accepts either a plain axis index (e.g. `1`) or a two-element array `[axis_index, transformation]` where transformation is `"normal"` (default) or `"inverted"`. With `"normal"`: negative values → Up, positive → Down. With `"inverted"` the directions are swapped. Remove/null to disable. |
-| `axis_activate` | *(disabled)* | Axis index whose positive values trigger Activate (e.g. a trigger axis). Remove/null to disable. |
-| `axis_menu` | *(disabled)* | Axis index whose positive values trigger Menu (e.g. a trigger axis). Remove/null to disable. |
 | `axis_threshold` | `16384` | Minimum absolute axis value (0–32767) required to register a direction or activation. Raw axis values range from −32767 to +32767; `16384` corresponds to approximately half-deflection. |
 
 #### Absolute-axes mode
@@ -304,15 +304,17 @@ When a directional axis or button is held, navigation events repeat automaticall
 enabled = true
 device  = "auto"
 
-# Button navigation (comment out to disable)
+# Button / axis navigation (all default to null/disabled).
+# Use a plain integer for a button ID, or "a:N" for axis N (positive trigger).
 # navigate_up    = 0x00
 # navigate_down  = 0x01
 # navigate_left  = 0x02
 # navigate_right = 0x03
-activate = 0x05   # A/South button
-menu     = 0x08   # Start/Menu button
+# activate = 0x05   # A/South button (button)
+# activate = "a:2"  # axis 2 positive (analog trigger) -- alternative
+# menu     = 0x08   # Start/Menu button
 
-# Activate-with-modifier buttons (comment out to disable)
+# Activate-with-modifier inputs (all default to null/disabled)
 # activate_shift       = null
 # activate_ctrl        = null
 # activate_alt         = null
@@ -330,8 +332,6 @@ menu     = 0x08   # Start/Menu button
 # axis_navigate_horizontal = [0, "normal"]   # [axis_index, "normal"|"inverted"]
 # axis_navigate_vertical   = [1, "normal"]   # [axis_index, "normal"|"inverted"]
 # axis_threshold           = 16384
-# axis_activate = null
-# axis_menu     = null
 
 # Absolute-axes mode (for touchpad-style controllers)
 # absolute_axes = false

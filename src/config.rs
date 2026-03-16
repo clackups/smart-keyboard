@@ -13,6 +13,69 @@ use fltk::enums::Key;
 use serde::Deserialize;
 
 // =============================================================================
+// Button-or-axis input specifier
+// =============================================================================
+
+/// A gamepad input that can be either a button index or an axis index.
+///
+/// In `config.toml` this is written as:
+/// * A plain integer — a button ID (e.g. `5` or `0x05`).
+/// * A string `"a:N"` — axis ID N (positive values above `axis_threshold`
+///   trigger the action; useful for analog triggers).
+///
+/// Example:
+/// ```toml
+/// activate = 0x05      # button 5
+/// activate = "a:2"     # axis 2 (positive only)
+/// ```
+#[derive(Clone, PartialEq, Eq)]
+pub enum ButtonOrAxis {
+    Button(u32),
+    Axis(u32),
+}
+
+impl<'de> serde::Deserialize<'de> for ButtonOrAxis {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Vis;
+        impl<'de> serde::de::Visitor<'de> for Vis {
+            type Value = ButtonOrAxis;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(
+                    "a button index (integer) or an axis specifier string \"a:N\"",
+                )
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<ButtonOrAxis, E> {
+                if v < 0 {
+                    return Err(E::custom("button index must be non-negative"));
+                }
+                Ok(ButtonOrAxis::Button(v as u32))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<ButtonOrAxis, E> {
+                Ok(ButtonOrAxis::Button(v as u32))
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<ButtonOrAxis, E> {
+                if let Some(rest) = s.strip_prefix("a:") {
+                    let n: u32 = rest.parse().map_err(|_| {
+                        E::custom(format!(
+                            "invalid axis specifier {:?}: expected \"a:N\" where N is a \
+                             non-negative integer",
+                            s
+                        ))
+                    })?;
+                    Ok(ButtonOrAxis::Axis(n))
+                } else {
+                    Err(E::custom(format!(
+                        "invalid axis specifier {:?}: expected \"a:N\"",
+                        s
+                    )))
+                }
+            }
+        }
+        deserializer.deserialize_any(Vis)
+    }
+}
+
+// =============================================================================
 // Axis navigation configuration
 // =============================================================================
 
@@ -158,26 +221,30 @@ pub struct KeyboardInputConfig {
 pub struct GamepadInputConfig {
     pub enabled: bool,
     pub device: String,
-    /// Button index for "navigate up"; absent / `null` means disabled.
+    /// Button or axis for "navigate up"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub navigate_up: Option<u32>,
-    /// Button index for "navigate down"; absent / `null` means disabled.
+    pub navigate_up: Option<ButtonOrAxis>,
+    /// Button or axis for "navigate down"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub navigate_down: Option<u32>,
-    /// Button index for "navigate left"; absent / `null` means disabled.
+    pub navigate_down: Option<ButtonOrAxis>,
+    /// Button or axis for "navigate left"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub navigate_left: Option<u32>,
-    /// Button index for "navigate right"; absent / `null` means disabled.
+    pub navigate_left: Option<ButtonOrAxis>,
+    /// Button or axis for "navigate right"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub navigate_right: Option<u32>,
-    /// Button index for "activate"; absent / `null` means disabled.
-    /// Default: 0x05.
-    #[serde(default = "default_activate")]
-    pub activate: Option<u32>,
-    /// Button index for "menu"; absent / `null` means disabled.
-    /// Default: 0x08.
-    #[serde(default = "default_menu")]
-    pub menu: Option<u32>,
+    pub navigate_right: Option<ButtonOrAxis>,
+    /// Button or axis for "activate"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
+    #[serde(default)]
+    pub activate: Option<ButtonOrAxis>,
+    /// Button or axis for "menu"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
+    #[serde(default)]
+    pub menu: Option<ButtonOrAxis>,
     /// Axis configuration used for left/right navigation.
     /// Negative axis values -> Left, positive -> Right (unless inverted).
     /// Absent / `null` means disabled.
@@ -190,16 +257,6 @@ pub struct GamepadInputConfig {
     /// Default: axis 1 with "normal" transformation (left stick Y on most gamepads).
     #[serde(default = "default_axis_navigate_vertical")]
     pub axis_navigate_vertical: Option<AxisConfig>,
-    /// Axis index for the activate action.
-    /// Positive axis values above `axis_threshold` trigger Activate.
-    /// Absent / `null` means disabled.
-    #[serde(default = "default_axis_activate")]
-    pub axis_activate: Option<u32>,
-    /// Axis index for the menu action.
-    /// Positive axis values above `axis_threshold` trigger Menu.
-    /// Absent / `null` means disabled.
-    #[serde(default)]
-    pub axis_menu: Option<u32>,
     /// Minimum absolute axis value (0-32767) needed to register as active.
     /// Compared as `|value| > axis_threshold` against the raw i16 axis value.
     /// Default: 16384 (half of the maximum i16 range).
@@ -223,43 +280,55 @@ pub struct GamepadInputConfig {
     /// Applied to both the strong and weak motors.  Default: 0x4000 (~25 %).
     #[serde(default = "default_rumble_magnitude")]
     pub rumble_magnitude: u16,
-    /// Button index for "activate with Shift"; absent / `null` means disabled.
+    /// Button or axis for "activate with Shift"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_shift: Option<u32>,
-    /// Button index for "activate with Ctrl"; absent / `null` means disabled.
+    pub activate_shift: Option<ButtonOrAxis>,
+    /// Button or axis for "activate with Ctrl"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_ctrl: Option<u32>,
-    /// Button index for "activate with Alt"; absent / `null` means disabled.
+    pub activate_ctrl: Option<ButtonOrAxis>,
+    /// Button or axis for "activate with Alt"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_alt: Option<u32>,
-    /// Button index for "activate with AltGr"; absent / `null` means disabled.
+    pub activate_alt: Option<ButtonOrAxis>,
+    /// Button or axis for "activate with AltGr"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_altgr: Option<u32>,
-    /// Button index for "activate Enter"; absent / `null` means disabled.
+    pub activate_altgr: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Enter"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_enter: Option<u32>,
-    /// Button index for "activate Space"; absent / `null` means disabled.
+    pub activate_enter: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Space"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_space: Option<u32>,
-    /// Button index for "activate Arrow Left"; absent / `null` means disabled.
+    pub activate_space: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Arrow Left"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_arrow_left: Option<u32>,
-    /// Button index for "activate Arrow Right"; absent / `null` means disabled.
+    pub activate_arrow_left: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Arrow Right"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_arrow_right: Option<u32>,
-    /// Button index for "activate Arrow Up"; absent / `null` means disabled.
+    pub activate_arrow_right: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Arrow Up"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_arrow_up: Option<u32>,
-    /// Button index for "activate Arrow Down"; absent / `null` means disabled.
+    pub activate_arrow_up: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Arrow Down"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_arrow_down: Option<u32>,
-    /// Button index for "activate Backspace"; absent / `null` means disabled.
+    pub activate_arrow_down: Option<ButtonOrAxis>,
+    /// Button or axis for "activate Backspace"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     #[serde(default)]
-    pub activate_bksp: Option<u32>,
-    /// Button index for "navigate center"; absent / `null` means disabled.
+    pub activate_bksp: Option<ButtonOrAxis>,
+    /// Button or axis for "navigate center"; absent / `null` means disabled.
+    /// Use a plain integer for a button ID, or `"a:N"` for axis N.
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
-    pub navigate_center: Option<u32>,
+    pub navigate_center: Option<ButtonOrAxis>,
     /// Time in milliseconds that a directional input must be held before the
     /// first auto-repeat event fires.  Default: 300.
     #[serde(default = "default_repeat_delay_ms")]
@@ -270,11 +339,8 @@ pub struct GamepadInputConfig {
     pub repeat_interval_ms: u64,
 }
 
-fn default_activate()                 -> Option<u32>        { Some(0x05) }
-fn default_menu()                     -> Option<u32>        { Some(0x08) }
-fn default_axis_navigate_horizontal() -> Option<AxisConfig> { Some(AxisConfig { axis: 0, inverted: false }) }
-fn default_axis_navigate_vertical()   -> Option<AxisConfig> { Some(AxisConfig { axis: 1, inverted: false }) }
-fn default_axis_activate()            -> Option<u32>        { None }
+fn default_axis_navigate_horizontal() -> Option<AxisConfig>   { Some(AxisConfig { axis: 0, inverted: false }) }
+fn default_axis_navigate_vertical()   -> Option<AxisConfig>   { Some(AxisConfig { axis: 1, inverted: false }) }
 fn default_axis_threshold()           -> i32  { 16384 }
 fn default_rumble_duration_ms()       -> u16  { 50 }
 fn default_rumble_magnitude()         -> u16  { 0x4000 }
@@ -800,12 +866,10 @@ impl Default for GamepadInputConfig {
             navigate_down:  None,
             navigate_left:  None,
             navigate_right: None,
-            activate:       default_activate(),
-            menu:           default_menu(),
+            activate:       None,
+            menu:           None,
             axis_navigate_horizontal: default_axis_navigate_horizontal(),
             axis_navigate_vertical:   default_axis_navigate_vertical(),
-            axis_activate:            default_axis_activate(),
-            axis_menu:                None,
             axis_threshold:           default_axis_threshold(),
             absolute_axes:            false,
             rumble:                   false,
