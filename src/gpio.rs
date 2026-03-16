@@ -85,6 +85,8 @@ pub enum GpioAction {
     ActivateBksp,
     /// Move the selection to the center of the keyboard.
     NavigateCenter,
+    /// Toggle mouse mode on/off.
+    MouseToggle,
 }
 
 /// A single GPIO input event (press or release).
@@ -245,6 +247,7 @@ impl GpioInput {
             (cfg.activate_arrow_down,   GpioAction::ActivateArrowDown),
             (cfg.activate_bksp,         GpioAction::ActivateBksp),
             (cfg.navigate_center,       GpioAction::NavigateCenter),
+            (cfg.mouse_toggle,          GpioAction::MouseToggle),
         ];
 
         let configured: Vec<(u32, GpioAction)> = assignments

@@ -37,6 +37,10 @@ impl KeyHook for PrintKeyHook {
                      switch_scancodes[0], switch_scancodes[1]);
         }
     }
+
+    fn on_mouse_report(&self, buttons: u8, dx: i8, dy: i8) {
+        println!("mouse: buttons=0x{:02x} dx={} dy={}", buttons, dx, dy);
+    }
 }
 
 // =============================================================================
@@ -149,8 +153,17 @@ impl BleConnection {
         self.send("K0000\n");
     }
 
-    /// Send the `Z` disconnect command to the BLE dongle.
+    /// Send a mouse HID movement report.
     ///
+    /// `buttons` is the USB HID mouse button byte (bit 0 = left, bit 1 = right,
+    /// bit 2 = middle).  `dx` / `dy` are signed pixel deltas.
+    /// Sends `M<buttons:02X><dx:02X><dy:02X>0000\n` to the dongle.
+    pub fn send_mouse(&mut self, buttons: u8, dx: i8, dy: i8) {
+        let cmd = format!("M{:02X}{:02X}{:02X}0000\n", buttons, dx as u8, dy as u8);
+        self.send(&cmd);
+    }
+
+    /// Send the `Z` disconnect command to the BLE dongle.    ///
     /// This requests the dongle to drop the active BLE connection to the remote
     /// host.  Returns `true` if the command was sent successfully, `false` if
     /// the port is not open or the write failed.
@@ -276,6 +289,10 @@ impl KeyHook for BleKeyHook {
             }
             self.conn.borrow_mut().send_key_release();
         }
+    }
+
+    fn on_mouse_report(&self, buttons: u8, dx: i8, dy: i8) {
+        self.conn.borrow_mut().send_mouse(buttons, dx, dy);
     }
 }
 
