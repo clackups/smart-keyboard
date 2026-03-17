@@ -103,6 +103,10 @@ pub fn open_menu(
     win.end();
     win.show();
 
+    // Give the first button keyboard focus so arrow/Tab/Enter work
+    // immediately without requiring a mouse click.
+    btn_cfg.take_focus().ok();
+
     // --- Callbacks ---
 
     // Local flag: set by the Configuration callback so we know to open
@@ -133,11 +137,23 @@ pub fn open_menu(
         app::quit();
     });
 
-    // Escape key closes the menu.
+    // Keyboard navigation: Tab and arrow keys move focus between buttons
+    // (FLTK built-in).  Enter/Return activates the focused button instead
+    // of moving focus (which is FLTK's default for Return).  Escape closes.
     win.handle(|w, ev| {
-        if ev == Event::KeyDown && app::event_key() == fltk::enums::Key::Escape {
-            w.hide();
-            return true;
+        if ev == Event::KeyDown {
+            let key = app::event_key();
+            if key == fltk::enums::Key::Escape {
+                w.hide();
+                return true;
+            }
+            if key == fltk::enums::Key::Enter {
+                // Activate the currently focused widget.
+                if let Some(mut focused) = app::focus() {
+                    focused.do_callback();
+                }
+                return true;
+            }
         }
         false
     });
@@ -530,11 +546,20 @@ fn open_config_editor() {
         }
     });
 
-    // Escape key closes the config editor.
+    // Keyboard navigation: Tab/Shift-Tab cycle through fields (FLTK built-in).
+    // Enter does nothing (prevents FLTK default of moving focus like Tab).
+    // Escape closes the config editor.
     win.handle(|w, ev| {
-        if ev == Event::KeyDown && app::event_key() == fltk::enums::Key::Escape {
-            w.hide();
-            return true;
+        if ev == Event::KeyDown {
+            let key = app::event_key();
+            if key == fltk::enums::Key::Escape {
+                w.hide();
+                return true;
+            }
+            if key == fltk::enums::Key::Enter {
+                // Consume Enter so it does not move focus between widgets.
+                return true;
+            }
         }
         false
     });
@@ -585,6 +610,15 @@ fn build_toml_and_save(pairs: &[(&str, String)]) -> Result<(), String> {
     // possible.  We will rewrite only the keys that we manage.
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
 
+    let out = build_toml_text(&existing, pairs);
+    std::fs::write(&path, &out).map_err(|e| format!("{}", e))
+}
+
+/// Rewrite TOML text: for every key in `pairs`, replace its value in the
+/// existing text (if it appears as an uncommented `key = value` line) or
+/// append it at the end of the correct section.  Sections that do not exist
+/// in the original text are appended at the end.
+fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
     // Build a lookup from dotted key -> new value.
     let mut updates: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
     for (k, v) in pairs {
@@ -593,16 +627,43 @@ fn build_toml_and_save(pairs: &[(&str, String)]) -> Result<(), String> {
 
     // Strategy: rewrite the file line by line; when we encounter a key we
     // manage, replace the value.  Keys not found in the existing file are
-    // appended under the correct section header.
+    // appended at the end of their existing section (not under a duplicate
+    // section header).  Keys for entirely new sections are appended at EOF.
     let mut out = String::with_capacity(existing.len() + 512);
     let mut current_section = String::new();
     let mut written_keys: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+    // Macro: flush any unwritten keys that belong to `$section` into `out`.
+    macro_rules! flush_section {
+        ($section:expr) => {
+            for (key, val) in pairs {
+                if written_keys.contains(key) { continue; }
+                let sec = match key.rfind('.') {
+                    Some(i) => &key[..i],
+                    None => "",
+                };
+                if sec == $section {
+                    let field = match key.rfind('.') {
+                        Some(i) => &key[i+1..],
+                        None => *key,
+                    };
+                    let formatted = format_toml_value(key, val);
+                    out.push_str(&format!("{} = {}\n", field, formatted));
+                    written_keys.insert(*key);
+                }
+            }
+        };
+    }
 
     for line in existing.lines() {
         let trimmed = line.trim();
 
         // Track section headers.
         if trimmed.starts_with('[') && !trimmed.starts_with("[[") {
+            // Before switching sections, append any unwritten keys that
+            // belong to the current (outgoing) section.
+            flush_section!(&current_section);
+
             let section = trimmed.trim_start_matches('[')
                 .split(']').next().unwrap_or("").trim().to_string();
             current_section = section;
@@ -636,7 +697,10 @@ fn build_toml_and_save(pairs: &[(&str, String)]) -> Result<(), String> {
         out.push('\n');
     }
 
-    // Append any keys that were not found in the existing file.
+    // Flush unwritten keys for the last section in the file.
+    flush_section!(&current_section);
+
+    // Append keys for sections that never appeared in the file.
     let mut pending_sections: std::collections::BTreeMap<String, Vec<String>> =
         std::collections::BTreeMap::new();
     for (key, val) in pairs {
@@ -661,7 +725,7 @@ fn build_toml_and_save(pairs: &[(&str, String)]) -> Result<(), String> {
         }
     }
 
-    std::fs::write(&path, &out).map_err(|e| format!("{}", e))
+    out
 }
 
 /// Format a value for TOML output based on the key name.
@@ -723,4 +787,94 @@ fn restart_application() {
     // exec() only returns on error.
     eprintln!("[menu] exec failed: {}", err);
     app::quit();
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Saving settings for a section that has commented-out keys must NOT
+    /// produce a duplicate section header.
+    #[test]
+    fn no_duplicate_sections() {
+        let existing = "\
+[input.keyboard]
+navigate_up = 0xff52
+
+[input.gamepad]
+enabled = true
+device = \"auto\"
+# axis_threshold = 16384
+# rumble = false
+
+[output]
+mode = \"print\"
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("input.keyboard.navigate_up",       "0xff52".into()),
+            ("input.gamepad.enabled",            "true".into()),
+            ("input.gamepad.device",             "auto".into()),
+            ("input.gamepad.axis_threshold",     "16384".into()),
+            ("input.gamepad.rumble",             "false".into()),
+            ("output.mode",                      "print".into()),
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        // Count occurrences of [input.gamepad] section header.
+        let count = result.lines()
+            .filter(|l| l.trim() == "[input.gamepad]")
+            .count();
+        assert_eq!(count, 1, "Expected exactly one [input.gamepad] section, got {}.\nOutput:\n{}", count, result);
+
+        // The new keys must appear in the output.
+        assert!(result.contains("axis_threshold = 16384"), "axis_threshold missing:\n{}", result);
+        assert!(result.contains("rumble = false"), "rumble missing:\n{}", result);
+    }
+
+    /// Keys for a brand-new section (not in existing file) are appended.
+    #[test]
+    fn new_section_appended() {
+        let existing = "\
+[output]
+mode = \"print\"
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("output.mode",           "ble".into()),
+            ("navigate.rollover",     "true".into()),
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        assert!(result.contains("[navigate]"), "Missing [navigate] section:\n{}", result);
+        assert!(result.contains("rollover = true"), "Missing rollover:\n{}", result);
+
+        // output.mode should be updated in place.
+        assert!(result.contains("mode = \"ble\""), "mode not updated:\n{}", result);
+    }
+
+    /// Existing uncommented keys are updated in place.
+    #[test]
+    fn existing_keys_updated() {
+        let existing = "\
+[input.gamepad]
+enabled = true
+device = \"auto\"
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("input.gamepad.enabled", "false".into()),
+            ("input.gamepad.device",  "xbox".into()),
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        assert!(result.contains("enabled = false"), "enabled not updated:\n{}", result);
+        assert!(result.contains("device = \"xbox\""), "device not updated:\n{}", result);
+
+        let count = result.lines()
+            .filter(|l| l.trim() == "[input.gamepad]")
+            .count();
+        assert_eq!(count, 1, "Duplicate section headers:\n{}", result);
+    }
 }
