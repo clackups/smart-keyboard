@@ -147,6 +147,40 @@ struct InputCtx {
     colors:                Colors,
 }
 
+impl Clone for InputCtx {
+    fn clone(&self) -> Self {
+        InputCtx {
+            all_btns:              self.all_btns.clone(),
+            lang_btns:             self.lang_btns.clone(),
+            layout_idx:            self.layout_idx.clone(),
+            mod_state:             self.mod_state.clone(),
+            mod_btns:              self.mod_btns.clone(),
+            sel:                   self.sel.clone(),
+            buf:                   self.buf.clone(),
+            disp:                  self.disp.clone(),
+            hook:                  Rc::clone(&self.hook),
+            active_nav_key:        self.active_nav_key.clone(),
+            active_btn_pressed:    self.active_btn_pressed.clone(),
+            gp_cell:               self.gp_cell.clone(),
+            narrator:              self.narrator.clone(),
+            audio_mode:            self.audio_mode.clone(),
+            menu_sel:              self.menu_sel.clone(),
+            menu_item_defs:        self.menu_item_defs.clone(),
+            menu_item_btns:        self.menu_item_btns.clone(),
+            menu_group:            self.menu_group.clone(),
+            rollover:              self.rollover,
+            center_key:            self.center_key.clone(),
+            center_after_activate: self.center_after_activate,
+            preferred_cx:          self.preferred_cx.clone(),
+            show_text_display:     self.show_text_display,
+            mouse_mode:            self.mouse_mode.clone(),
+            mouse_mode_ind:        self.mouse_mode_ind.clone(),
+            mouse_cfg:             self.mouse_cfg.clone(),
+            colors:                self.colors,
+        }
+    }
+}
+
 /// Per-input-source mouse-movement auto-repeat state.
 ///
 /// Each physical input source (gamepad, GPIO, ...) keeps its own independent
@@ -833,35 +867,7 @@ fn main() {
         let gp_cell_t            = ui.gp_cell.clone();
 
         // Clone the shared context for capture in the closure.
-        let mut ctx_gp = InputCtx {
-            all_btns:              shared_ctx.all_btns.clone(),
-            lang_btns:             shared_ctx.lang_btns.clone(),
-            layout_idx:            shared_ctx.layout_idx.clone(),
-            mod_state:             shared_ctx.mod_state.clone(),
-            mod_btns:              shared_ctx.mod_btns.clone(),
-            sel:                   shared_ctx.sel.clone(),
-            buf:                   shared_ctx.buf.clone(),
-            disp:                  shared_ctx.disp.clone(),
-            hook:                  Rc::clone(&shared_ctx.hook),
-            active_nav_key:        shared_ctx.active_nav_key.clone(),
-            active_btn_pressed:    shared_ctx.active_btn_pressed.clone(),
-            gp_cell:               shared_ctx.gp_cell.clone(),
-            narrator:              shared_ctx.narrator.clone(),
-            audio_mode:            shared_ctx.audio_mode.clone(),
-            menu_sel:              shared_ctx.menu_sel.clone(),
-            menu_item_defs:        shared_ctx.menu_item_defs.clone(),
-            menu_item_btns:        shared_ctx.menu_item_btns.clone(),
-            menu_group:            shared_ctx.menu_group.clone(),
-            rollover:              shared_ctx.rollover,
-            center_key:            shared_ctx.center_key.clone(),
-            center_after_activate: shared_ctx.center_after_activate,
-            preferred_cx:          shared_ctx.preferred_cx.clone(),
-            show_text_display:     shared_ctx.show_text_display,
-            mouse_mode:            shared_ctx.mouse_mode.clone(),
-            mouse_mode_ind:        shared_ctx.mouse_mode_ind.clone(),
-            mouse_cfg:             shared_ctx.mouse_cfg.clone(),
-            colors,
-        };
+        let mut ctx_gp = shared_ctx.clone();
 
         let mut gp_evt_buf:    Vec<UserInputEvent> = Vec::new();
         let mut mouse_gp = MouseMoveState::new();
