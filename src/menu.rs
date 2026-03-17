@@ -180,7 +180,8 @@ fn open_config_editor() {
     let pad      = 8;
 
     // Scrollable area
-    let scroll = Scroll::new(0, 0, sw, sh - row_h - pad * 2, "");
+    let mut scroll = Scroll::new(0, 0, sw, sh - row_h - pad * 2, "");
+    scroll.set_color(BG);
     let pack_w = (sw - 40).min(900);
     let pack_x = (sw - pack_w) / 2;
     let mut pack = Pack::new(pack_x, pad, pack_w, 0, "");
@@ -213,11 +214,15 @@ fn open_config_editor() {
     let add_bool = {
         let cols = collectors.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: bool, lbl_size: i32, pack_w: i32, row_h: i32| {
-            let grp = Group::new(0, 0, pack_w, row_h, "");
+            let mut grp = Group::new(0, 0, pack_w, row_h, "");
+            grp.set_frame(FrameType::FlatBox);
+            grp.set_color(BG);
             let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
+            lbl.set_frame(FrameType::FlatBox);
+            lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
             let mut cb = CheckButton::new(pack_w / 2, 0, pack_w / 2, row_h, "");
             cb.set_value(val);
@@ -236,11 +241,15 @@ fn open_config_editor() {
     let add_choice = {
         let cols = collectors.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, options: &[&str], current: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
-            let grp = Group::new(0, 0, pack_w, row_h, "");
+            let mut grp = Group::new(0, 0, pack_w, row_h, "");
+            grp.set_frame(FrameType::FlatBox);
+            grp.set_color(BG);
             let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
+            lbl.set_frame(FrameType::FlatBox);
+            lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
             let mut ch = Choice::new(pack_w / 2, 0, pack_w / 2, row_h, "");
             ch.set_text_size(lbl_size);
@@ -273,17 +282,22 @@ fn open_config_editor() {
     let add_number = {
         let cols = collectors.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
-            let grp = Group::new(0, 0, pack_w, row_h, "");
+            let mut grp = Group::new(0, 0, pack_w, row_h, "");
+            grp.set_frame(FrameType::FlatBox);
+            grp.set_color(BG);
             let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
+            lbl.set_frame(FrameType::FlatBox);
+            lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
             let mut inp = Input::new(pack_w / 2, 0, pack_w / 2, row_h, "");
             inp.set_value(val);
             inp.set_text_size(lbl_size);
             inp.set_text_color(TEXT_FG);
             inp.set_color(Color::from_hex(0x1c1c1c));
+            inp.set_cursor_color(TEXT_FG);
             grp.end();
             pack.add(&grp);
             let inp_c = inp.clone();
@@ -297,17 +311,22 @@ fn open_config_editor() {
     let add_text = {
         let cols = collectors.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
-            let grp = Group::new(0, 0, pack_w, row_h, "");
+            let mut grp = Group::new(0, 0, pack_w, row_h, "");
+            grp.set_frame(FrameType::FlatBox);
+            grp.set_color(BG);
             let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
+            lbl.set_frame(FrameType::FlatBox);
+            lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
             let mut inp = Input::new(pack_w / 2, 0, pack_w / 2, row_h, "");
             inp.set_value(val);
             inp.set_text_size(lbl_size);
             inp.set_text_color(TEXT_FG);
             inp.set_color(Color::from_hex(0x1c1c1c));
+            inp.set_cursor_color(TEXT_FG);
             grp.end();
             pack.add(&grp);
             let inp_c = inp.clone();
@@ -321,17 +340,22 @@ fn open_config_editor() {
     let add_color = {
         let cols = collectors.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
-            let grp = Group::new(0, 0, pack_w, row_h, "");
+            let mut grp = Group::new(0, 0, pack_w, row_h, "");
+            grp.set_frame(FrameType::FlatBox);
+            grp.set_color(BG);
             let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
+            lbl.set_frame(FrameType::FlatBox);
+            lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
             let mut inp = Input::new(pack_w / 2, 0, pack_w / 2, row_h, "");
             inp.set_value(val);
             inp.set_text_size(lbl_size);
             inp.set_text_color(TEXT_FG);
             inp.set_color(Color::from_hex(0x1c1c1c));
+            inp.set_cursor_color(TEXT_FG);
             grp.end();
             pack.add(&grp);
             let inp_c = inp.clone();
