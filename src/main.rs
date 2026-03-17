@@ -195,7 +195,7 @@ pub(crate) struct MouseMoveState {
 }
 
 impl MouseMoveState {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         MouseMoveState { dx: 0, dy: 0, start: None, next: None }
     }
 
@@ -847,6 +847,13 @@ fn main() {
         colors,
     };
 
+    // --- Physical keyboard navigation ---
+    phys_keyboard::setup_keyboard_handler(
+        &mut ui.win,
+        config::NavKeys::from_config(&cfg.input.keyboard),
+        shared_ctx.clone(),
+    );
+
     // --- Gamepad input (if enabled in config) ---
     if cfg.input.gamepad.enabled {
         let gp_cfg    = cfg.input.gamepad.clone();
@@ -944,35 +951,7 @@ fn main() {
         let gpio_cell_t       = gpio_cell.clone();
 
         // Clone the shared context for capture in the closure.
-        let mut ctx_gpio = InputCtx {
-            all_btns:              shared_ctx.all_btns.clone(),
-            lang_btns:             shared_ctx.lang_btns.clone(),
-            layout_idx:            shared_ctx.layout_idx.clone(),
-            mod_state:             shared_ctx.mod_state.clone(),
-            mod_btns:              shared_ctx.mod_btns.clone(),
-            sel:                   shared_ctx.sel.clone(),
-            buf:                   shared_ctx.buf.clone(),
-            disp:                  shared_ctx.disp.clone(),
-            hook:                  Rc::clone(&shared_ctx.hook),
-            active_nav_key:        shared_ctx.active_nav_key.clone(),
-            active_btn_pressed:    shared_ctx.active_btn_pressed.clone(),
-            gp_cell:               shared_ctx.gp_cell.clone(),
-            narrator:              shared_ctx.narrator.clone(),
-            audio_mode:            shared_ctx.audio_mode.clone(),
-            menu_sel:              shared_ctx.menu_sel.clone(),
-            menu_item_defs:        shared_ctx.menu_item_defs.clone(),
-            menu_item_btns:        shared_ctx.menu_item_btns.clone(),
-            menu_group:            shared_ctx.menu_group.clone(),
-            rollover:              shared_ctx.rollover,
-            center_key:            shared_ctx.center_key.clone(),
-            center_after_activate: shared_ctx.center_after_activate,
-            preferred_cx:          shared_ctx.preferred_cx.clone(),
-            show_text_display:     shared_ctx.show_text_display,
-            mouse_mode:            shared_ctx.mouse_mode.clone(),
-            mouse_mode_ind:        shared_ctx.mouse_mode_ind.clone(),
-            mouse_cfg:             shared_ctx.mouse_cfg.clone(),
-            colors,
-        };
+        let mut ctx_gpio = shared_ctx.clone();
 
         let mut gpio_evt_buf:  Vec<UserInputEvent> = Vec::new();
         let mut mouse_gpio = MouseMoveState::new();

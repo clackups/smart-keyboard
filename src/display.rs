@@ -8,7 +8,7 @@ use std::rc::Rc;
 use fltk::{
     app,
     button::Button,
-    enums::{Align, Color, Event, FrameType, Key},
+    enums::{Align, Color, Event, FrameType},
     frame::Frame,
     group::Group,
     prelude::*,
