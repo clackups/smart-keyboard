@@ -10,9 +10,10 @@ use fltk::{
     button::Button,
     enums::{Align, Color, Event, FrameType},
     frame::Frame,
-    group::Group,
+    group::{Group, Scroll},
+    input::Input,
     prelude::*,
-    text::{TextBuffer, TextDisplay, TextEditor},
+    text::{TextBuffer, TextDisplay},
     window::Window,
 };
 
@@ -1089,9 +1090,15 @@ pub struct UiHandles {
     pub mouse_mode_ind:    Frame,
     pub config_editor_open:       Rc<RefCell<bool>>,
     pub config_editor_group:      Group,
-    pub config_editor_editor:     TextEditor,
-    pub config_editor_buf:        TextBuffer,
-    /// Selected button index: 0 = "Save & Reload", 1 = "Cancel".
+    /// Scrollable area containing the field rows.
+    pub config_editor_scroll:     Scroll,
+    /// One `Input` widget per [`config::CONFIG_FIELDS`] entry (same order).
+    pub config_editor_inputs:     Vec<Input>,
+    /// One validation-indicator `Frame` per field (green "OK" / red "ERR").
+    pub config_editor_valids:     Vec<Frame>,
+    /// Single `Frame` that shows the description of the focused field.
+    pub config_editor_desc_lbl:   Frame,
+    /// 0..N-1 = field row focused; N = "Save & Reload"; N+1 = "Cancel".
     pub config_editor_sel:        Rc<RefCell<usize>>,
     pub config_editor_save_btn:   Button,
     pub config_editor_cancel_btn: Button,
@@ -1811,22 +1818,39 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     menu_group.hide();
 
     // --- Config editor overlay ---
-    // Full-screen overlay (below the status bar) that shows the current
-    // config.toml content in an editable text area together with
-    // "Save & Reload" and "Cancel" buttons navigable via UserInputAction.
+    // Full-screen overlay (below the status bar) presenting a structured form
+    // where each CONFIG_FIELD has a label, an Input widget, and a live
+    // validation indicator.  Navigable via UserInputAction signals.
     let config_editor_open: Rc<RefCell<bool>>  = Rc::new(RefCell::new(false));
     let config_editor_sel:  Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
 
-    let ced_y = status_h;
-    let ced_h = sh - status_h;
-    let ced_inner_pad = pad * 2;
-    let ced_btn_h = key_h;
-    let ced_title_h = key_h;
-    // TextEditor occupies the space between the title and the button row.
-    let ced_editor_y = ced_y + ced_inner_pad + ced_title_h + gap;
-    let ced_editor_h = ced_h - ced_inner_pad - ced_title_h - gap - ced_btn_h - gap - ced_inner_pad;
-    let ced_btn_y    = ced_editor_y + ced_editor_h + gap;
-    let ced_btn_w    = (sw - 2 * ced_inner_pad - gap) / 2;
+    let ced_y          = status_h;
+    let ced_h          = sh - status_h;
+    let ced_inner_pad  = pad * 2;
+    let ced_btn_h      = key_h;
+    let ced_title_h    = key_h;
+    let ced_desc_h     = key_h; // one row for the description of the focused field
+    let field_h        = key_h;
+    let field_gap      = gap;
+    let n_fields       = config::CONFIG_FIELDS.len();
+
+    // Scroll area sits between title+desc and the button row.
+    let ced_scroll_y = ced_y + ced_inner_pad + ced_title_h + gap + ced_desc_h + gap;
+    let ced_scroll_h = ced_h
+        - ced_inner_pad             // top padding
+        - ced_title_h - gap         // title
+        - ced_desc_h  - gap         // description frame
+        - ced_btn_h   - gap         // button row
+        - ced_inner_pad;            // bottom padding
+    let ced_scroll_h  = ced_scroll_h.max(10);
+    let ced_scroll_w  = sw - 2 * ced_inner_pad;
+    let ced_btn_y     = ced_scroll_y + ced_scroll_h + gap;
+    let ced_btn_w     = (sw - 2 * ced_inner_pad - gap) / 2;
+
+    // Column widths inside each field row.
+    let col_lbl_w = ced_scroll_w * 55 / 100;
+    let col_ind_w = lbl_size * 4;  // "OK " / "ERR" indicator
+    let col_inp_w = ced_scroll_w - col_lbl_w - col_ind_w - 2 * field_gap;
 
     let mut config_editor_group = Group::new(0, ced_y, sw, ced_h, "");
 
@@ -1834,12 +1858,10 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     ced_bg.set_color(colors.status_bar_bg);
     ced_bg.set_frame(FrameType::FlatBox);
 
-    // Title label.
+    // Title.
     let mut _ced_title = Frame::new(
-        ced_inner_pad,
-        ced_y + ced_inner_pad,
-        sw - 2 * ced_inner_pad,
-        ced_title_h,
+        ced_inner_pad, ced_y + ced_inner_pad,
+        sw - 2 * ced_inner_pad, ced_title_h,
         "Edit Configuration",
     );
     _ced_title.set_color(colors.status_bar_bg);
@@ -1847,35 +1869,97 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     _ced_title.set_frame(FrameType::FlatBox);
     _ced_title.set_label_size(lbl_size);
 
-    // Text editor for the config.toml content.
-    let config_editor_buf = TextBuffer::default();
-    let mut config_editor_editor = TextEditor::new(
-        ced_inner_pad, ced_editor_y,
-        sw - 2 * ced_inner_pad, ced_editor_h,
+    // Description frame -- updated when the focused row changes.
+    let mut config_editor_desc_lbl = Frame::new(
+        ced_inner_pad, ced_y + ced_inner_pad + ced_title_h + gap,
+        sw - 2 * ced_inner_pad, ced_desc_h,
         "",
     );
-    config_editor_editor.set_buffer(config_editor_buf.clone());
-    config_editor_editor.set_color(colors.disp_bg);
-    config_editor_editor.set_text_color(colors.disp_text);
-    config_editor_editor.set_frame(FrameType::DownBox);
-    config_editor_editor.set_text_size(disp_size.min(12));
+    config_editor_desc_lbl.set_color(colors.status_ind_bg);
+    config_editor_desc_lbl.set_label_color(colors.status_ind_text);
+    config_editor_desc_lbl.set_frame(FrameType::FlatBox);
+    config_editor_desc_lbl.set_label_size(lbl_size * 3 / 4);
+    config_editor_desc_lbl.set_align(Align::Inside | Align::Left);
 
-    // "Save & Reload" button (sel=0) — initially highlighted.
-    let mut config_editor_save_btn = Button::new(
-        ced_inner_pad, ced_btn_y,
-        ced_btn_w, ced_btn_h,
-        "Save && Reload",
+    // Scrollable area for field rows.
+    let mut config_editor_scroll = Scroll::new(
+        ced_inner_pad, ced_scroll_y, ced_scroll_w, ced_scroll_h, "",
     );
-    config_editor_save_btn.set_color(colors.nav_sel);
-    config_editor_save_btn.set_label_color(colors.key_label_normal);
+    config_editor_scroll.set_color(colors.win_bg);
+    config_editor_scroll.set_frame(FrameType::DownBox);
+
+    let mut config_editor_inputs: Vec<Input> = Vec::with_capacity(n_fields);
+    let mut config_editor_valids: Vec<Frame> = Vec::with_capacity(n_fields);
+
+    for (i, field) in config::CONFIG_FIELDS.iter().enumerate() {
+        let row_y  = ced_scroll_y + i as i32 * (field_h + field_gap);
+        let inp_x  = ced_inner_pad + col_lbl_w + field_gap;
+        let ind_x  = inp_x + col_inp_w + field_gap;
+
+        // Label (field name).
+        let mut lbl = Frame::new(ced_inner_pad, row_y, col_lbl_w, field_h, field.label);
+        lbl.set_color(colors.status_ind_bg);
+        lbl.set_label_color(colors.status_ind_active_text);
+        lbl.set_frame(FrameType::FlatBox);
+        lbl.set_label_size(lbl_size);
+        lbl.set_align(Align::Inside | Align::Left);
+
+        // Value input widget.
+        let mut inp = Input::new(inp_x, row_y, col_inp_w, field_h, "");
+        inp.set_color(colors.disp_bg);
+        inp.set_text_color(colors.disp_text);
+        inp.set_text_size(lbl_size);
+
+        // Validation indicator.
+        let mut ind = Frame::new(ind_x, row_y, col_ind_w, field_h, "OK");
+        ind.set_color(colors.conn_connected);
+        ind.set_label_color(colors.key_label_normal);
+        ind.set_frame(FrameType::FlatBox);
+        ind.set_label_size(lbl_size * 3 / 4);
+
+        // Validate on every key release inside this Input.
+        {
+            let kind  = field.kind;
+            let mut ind_c = ind.clone();
+            inp.handle(move |inp_h, ev| {
+                if ev == Event::KeyUp || ev == Event::Unfocus {
+                    let val = inp_h.value();
+                    if config::validate_by_kind(kind, &val) {
+                        ind_c.set_color(colors.conn_connected);
+                        ind_c.set_label("OK");
+                    } else {
+                        ind_c.set_color(colors.conn_disconnected);
+                        ind_c.set_label("ERR");
+                    }
+                    app::redraw();
+                }
+                false
+            });
+        }
+
+        config_editor_inputs.push(inp);
+        config_editor_valids.push(ind);
+    }
+
+    config_editor_scroll.end();
+
+    // Absorb all background clicks so the keyboard behind cannot fire.
+    ced_bg.handle(|_, ev| {
+        matches!(ev, Event::Push | Event::Released)
+    });
+
+    // "Save & Reload" button (initially highlighted as sel=n_fields is set at open time).
+    let mut config_editor_save_btn = Button::new(
+        ced_inner_pad, ced_btn_y, ced_btn_w, ced_btn_h, "Save && Reload",
+    );
+    config_editor_save_btn.set_color(colors.key_mod);
+    config_editor_save_btn.set_label_color(colors.key_label_mod);
     config_editor_save_btn.set_frame(FrameType::FlatBox);
     config_editor_save_btn.set_label_size(lbl_size);
 
-    // "Cancel" button (sel=1).
+    // "Cancel" button.
     let mut config_editor_cancel_btn = Button::new(
-        ced_inner_pad + ced_btn_w + gap, ced_btn_y,
-        ced_btn_w, ced_btn_h,
-        "Cancel",
+        ced_inner_pad + ced_btn_w + gap, ced_btn_y, ced_btn_w, ced_btn_h, "Cancel",
     );
     config_editor_cancel_btn.set_color(colors.key_mod);
     config_editor_cancel_btn.set_label_color(colors.key_label_mod);
@@ -1883,11 +1967,6 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     config_editor_cancel_btn.set_label_size(lbl_size);
 
     config_editor_group.end();
-
-    // Absorb all background clicks so the keyboard behind cannot fire.
-    ced_bg.handle(|_, ev| {
-        matches!(ev, Event::Push | Event::Released)
-    });
 
     config_editor_group.hide();
 
@@ -1919,8 +1998,10 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         mouse_mode_ind,
         config_editor_open,
         config_editor_group,
-        config_editor_editor,
-        config_editor_buf,
+        config_editor_scroll,
+        config_editor_inputs,
+        config_editor_valids,
+        config_editor_desc_lbl,
         config_editor_sel,
         config_editor_save_btn,
         config_editor_cancel_btn,

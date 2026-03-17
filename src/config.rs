@@ -1075,6 +1075,261 @@ pub const DESC_GPIO_PULL: &str =
     "Internal pull-resistor: \"up\", \"down\", or \"null\" for none (default: \"null\").";
 
 // =============================================================================
+// Structured configuration field definitions
+// =============================================================================
+
+/// The expected value type for a configuration field shown in the GUI editor.
+#[derive(Clone, Copy, PartialEq)]
+pub enum ConfigFieldKind {
+    /// Free-text string (non-empty required).
+    Text,
+    /// Non-negative integer.
+    Uint,
+    /// Boolean: must be exactly "true" or "false".
+    Bool,
+    /// One of a fixed set of strings.
+    Enum(&'static [&'static str]),
+    /// Comma-separated list of strings (displayed as "us, ua").
+    StrList,
+}
+
+/// Metadata for one user-editable configuration item.
+pub struct ConfigField {
+    /// Full dotted TOML path, e.g. "output.mode".
+    pub toml_key: &'static str,
+    /// Short human-readable label shown in the GUI.
+    pub label: &'static str,
+    /// Full description (reused from the `DESC_*` constants above).
+    pub desc: &'static str,
+    /// Value type and validation rules.
+    pub kind: ConfigFieldKind,
+    /// Default value as the string the user would type.
+    pub default: &'static str,
+}
+
+/// All user-editable configuration fields, in display order.
+pub static CONFIG_FIELDS: &[ConfigField] = &[
+    ConfigField {
+        toml_key: "output.mode",
+        label:    "Output mode",
+        desc:     DESC_OUTPUT_MODE,
+        kind:     ConfigFieldKind::Enum(&["print", "ble"]),
+        default:  "print",
+    },
+    ConfigField {
+        toml_key: "output.audio",
+        label:    "Audio feedback",
+        desc:     DESC_OUTPUT_AUDIO,
+        kind:     ConfigFieldKind::Enum(&["none", "narrate", "tone", "tone_hint"]),
+        default:  "none",
+    },
+    ConfigField {
+        toml_key: "ui.show_text_display",
+        label:    "Show text display",
+        desc:     DESC_UI_SHOW_TEXT_DISPLAY,
+        kind:     ConfigFieldKind::Bool,
+        default:  "false",
+    },
+    ConfigField {
+        toml_key: "ui.active_keymaps",
+        label:    "Active keymaps",
+        desc:     DESC_UI_ACTIVE_KEYMAPS,
+        kind:     ConfigFieldKind::StrList,
+        default:  "us, ua",
+    },
+    ConfigField {
+        toml_key: "navigate.rollover",
+        label:    "Navigation rollover",
+        desc:     DESC_NAVIGATE_ROLLOVER,
+        kind:     ConfigFieldKind::Bool,
+        default:  "false",
+    },
+    ConfigField {
+        toml_key: "navigate.center_key",
+        label:    "Center key",
+        desc:     DESC_NAVIGATE_CENTER_KEY,
+        kind:     ConfigFieldKind::Text,
+        default:  "h",
+    },
+    ConfigField {
+        toml_key: "navigate.center_after_activate",
+        label:    "Center after activate",
+        desc:     DESC_NAVIGATE_CENTER_AFTER_ACTIVATE,
+        kind:     ConfigFieldKind::Bool,
+        default:  "false",
+    },
+    ConfigField {
+        toml_key: "mouse.move_max_size",
+        label:    "Mouse max speed (px)",
+        desc:     DESC_MOUSE_MOVE_MAX_SIZE,
+        kind:     ConfigFieldKind::Uint,
+        default:  "20",
+    },
+    ConfigField {
+        toml_key: "mouse.repeat_interval",
+        label:    "Mouse interval (ms)",
+        desc:     DESC_MOUSE_REPEAT_INTERVAL,
+        kind:     ConfigFieldKind::Uint,
+        default:  "20",
+    },
+    ConfigField {
+        toml_key: "mouse.move_max_time",
+        label:    "Mouse ramp time (ms)",
+        desc:     DESC_MOUSE_MOVE_MAX_TIME,
+        kind:     ConfigFieldKind::Uint,
+        default:  "1000",
+    },
+    ConfigField {
+        toml_key: "input.gamepad.enabled",
+        label:    "Gamepad enabled",
+        desc:     DESC_GAMEPAD_ENABLED,
+        kind:     ConfigFieldKind::Bool,
+        default:  "true",
+    },
+    ConfigField {
+        toml_key: "input.gamepad.rumble",
+        label:    "Gamepad rumble",
+        desc:     DESC_GAMEPAD_RUMBLE,
+        kind:     ConfigFieldKind::Bool,
+        default:  "false",
+    },
+    ConfigField {
+        toml_key: "input.gpio.enabled",
+        label:    "GPIO enabled",
+        desc:     DESC_GPIO_ENABLED,
+        kind:     ConfigFieldKind::Bool,
+        default:  "false",
+    },
+];
+
+/// Validate a string value against a field kind.
+///
+/// Returns `true` when `value` is acceptable for `kind`.
+pub fn validate_by_kind(kind: ConfigFieldKind, value: &str) -> bool {
+    let v = value.trim();
+    match kind {
+        ConfigFieldKind::Text    => !v.is_empty(),
+        ConfigFieldKind::Uint    => v.parse::<u64>().is_ok(),
+        ConfigFieldKind::Bool    => matches!(v, "true" | "false"),
+        ConfigFieldKind::Enum(c) => c.contains(&v),
+        ConfigFieldKind::StrList =>
+            v.split(',').any(|s| !s.trim().is_empty()),
+    }
+}
+
+/// Validate a string value against the given [`ConfigField`].
+pub fn validate_field_value(field: &ConfigField, value: &str) -> bool {
+    validate_by_kind(field.kind, value)
+}
+
+/// Read the current live value of `field` from a parsed [`Config`] as the
+/// string the GUI editor should display.
+pub fn config_field_initial_value(field: &ConfigField, cfg: &Config) -> String {
+    match field.toml_key {
+        "output.mode" => match cfg.output.mode {
+            OutputMode::Print => "print".to_string(),
+            OutputMode::Ble   => "ble".to_string(),
+        },
+        "output.audio" => match cfg.output.audio {
+            AudioMode::None     => "none".to_string(),
+            AudioMode::Narrate  => "narrate".to_string(),
+            AudioMode::Tone     => "tone".to_string(),
+            AudioMode::ToneHint => "tone_hint".to_string(),
+        },
+        "ui.show_text_display"           => cfg.ui.show_text_display.to_string(),
+        "ui.active_keymaps"              => cfg.ui.active_keymaps.join(", "),
+        "navigate.rollover"              => cfg.navigate.rollover.to_string(),
+        "navigate.center_key"            => cfg.navigate.center_key.clone(),
+        "navigate.center_after_activate" => cfg.navigate.center_after_activate.to_string(),
+        "mouse.move_max_size"            => cfg.mouse.move_max_size.to_string(),
+        "mouse.repeat_interval"          => cfg.mouse.repeat_interval.to_string(),
+        "mouse.move_max_time"            => cfg.mouse.move_max_time.to_string(),
+        "input.gamepad.enabled"          => cfg.input.gamepad.enabled.to_string(),
+        "input.gamepad.rumble"           => cfg.input.gamepad.rumble.to_string(),
+        "input.gpio.enabled"             => cfg.input.gpio.enabled.to_string(),
+        _                                => field.default.to_string(),
+    }
+}
+
+/// Build a TOML string from the values entered in the configuration GUI.
+///
+/// Loads the existing `config.toml` as the base (preserving untouched
+/// sections such as `[input.keyboard]` and `[keymap.*]`), then overlays the
+/// `values` from the form.  Returns the merged result as a TOML string.
+///
+/// `values` must be aligned with [`CONFIG_FIELDS`] (same length and order).
+pub fn form_to_toml(values: &[String]) -> String {
+    let base_text = fs::read_to_string(config_path()).unwrap_or_default();
+    let base_text = strip_null_values(&base_text);
+    let mut doc: toml::Value = if base_text.as_ref().is_empty() {
+        toml::Value::Table(toml::map::Map::new())
+    } else {
+        toml::from_str(base_text.as_ref())
+            .unwrap_or_else(|_| toml::Value::Table(toml::map::Map::new()))
+    };
+    if let Some(table) = doc.as_table_mut() {
+        for (field, value) in CONFIG_FIELDS.iter().zip(values.iter()) {
+            if let Some(tv) = field_value_to_toml_value(field, value) {
+                toml_set_path(table, field.toml_key, tv);
+            }
+        }
+    }
+    toml::to_string_pretty(&doc).unwrap_or_else(|_| generate_default_toml())
+}
+
+/// Convert a form string value to a `toml::Value`, or `None` if the value
+/// is invalid (so it stays unchanged in the TOML document).
+fn field_value_to_toml_value(field: &ConfigField, value: &str) -> Option<toml::Value> {
+    let v = value.trim();
+    match field.kind {
+        ConfigFieldKind::Text => Some(toml::Value::String(v.to_string())),
+        ConfigFieldKind::Bool => match v {
+            "true"  => Some(toml::Value::Boolean(true)),
+            "false" => Some(toml::Value::Boolean(false)),
+            _       => None,
+        },
+        ConfigFieldKind::Uint => v.parse::<i64>().ok()
+            .filter(|&n| n >= 0)
+            .map(toml::Value::Integer),
+        ConfigFieldKind::Enum(choices) => {
+            if choices.contains(&v) {
+                Some(toml::Value::String(v.to_string()))
+            } else {
+                None
+            }
+        }
+        ConfigFieldKind::StrList => {
+            let parts: Vec<toml::Value> = v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .map(toml::Value::String)
+                .collect();
+            if parts.is_empty() { None } else { Some(toml::Value::Array(parts)) }
+        }
+    }
+}
+
+/// Recursively set a dotted TOML path (e.g. "input.gamepad.enabled") to
+/// `value` inside `table`, creating intermediate tables as needed.
+fn toml_set_path(
+    table: &mut toml::map::Map<String, toml::Value>,
+    path:  &str,
+    value: toml::Value,
+) {
+    match path.find('.') {
+        None => { table.insert(path.to_string(), value); }
+        Some(dot) => {
+            let (key, rest) = (&path[..dot], &path[dot + 1..]);
+            let entry = table.entry(key.to_string())
+                .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+            if let toml::Value::Table(sub) = entry {
+                toml_set_path(sub, rest, value);
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Config file path helpers
 // =============================================================================
 

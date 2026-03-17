@@ -108,7 +108,7 @@ impl KeyHook for DummyKeyHook {
 // Unified input event processing
 // =============================================================================
 
-use fltk::{button::Button, enums::Color, frame::Frame, group::Group, text::{TextBuffer, TextDisplay, TextEditor}};
+use fltk::{button::Button, enums::Color, frame::Frame, group::{Group, Scroll}, input::Input, text::{TextBuffer, TextDisplay}};
 use display::{Colors, ModBtn, ModState};
 
 /// All shared UI state needed to process a `UserInputEvent`.
@@ -148,9 +148,11 @@ pub(crate) struct InputCtx {
     colors:                Colors,
     config_editor_open:       Rc<RefCell<bool>>,
     config_editor_group:      Group,
-    config_editor_editor:     TextEditor,
-    config_editor_buf:        TextBuffer,
-    /// 0 = "Save & Reload" button selected, 1 = "Cancel" button selected.
+    config_editor_scroll:     Scroll,
+    config_editor_inputs:     Vec<Input>,
+    config_editor_valids:     Vec<Frame>,
+    config_editor_desc_lbl:   Frame,
+    /// 0..N-1 = field focused; N = "Save & Reload"; N+1 = "Cancel".
     config_editor_sel:        Rc<RefCell<usize>>,
     config_editor_save_btn:   Button,
     config_editor_cancel_btn: Button,
@@ -188,8 +190,10 @@ impl Clone for InputCtx {
             colors:                self.colors,
             config_editor_open:       self.config_editor_open.clone(),
             config_editor_group:      self.config_editor_group.clone(),
-            config_editor_editor:     self.config_editor_editor.clone(),
-            config_editor_buf:        self.config_editor_buf.clone(),
+            config_editor_scroll:     self.config_editor_scroll.clone(),
+            config_editor_inputs:     self.config_editor_inputs.clone(),
+            config_editor_valids:     self.config_editor_valids.clone(),
+            config_editor_desc_lbl:   self.config_editor_desc_lbl.clone(),
             config_editor_sel:        self.config_editor_sel.clone(),
             config_editor_save_btn:   self.config_editor_save_btn.clone(),
             config_editor_cancel_btn: self.config_editor_cancel_btn.clone(),
@@ -244,6 +248,7 @@ pub(crate) fn process_input_events(
         // --- Config editor mode: intercept all navigation before the keyboard ---
         if *ctx.config_editor_open.borrow() {
             if !evt.pressed { continue; }
+            let n = config::CONFIG_FIELDS.len();
             match evt.action {
                 UserInputAction::Menu => {
                     // Close the config editor (cancel).
@@ -259,21 +264,68 @@ pub(crate) fn process_input_events(
                 }
                 UserInputAction::Down => {
                     let cur = *ctx.config_editor_sel.borrow();
-                    if cur < 1 {
+                    if cur < n + 1 {
                         config_editor_set_sel(ctx, cur + 1);
+                    }
+                }
+                UserInputAction::Left => {
+                    // On the button row: move from Cancel to Save.
+                    let cur = *ctx.config_editor_sel.borrow();
+                    if cur == n + 1 {
+                        config_editor_set_sel(ctx, n);
+                    }
+                }
+                UserInputAction::Right => {
+                    // On the button row: move from Save to Cancel.
+                    let cur = *ctx.config_editor_sel.borrow();
+                    if cur == n {
+                        config_editor_set_sel(ctx, n + 1);
                     }
                 }
                 UserInputAction::Activate => {
                     let sel = *ctx.config_editor_sel.borrow();
-                    if sel == 0 {
-                        // "Save & Reload": write file then restart.
-                        let text = ctx.config_editor_buf.text();
-                        *ctx.config_editor_open.borrow_mut() = false;
-                        ctx.config_editor_group.hide();
-                        app::redraw();
-                        save_and_reload_config(&text);
+                    if sel < n {
+                        // On a field row: cycle Bool/Enum; focus Input for Text/Uint.
+                        let kind = config::CONFIG_FIELDS[sel].kind;
+                        match kind {
+                            config::ConfigFieldKind::Bool => {
+                                let cur = ctx.config_editor_inputs[sel].value();
+                                let next = if cur.trim() == "true" { "false" } else { "true" };
+                                ctx.config_editor_inputs[sel].clone().set_value(next);
+                                // All Bool values are valid; keep indicator green.
+                                app::redraw();
+                            }
+                            config::ConfigFieldKind::Enum(choices) => {
+                                let cur = ctx.config_editor_inputs[sel].value();
+                                let pos = choices.iter()
+                                    .position(|&c| c == cur.trim())
+                                    .unwrap_or(0);
+                                let next = choices[(pos + 1) % choices.len()];
+                                ctx.config_editor_inputs[sel].clone().set_value(next);
+                                app::redraw();
+                            }
+                            _ => {
+                                // Text / Uint: give keyboard focus so user can type.
+                                let _ = ctx.config_editor_inputs[sel].clone().take_focus();
+                            }
+                        }
+                    } else if sel == n {
+                        // "Save & Reload" — only proceed when all fields are valid.
+                        let values: Vec<String> = ctx.config_editor_inputs.iter()
+                            .map(|inp| inp.value())
+                            .collect();
+                        let all_valid = config::CONFIG_FIELDS.iter()
+                            .zip(values.iter())
+                            .all(|(f, v)| config::validate_by_kind(f.kind, v));
+                        if all_valid {
+                            let toml = config::form_to_toml(&values);
+                            *ctx.config_editor_open.borrow_mut() = false;
+                            ctx.config_editor_group.hide();
+                            app::redraw();
+                            save_and_reload_config(&toml);
+                        }
                     } else {
-                        // "Cancel": just close.
+                        // "Cancel"
                         *ctx.config_editor_open.borrow_mut() = false;
                         ctx.config_editor_group.hide();
                         app::redraw();
@@ -773,32 +825,61 @@ fn maybe_center_after_activate(ctx: &mut InputCtx, rumble: bool) {
     }
 }
 
-/// Update the config-editor button-selection highlight.
+/// Update the config-editor selection highlight.
 ///
-/// `new_sel`: 0 = "Save & Reload", 1 = "Cancel".
+/// `new_sel`:
+///   * `0..N-1` — field row focused (Input highlighted, description updated)
+///   * `N`      — "Save & Reload" button focused
+///   * `N+1`    — "Cancel" button focused
+///
+/// where `N = config::CONFIG_FIELDS.len()`.
 fn config_editor_set_sel(ctx: &mut InputCtx, new_sel: usize) {
     let colors  = ctx.colors;
+    let n       = config::CONFIG_FIELDS.len();
     let old_sel = *ctx.config_editor_sel.borrow();
     *ctx.config_editor_sel.borrow_mut() = new_sel;
-    // Restore the previously selected button to its unselected style.
-    {
-        let mut btn = if old_sel == 0 {
-            ctx.config_editor_save_btn.clone()
-        } else {
-            ctx.config_editor_cancel_btn.clone()
-        };
-        btn.set_color(colors.key_mod);
-        btn.set_label_color(colors.key_label_mod);
+
+    // --- Deselect old ---
+    if old_sel < n {
+        ctx.config_editor_inputs[old_sel].clone().set_color(colors.disp_bg);
+    } else if old_sel == n {
+        let mut b = ctx.config_editor_save_btn.clone();
+        b.set_color(colors.key_mod);
+        b.set_label_color(colors.key_label_mod);
+    } else {
+        let mut b = ctx.config_editor_cancel_btn.clone();
+        b.set_color(colors.key_mod);
+        b.set_label_color(colors.key_label_mod);
     }
-    // Highlight the newly selected button.
-    {
-        let mut btn = if new_sel == 0 {
-            ctx.config_editor_save_btn.clone()
-        } else {
-            ctx.config_editor_cancel_btn.clone()
-        };
-        btn.set_color(colors.nav_sel);
-        btn.set_label_color(colors.key_label_normal);
+
+    // --- Select new ---
+    if new_sel < n {
+        ctx.config_editor_inputs[new_sel].clone().set_color(colors.nav_sel);
+        let _ = ctx.config_editor_inputs[new_sel].clone().take_focus();
+        ctx.config_editor_desc_lbl.clone()
+            .set_label(config::CONFIG_FIELDS[new_sel].desc);
+        // Scroll to keep the focused field visible.
+        let inp_y = ctx.config_editor_inputs[new_sel].y();
+        let inp_h = ctx.config_editor_inputs[new_sel].h();
+        let scr_h = ctx.config_editor_scroll.h();
+        let scr_offset = ctx.config_editor_scroll.yposition();
+        if inp_y < scr_offset {
+            ctx.config_editor_scroll.scroll_to(0, inp_y);
+        } else if inp_y + inp_h > scr_offset + scr_h {
+            ctx.config_editor_scroll.scroll_to(0, inp_y + inp_h - scr_h);
+        }
+    } else if new_sel == n {
+        let mut b = ctx.config_editor_save_btn.clone();
+        b.set_color(colors.nav_sel);
+        b.set_label_color(colors.key_label_normal);
+        ctx.config_editor_desc_lbl.clone()
+            .set_label("Apply changes and restart the application.");
+    } else {
+        let mut b = ctx.config_editor_cancel_btn.clone();
+        b.set_color(colors.nav_sel);
+        b.set_label_color(colors.key_label_normal);
+        ctx.config_editor_desc_lbl.clone()
+            .set_label("Close the editor without saving.");
     }
     app::redraw();
 }
@@ -985,57 +1066,78 @@ fn main() {
         colors,
         config_editor_open:       ui.config_editor_open.clone(),
         config_editor_group:      ui.config_editor_group.clone(),
-        config_editor_editor:     ui.config_editor_editor.clone(),
-        config_editor_buf:        ui.config_editor_buf.clone(),
+        config_editor_scroll:     ui.config_editor_scroll.clone(),
+        config_editor_inputs:     ui.config_editor_inputs.clone(),
+        config_editor_valids:     ui.config_editor_valids.clone(),
+        config_editor_desc_lbl:   ui.config_editor_desc_lbl.clone(),
         config_editor_sel:        ui.config_editor_sel.clone(),
         config_editor_save_btn:   ui.config_editor_save_btn.clone(),
         config_editor_cancel_btn: ui.config_editor_cancel_btn.clone(),
     };
 
     // --- Wire up "Edit configuration" open logic (lazy init) ---
-    // Now that build_ui has returned we have access to the config editor
-    // widgets; populate the Rc<RefCell<Option<Box<dyn Fn()>>>> that the
-    // menu item execute closure uses.
+    // Pre-compute the initial values from the live Config so the form
+    // shows the actual running settings when opened.
+    let initial_values: Vec<String> = config::CONFIG_FIELDS.iter()
+        .map(|f| config::config_field_initial_value(f, &cfg))
+        .collect();
+
     {
-        let ced_open   = ui.config_editor_open.clone();
-        let ced_group  = ui.config_editor_group.clone();
-        let ced_buf    = ui.config_editor_buf.clone();
-        let ced_sel    = ui.config_editor_sel.clone();
-        let ced_save   = ui.config_editor_save_btn.clone();
-        let ced_cancel = ui.config_editor_cancel_btn.clone();
-        let ced_editor = ui.config_editor_editor.clone();
+        let ced_open    = ui.config_editor_open.clone();
+        let ced_group   = ui.config_editor_group.clone();
+        let ced_inputs  = ui.config_editor_inputs.clone();
+        let ced_valids  = ui.config_editor_valids.clone();
+        let ced_sel     = ui.config_editor_sel.clone();
+        let ced_desc    = ui.config_editor_desc_lbl.clone();
+        let ced_save    = ui.config_editor_save_btn.clone();
+        let ced_cancel  = ui.config_editor_cancel_btn.clone();
         *open_editor_fn.borrow_mut() = Some(Box::new(move || {
-            // Load the current config.toml, or generate a default if absent.
-            let text = std::fs::read_to_string(config::config_path())
-                .unwrap_or_else(|_| config::generate_default_toml());
-            ced_buf.clone().set_text(&text);
-            // Reset selection to "Save & Reload" (index 0).
+            // Populate each Input from the live config values.
+            for (i, (inp, val)) in ced_inputs.iter().zip(initial_values.iter()).enumerate() {
+                inp.clone().set_value(val);
+                let kind     = config::CONFIG_FIELDS[i].kind;
+                let is_valid = config::validate_by_kind(kind, val);
+                let mut ind  = ced_valids[i].clone();
+                if is_valid {
+                    ind.set_color(colors.conn_connected);
+                    ind.set_label("OK");
+                } else {
+                    ind.set_color(colors.conn_disconnected);
+                    ind.set_label("ERR");
+                }
+            }
+            // Start with field 0 focused.
             *ced_sel.borrow_mut() = 0;
-            let mut save   = ced_save.clone();
-            let mut cancel = ced_cancel.clone();
-            save.set_color(colors.nav_sel);
-            save.set_label_color(colors.key_label_normal);
-            cancel.set_color(colors.key_mod);
-            cancel.set_label_color(colors.key_label_mod);
-            // Show overlay and give the text editor keyboard focus.
+            ced_inputs[0].clone().set_color(colors.nav_sel);
+            let _ = ced_inputs[0].clone().take_focus();
+            ced_desc.clone().set_label(config::CONFIG_FIELDS[0].desc);
+            ced_save.clone().set_color(colors.key_mod);
+            ced_save.clone().set_label_color(colors.key_label_mod);
+            ced_cancel.clone().set_color(colors.key_mod);
+            ced_cancel.clone().set_label_color(colors.key_label_mod);
             *ced_open.borrow_mut() = true;
             ced_group.clone().show();
-            let _ = ced_editor.clone().take_focus();
             app::redraw();
         }));
     }
 
     // --- Config editor: mouse-click callbacks for Save & Cancel buttons ---
     {
-        let save_buf   = ui.config_editor_buf.clone();
-        let save_open  = ui.config_editor_open.clone();
-        let save_grp   = ui.config_editor_group.clone();
+        let save_inputs = ui.config_editor_inputs.clone();
+        let save_open   = ui.config_editor_open.clone();
+        let save_grp    = ui.config_editor_group.clone();
         ui.config_editor_save_btn.clone().set_callback(move |_| {
-            let text = save_buf.text();
-            *save_open.borrow_mut() = false;
-            save_grp.clone().hide();
-            app::redraw();
-            save_and_reload_config(&text);
+            let values: Vec<String> = save_inputs.iter().map(|inp| inp.value()).collect();
+            let all_valid = config::CONFIG_FIELDS.iter()
+                .zip(values.iter())
+                .all(|(f, v)| config::validate_by_kind(f.kind, v));
+            if all_valid {
+                let toml = config::form_to_toml(&values);
+                *save_open.borrow_mut() = false;
+                save_grp.clone().hide();
+                app::redraw();
+                save_and_reload_config(&toml);
+            }
         });
     }
     {
