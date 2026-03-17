@@ -182,6 +182,7 @@ fn open_config_editor() {
     // Scrollable area
     let mut scroll = Scroll::new(0, 0, sw, sh - row_h - pad * 2, "");
     scroll.set_color(BG);
+    scroll.set_frame(FrameType::FlatBox);
     let pack_w = (sw - 40).min(900);
     let pack_x = (sw - pack_w) / 2;
     let mut pack = Pack::new(pack_x, pad, pack_w, 0, "");
