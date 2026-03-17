@@ -2,7 +2,7 @@
 //
 // Non-blocking gamepad event polling using the Linux joystick API
 // (/dev/input/js*).  Each call to `Gamepad::poll` drains all pending events
-// and returns a list of `GamepadEvent` values without blocking.
+// and returns a list of `UserInputEvent` values without blocking.
 //
 // Force-feedback (rumble) is driven through the evdev event interface
 // (/dev/input/event*), which is separate from the joystick read interface.
@@ -15,61 +15,12 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::config::{ButtonOrAxis, GamepadInputConfig};
+use crate::user_input::{UserInputAction, UserInputEvent};
 
 /// Maximum number of joystick device indices to probe during auto-detection.
 const MAX_JOYSTICK_DEVICES: u8 = 8;
 
-// =============================================================================
-// Public types
-// =============================================================================
 
-/// A navigation action produced by a gamepad button press or release.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum GamepadAction {
-    Up,
-    Down,
-    Left,
-    Right,
-    Activate,
-    Menu,
-    /// Activate the current selection with Shift held.
-    ActivateShift,
-    /// Activate the current selection with Ctrl held.
-    ActivateCtrl,
-    /// Activate the current selection with Alt held.
-    ActivateAlt,
-    /// Activate the current selection with AltGr held.
-    ActivateAltGr,
-    /// Produce the Enter output directly.
-    ActivateEnter,
-    /// Produce the Space output directly.
-    ActivateSpace,
-    /// Produce the Left Arrow output directly.
-    ActivateArrowLeft,
-    /// Produce the Right Arrow output directly.
-    ActivateArrowRight,
-    /// Produce the Up Arrow output directly.
-    ActivateArrowUp,
-    /// Produce the Down Arrow output directly.
-    ActivateArrowDown,
-    /// Produce the Backspace output directly.
-    ActivateBksp,
-    /// Move the selection to the center of the keyboard.
-    NavigateCenter,
-    /// Toggle mouse mode on/off.
-    MouseToggle,
-    /// Emitted in `absolute_axes` mode: the joystick is at a position that maps
-    /// to a specific key.  `horiz` and `vert` are normalised to `0.0` (min axis
-    /// value) ... `1.0` (max axis value).
-    AbsolutePos { horiz: f32, vert: f32 },
-}
-
-/// A single gamepad button event.
-#[derive(Clone, Copy, Debug)]
-pub struct GamepadEvent {
-    pub action:  GamepadAction,
-    pub pressed: bool,
-}
 
 // =============================================================================
 // Linux joystick API constants
@@ -196,7 +147,7 @@ enum AxisDir { Negative, Positive }
 /// button.  Positive axis values above `axis_threshold` trigger the action.
 struct AxisAction {
     axis:   u32,
-    action: GamepadAction,
+    action: UserInputAction,
     active: bool,
 }
 
@@ -359,7 +310,7 @@ impl Gamepad {
     ///
     /// Returns `true` if the device is still connected, `false` if a device
     /// error was encountered (e.g. the gamepad was unplugged).
-    pub fn poll(&mut self, out: &mut Vec<GamepadEvent>) -> bool {
+    pub fn poll(&mut self, out: &mut Vec<UserInputEvent>) -> bool {
         out.clear();
         // js_event is exactly 8 bytes (little-endian):
         //   [0..4]  u32  time    - milliseconds since driver start
@@ -385,7 +336,7 @@ impl Gamepad {
                         eprintln!("[gamepad] button=0x{:02x} pressed={}", number, pressed);
 
                         if let Some(action) = self.map_button(number) {
-                            out.push(GamepadEvent { action, pressed });
+                            out.push(UserInputEvent { action, pressed });
                         }
                     } else if event_type & JS_EVENT_AXIS != 0 {
                         #[cfg(debug_assertions)]
@@ -413,10 +364,10 @@ impl Gamepad {
                 if now >= t {
                     if let Some(dir) = self.horiz_dir {
                         let action = match dir {
-                            AxisDir::Negative => GamepadAction::Left,
-                            AxisDir::Positive => GamepadAction::Right,
+                            AxisDir::Negative => UserInputAction::Left,
+                            AxisDir::Positive => UserInputAction::Right,
                         };
-                        out.push(GamepadEvent { action, pressed: true });
+                        out.push(UserInputEvent { action, pressed: true });
                         self.horiz_repeat_at = Some(now + self.repeat_interval);
                     } else {
                         self.horiz_repeat_at = None;
@@ -427,10 +378,10 @@ impl Gamepad {
                 if now >= t {
                     if let Some(dir) = self.vert_dir {
                         let action = match dir {
-                            AxisDir::Negative => GamepadAction::Up,
-                            AxisDir::Positive => GamepadAction::Down,
+                            AxisDir::Negative => UserInputAction::Up,
+                            AxisDir::Positive => UserInputAction::Down,
                         };
-                        out.push(GamepadEvent { action, pressed: true });
+                        out.push(UserInputEvent { action, pressed: true });
                         self.vert_repeat_at = Some(now + self.repeat_interval);
                     } else {
                         self.vert_repeat_at = None;
@@ -442,31 +393,31 @@ impl Gamepad {
         true
     }
 
-    /// Map a raw button index to a `GamepadAction`, or `None` if unconfigured.
-    fn map_button(&self, code: u32) -> Option<GamepadAction> {
-        if self.navigate_up    == Some(code) { return Some(GamepadAction::Up);            }
-        if self.navigate_down  == Some(code) { return Some(GamepadAction::Down);          }
-        if self.navigate_left  == Some(code) { return Some(GamepadAction::Left);          }
-        if self.navigate_right == Some(code) { return Some(GamepadAction::Right);         }
-        if self.activate       == Some(code) { return Some(GamepadAction::Activate);      }
-        if self.menu           == Some(code) { return Some(GamepadAction::Menu);          }
-        if self.activate_shift == Some(code) { return Some(GamepadAction::ActivateShift); }
-        if self.activate_ctrl  == Some(code) { return Some(GamepadAction::ActivateCtrl);  }
-        if self.activate_alt   == Some(code) { return Some(GamepadAction::ActivateAlt);   }
-        if self.activate_altgr == Some(code) { return Some(GamepadAction::ActivateAltGr); }
-        if self.activate_enter  == Some(code) { return Some(GamepadAction::ActivateEnter);      }
-        if self.activate_space  == Some(code) { return Some(GamepadAction::ActivateSpace);      }
-        if self.activate_arrow_left  == Some(code) { return Some(GamepadAction::ActivateArrowLeft);  }
-        if self.activate_arrow_right == Some(code) { return Some(GamepadAction::ActivateArrowRight); }
-        if self.activate_arrow_up    == Some(code) { return Some(GamepadAction::ActivateArrowUp);    }
-        if self.activate_arrow_down  == Some(code) { return Some(GamepadAction::ActivateArrowDown);  }
-        if self.activate_bksp        == Some(code) { return Some(GamepadAction::ActivateBksp);       }
-        if self.navigate_center == Some(code) { return Some(GamepadAction::NavigateCenter);  }
-        if self.mouse_toggle    == Some(code) { return Some(GamepadAction::MouseToggle);     }
+    /// Map a raw button index to a `UserInputAction`, or `None` if unconfigured.
+    fn map_button(&self, code: u32) -> Option<UserInputAction> {
+        if self.navigate_up    == Some(code) { return Some(UserInputAction::Up);            }
+        if self.navigate_down  == Some(code) { return Some(UserInputAction::Down);          }
+        if self.navigate_left  == Some(code) { return Some(UserInputAction::Left);          }
+        if self.navigate_right == Some(code) { return Some(UserInputAction::Right);         }
+        if self.activate       == Some(code) { return Some(UserInputAction::Activate);      }
+        if self.menu           == Some(code) { return Some(UserInputAction::Menu);          }
+        if self.activate_shift == Some(code) { return Some(UserInputAction::ActivateShift); }
+        if self.activate_ctrl  == Some(code) { return Some(UserInputAction::ActivateCtrl);  }
+        if self.activate_alt   == Some(code) { return Some(UserInputAction::ActivateAlt);   }
+        if self.activate_altgr == Some(code) { return Some(UserInputAction::ActivateAltGr); }
+        if self.activate_enter  == Some(code) { return Some(UserInputAction::ActivateEnter);      }
+        if self.activate_space  == Some(code) { return Some(UserInputAction::ActivateSpace);      }
+        if self.activate_arrow_left  == Some(code) { return Some(UserInputAction::ActivateArrowLeft);  }
+        if self.activate_arrow_right == Some(code) { return Some(UserInputAction::ActivateArrowRight); }
+        if self.activate_arrow_up    == Some(code) { return Some(UserInputAction::ActivateArrowUp);    }
+        if self.activate_arrow_down  == Some(code) { return Some(UserInputAction::ActivateArrowDown);  }
+        if self.activate_bksp        == Some(code) { return Some(UserInputAction::ActivateBksp);       }
+        if self.navigate_center == Some(code) { return Some(UserInputAction::NavigateCenter);  }
+        if self.mouse_toggle    == Some(code) { return Some(UserInputAction::MouseToggle);     }
         None
     }
 
-    /// Process a single axis event, emitting press/release `GamepadEvent`s into
+    /// Process a single axis event, emitting press/release `UserInputEvent`s into
     /// `out` whenever the axis crosses the configured threshold.
     ///
     /// Each configured axis has a remembered active direction (`horiz_dir`,
@@ -474,11 +425,11 @@ impl Gamepad {
     /// *press* event; active -> neutral emits a *release* event.
     ///
     /// When `axis_absolute` is `true` the horizontal and vertical axes instead
-    /// emit a [`GamepadAction::AbsolutePos`] event whose `horiz` / `vert`
+    /// emit a [`UserInputAction::AbsolutePos`] event whose `horiz` / `vert`
     /// values are normalised to `0.0 ... 1.0`.  The event is only emitted when
     /// the raw axis value changes, so that `main` can update the selection only
     /// on actual movement.
-    fn handle_axis(&mut self, axis: u32, value: i16, out: &mut Vec<GamepadEvent>) {
+    fn handle_axis(&mut self, axis: u32, value: i16, out: &mut Vec<UserInputEvent>) {
         let v = value as i32;
 
         if self.axis_absolute {
@@ -497,8 +448,8 @@ impl Gamepad {
                     } else {
                         raw_to_frac(self.abs_vert_raw)
                     };
-                    out.push(GamepadEvent {
-                        action: GamepadAction::AbsolutePos {
+                    out.push(UserInputEvent {
+                        action: UserInputAction::AbsolutePos {
                             horiz: horiz_frac,
                             vert:  vert_frac,
                         },
@@ -518,8 +469,8 @@ impl Gamepad {
                     } else {
                         raw_to_frac(self.abs_vert_raw)
                     };
-                    out.push(GamepadEvent {
-                        action: GamepadAction::AbsolutePos {
+                    out.push(UserInputEvent {
+                        action: UserInputAction::AbsolutePos {
                             horiz: horiz_frac,
                             vert:  vert_frac,
                         },
@@ -541,18 +492,18 @@ impl Gamepad {
                 // Release previous direction.
                 if let Some(prev) = self.horiz_dir {
                     let action = match prev {
-                        AxisDir::Negative => GamepadAction::Left,
-                        AxisDir::Positive => GamepadAction::Right,
+                        AxisDir::Negative => UserInputAction::Left,
+                        AxisDir::Positive => UserInputAction::Right,
                     };
-                    out.push(GamepadEvent { action, pressed: false });
+                    out.push(UserInputEvent { action, pressed: false });
                 }
                 // Press new direction.
                 if let Some(next) = new_dir {
                     let action = match next {
-                        AxisDir::Negative => GamepadAction::Left,
-                        AxisDir::Positive => GamepadAction::Right,
+                        AxisDir::Negative => UserInputAction::Left,
+                        AxisDir::Positive => UserInputAction::Right,
                     };
-                    out.push(GamepadEvent { action, pressed: true });
+                    out.push(UserInputEvent { action, pressed: true });
                 }
                 self.horiz_dir = new_dir;
                 self.horiz_repeat_at = if new_dir.is_some() {
@@ -569,18 +520,18 @@ impl Gamepad {
                 // Release previous direction.
                 if let Some(prev) = self.vert_dir {
                     let action = match prev {
-                        AxisDir::Negative => GamepadAction::Up,
-                        AxisDir::Positive => GamepadAction::Down,
+                        AxisDir::Negative => UserInputAction::Up,
+                        AxisDir::Positive => UserInputAction::Down,
                     };
-                    out.push(GamepadEvent { action, pressed: false });
+                    out.push(UserInputEvent { action, pressed: false });
                 }
                 // Press new direction.
                 if let Some(next) = new_dir {
                     let action = match next {
-                        AxisDir::Negative => GamepadAction::Up,
-                        AxisDir::Positive => GamepadAction::Down,
+                        AxisDir::Negative => UserInputAction::Up,
+                        AxisDir::Positive => UserInputAction::Down,
                     };
-                    out.push(GamepadEvent { action, pressed: true });
+                    out.push(UserInputEvent { action, pressed: true });
                 }
                 self.vert_dir = new_dir;
                 self.vert_repeat_at = if new_dir.is_some() {
@@ -599,7 +550,7 @@ impl Gamepad {
     /// Each entry in `axis_actions` is a button-mapped action that was
     /// configured with an `"a:N"` axis specifier.  Positive axis values above
     /// `axis_threshold` trigger a press; values at or below release it.
-    fn handle_axis_actions(&mut self, axis: u32, v: i32, out: &mut Vec<GamepadEvent>) {
+    fn handle_axis_actions(&mut self, axis: u32, v: i32, out: &mut Vec<UserInputEvent>) {
         let threshold = self.axis_threshold;
         for aa in &mut self.axis_actions {
             if aa.axis == axis {
@@ -607,7 +558,7 @@ impl Gamepad {
                 // of analog triggers (range 0 -> +32767).
                 let active = v > threshold;
                 if active != aa.active {
-                    out.push(GamepadEvent { action: aa.action, pressed: active });
+                    out.push(UserInputEvent { action: aa.action, pressed: active });
                     aa.active = active;
                 }
             }
@@ -722,26 +673,26 @@ fn btn(boa: &Option<ButtonOrAxis>) -> Option<u32> {
 /// in the returned `Vec`.  The returned entries are checked in `handle_axis`
 /// whenever an axis event arrives.
 fn build_axis_actions(cfg: &GamepadInputConfig) -> Vec<AxisAction> {
-    let pairs: &[(&Option<ButtonOrAxis>, GamepadAction)] = &[
-        (&cfg.navigate_up,          GamepadAction::Up),
-        (&cfg.navigate_down,        GamepadAction::Down),
-        (&cfg.navigate_left,        GamepadAction::Left),
-        (&cfg.navigate_right,       GamepadAction::Right),
-        (&cfg.activate,             GamepadAction::Activate),
-        (&cfg.menu,                 GamepadAction::Menu),
-        (&cfg.activate_shift,       GamepadAction::ActivateShift),
-        (&cfg.activate_ctrl,        GamepadAction::ActivateCtrl),
-        (&cfg.activate_alt,         GamepadAction::ActivateAlt),
-        (&cfg.activate_altgr,       GamepadAction::ActivateAltGr),
-        (&cfg.activate_enter,       GamepadAction::ActivateEnter),
-        (&cfg.activate_space,       GamepadAction::ActivateSpace),
-        (&cfg.activate_arrow_left,  GamepadAction::ActivateArrowLeft),
-        (&cfg.activate_arrow_right, GamepadAction::ActivateArrowRight),
-        (&cfg.activate_arrow_up,    GamepadAction::ActivateArrowUp),
-        (&cfg.activate_arrow_down,  GamepadAction::ActivateArrowDown),
-        (&cfg.activate_bksp,        GamepadAction::ActivateBksp),
-        (&cfg.navigate_center,      GamepadAction::NavigateCenter),
-        (&cfg.mouse_toggle,         GamepadAction::MouseToggle),
+    let pairs: &[(&Option<ButtonOrAxis>, UserInputAction)] = &[
+        (&cfg.navigate_up,          UserInputAction::Up),
+        (&cfg.navigate_down,        UserInputAction::Down),
+        (&cfg.navigate_left,        UserInputAction::Left),
+        (&cfg.navigate_right,       UserInputAction::Right),
+        (&cfg.activate,             UserInputAction::Activate),
+        (&cfg.menu,                 UserInputAction::Menu),
+        (&cfg.activate_shift,       UserInputAction::ActivateShift),
+        (&cfg.activate_ctrl,        UserInputAction::ActivateCtrl),
+        (&cfg.activate_alt,         UserInputAction::ActivateAlt),
+        (&cfg.activate_altgr,       UserInputAction::ActivateAltGr),
+        (&cfg.activate_enter,       UserInputAction::ActivateEnter),
+        (&cfg.activate_space,       UserInputAction::ActivateSpace),
+        (&cfg.activate_arrow_left,  UserInputAction::ActivateArrowLeft),
+        (&cfg.activate_arrow_right, UserInputAction::ActivateArrowRight),
+        (&cfg.activate_arrow_up,    UserInputAction::ActivateArrowUp),
+        (&cfg.activate_arrow_down,  UserInputAction::ActivateArrowDown),
+        (&cfg.activate_bksp,        UserInputAction::ActivateBksp),
+        (&cfg.navigate_center,      UserInputAction::NavigateCenter),
+        (&cfg.mouse_toggle,         UserInputAction::MouseToggle),
     ];
     pairs.iter()
         .filter_map(|(boa, action)| {

@@ -35,6 +35,7 @@ use std::os::unix::io::AsRawFd;
 use std::time::{Duration, Instant};
 
 use crate::config::{GpioInputConfig, GpioPull, GpioSignal};
+use crate::user_input::{UserInputAction, UserInputEvent};
 
 // =============================================================================
 // Bias-flag constants missing from gpio-cdev 0.6
@@ -47,54 +48,6 @@ const BIAS_PULL_DOWN: u32 = 1 << 6;
 
 /// Consumer label written into every GPIO line request for kernel diagnostics.
 const CONSUMER: &str = "smart-keyboard";
-
-// =============================================================================
-// Public types (unchanged interface consumed by main.rs)
-// =============================================================================
-
-/// An action produced by a GPIO line state change.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum GpioAction {
-    Up,
-    Down,
-    Left,
-    Right,
-    Activate,
-    Menu,
-    /// Activate with Shift held.
-    ActivateShift,
-    /// Activate with Ctrl held.
-    ActivateCtrl,
-    /// Activate with Alt held.
-    ActivateAlt,
-    /// Activate with AltGr held.
-    ActivateAltGr,
-    /// Produce the Enter output directly.
-    ActivateEnter,
-    /// Produce the Space output directly.
-    ActivateSpace,
-    /// Produce the Left Arrow output directly.
-    ActivateArrowLeft,
-    /// Produce the Right Arrow output directly.
-    ActivateArrowRight,
-    /// Produce the Up Arrow output directly.
-    ActivateArrowUp,
-    /// Produce the Down Arrow output directly.
-    ActivateArrowDown,
-    /// Produce the Backspace output directly.
-    ActivateBksp,
-    /// Move the selection to the center of the keyboard.
-    NavigateCenter,
-    /// Toggle mouse mode on/off.
-    MouseToggle,
-}
-
-/// A single GPIO input event (press or release).
-#[derive(Clone, Copy, Debug)]
-pub struct GpioEvent {
-    pub action:  GpioAction,
-    pub pressed: bool,
-}
 
 // =============================================================================
 // Internal types
@@ -113,7 +66,7 @@ enum GpioHandle {
 /// One monitored GPIO line.
 struct GpioLine {
     handle:      GpioHandle,
-    action:      GpioAction,
+    action:      UserInputAction,
     /// When `true` a physical high (1) means the button is pressed.
     active_high: bool,
     /// Last emitted logical pressed state (suppresses duplicate events).
@@ -125,7 +78,7 @@ pub struct GpioInput {
     lines:           Vec<GpioLine>,
     /// The directional action (Up/Down/Left/Right) that is currently held
     /// pressed, or `None` if no directional is held.
-    held_dir:        Option<GpioAction>,
+    held_dir:        Option<UserInputAction>,
     /// Monotonic instant at which the next repeat event should be emitted,
     /// or `None` when no directional is held.
     repeat_at:       Option<Instant>,
@@ -228,29 +181,29 @@ impl GpioInput {
     /// Lines that cannot be opened are skipped with a warning.
     /// Returns `None` when no lines are configured or none could be opened.
     pub fn open(cfg: &GpioInputConfig) -> Option<Self> {
-        let assignments: &[(Option<u32>, GpioAction)] = &[
-            (cfg.navigate_up,           GpioAction::Up),
-            (cfg.navigate_down,         GpioAction::Down),
-            (cfg.navigate_left,         GpioAction::Left),
-            (cfg.navigate_right,        GpioAction::Right),
-            (cfg.activate,              GpioAction::Activate),
-            (cfg.menu,                  GpioAction::Menu),
-            (cfg.activate_shift,        GpioAction::ActivateShift),
-            (cfg.activate_ctrl,         GpioAction::ActivateCtrl),
-            (cfg.activate_alt,          GpioAction::ActivateAlt),
-            (cfg.activate_altgr,        GpioAction::ActivateAltGr),
-            (cfg.activate_enter,        GpioAction::ActivateEnter),
-            (cfg.activate_space,        GpioAction::ActivateSpace),
-            (cfg.activate_arrow_left,   GpioAction::ActivateArrowLeft),
-            (cfg.activate_arrow_right,  GpioAction::ActivateArrowRight),
-            (cfg.activate_arrow_up,     GpioAction::ActivateArrowUp),
-            (cfg.activate_arrow_down,   GpioAction::ActivateArrowDown),
-            (cfg.activate_bksp,         GpioAction::ActivateBksp),
-            (cfg.navigate_center,       GpioAction::NavigateCenter),
-            (cfg.mouse_toggle,          GpioAction::MouseToggle),
+        let assignments: &[(Option<u32>, UserInputAction)] = &[
+            (cfg.navigate_up,           UserInputAction::Up),
+            (cfg.navigate_down,         UserInputAction::Down),
+            (cfg.navigate_left,         UserInputAction::Left),
+            (cfg.navigate_right,        UserInputAction::Right),
+            (cfg.activate,              UserInputAction::Activate),
+            (cfg.menu,                  UserInputAction::Menu),
+            (cfg.activate_shift,        UserInputAction::ActivateShift),
+            (cfg.activate_ctrl,         UserInputAction::ActivateCtrl),
+            (cfg.activate_alt,          UserInputAction::ActivateAlt),
+            (cfg.activate_altgr,        UserInputAction::ActivateAltGr),
+            (cfg.activate_enter,        UserInputAction::ActivateEnter),
+            (cfg.activate_space,        UserInputAction::ActivateSpace),
+            (cfg.activate_arrow_left,   UserInputAction::ActivateArrowLeft),
+            (cfg.activate_arrow_right,  UserInputAction::ActivateArrowRight),
+            (cfg.activate_arrow_up,     UserInputAction::ActivateArrowUp),
+            (cfg.activate_arrow_down,   UserInputAction::ActivateArrowDown),
+            (cfg.activate_bksp,         UserInputAction::ActivateBksp),
+            (cfg.navigate_center,       UserInputAction::NavigateCenter),
+            (cfg.mouse_toggle,          UserInputAction::MouseToggle),
         ];
 
-        let configured: Vec<(u32, GpioAction)> = assignments
+        let configured: Vec<(u32, UserInputAction)> = assignments
             .iter()
             .filter_map(|(opt, act)| opt.map(|n| (n, *act)))
             .collect();
@@ -377,7 +330,7 @@ impl GpioInput {
     ///
     /// `out` is cleared before filling.  Always returns `true` (GPIO lines do
     /// not disconnect like gamepads).
-    pub fn poll(&mut self, out: &mut Vec<GpioEvent>) -> bool {
+    pub fn poll(&mut self, out: &mut Vec<UserInputEvent>) -> bool {
         out.clear();
         let now = Instant::now();
 
@@ -393,7 +346,7 @@ impl GpioInput {
                             };
                             if pressed != line.pressed {
                                 line.pressed = pressed;
-                                out.push(GpioEvent { action: line.action, pressed });
+                                out.push(UserInputEvent { action: line.action, pressed });
                             }
                         }
                         Err(e) => {
@@ -421,7 +374,7 @@ impl GpioInput {
                                 };
                                 if pressed != line.pressed {
                                     line.pressed = pressed;
-                                    out.push(GpioEvent {
+                                    out.push(UserInputEvent {
                                         action: line.action, pressed,
                                     });
                                 }
@@ -459,10 +412,10 @@ impl GpioInput {
         // the currently-held direction disarms it.
         for evt in out.iter() {
             match evt.action {
-                GpioAction::Up
-                | GpioAction::Down
-                | GpioAction::Left
-                | GpioAction::Right => {
+                UserInputAction::Up
+                | UserInputAction::Down
+                | UserInputAction::Left
+                | UserInputAction::Right => {
                     if evt.pressed {
                         self.held_dir  = Some(evt.action);
                         self.repeat_at = Some(now + self.repeat_delay);
@@ -478,7 +431,7 @@ impl GpioInput {
         // Emit a repeat press if the timer has elapsed and a direction is held.
         if let (Some(dir), Some(t)) = (self.held_dir, self.repeat_at) {
             if now >= t {
-                out.push(GpioEvent { action: dir, pressed: true });
+                out.push(UserInputEvent { action: dir, pressed: true });
                 self.repeat_at = Some(now + self.repeat_interval);
             }
         }
