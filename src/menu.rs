@@ -1,10 +1,13 @@
 // src/menu.rs
 //
-// Full-screen menu window.  When the user presses the menu key the
-// application opens a new FLTK window that covers the whole screen.
-// While this window is visible, the main keyboard window does NOT
-// intercept user inputs -- the user navigates the menu with a
-// standard physical keyboard or mouse.
+// Full-screen menu window with its own modal event loop.
+//
+// When the user presses the menu key the application opens a new FLTK
+// window that covers the whole screen and runs a local event loop
+// (`while win.shown() { app::wait(); }`).  Because the loop is local,
+// the main application's custom input handlers (gamepad, GPIO,
+// physical-keyboard remapping) never fire while the menu is visible.
+// The user navigates purely with a standard physical keyboard or mouse.
 //
 // Top-level items:
 //   * Configuration   -- opens the config editor dialogue
@@ -44,19 +47,17 @@ const DISABLED: Color = Color::from_hex(0x5a5a5a);
 // Public entry point
 // ---------------------------------------------------------------------------
 
-/// Open the full-screen menu window.
+/// Open the full-screen menu window with its own modal event loop.
+///
+/// This function **blocks** until the menu window is closed.  While the
+/// menu is visible, the main application event handlers do not fire
+/// because the FLTK event loop is driven locally here.
 ///
 /// `ble_conn_opt` should be `Some(...)` when the output mode is `"ble"` so
 /// that the "Disconnect BLE" item can be shown; pass `None` otherwise.
-///
-/// `menu_open` is a shared flag checked by the main event handler; it is
-/// set to `true` when this window opens and `false` when it closes.
 pub fn open_menu(
     ble_conn_opt: Option<Rc<RefCell<output::BleConnection>>>,
-    menu_open:    Rc<RefCell<bool>>,
 ) {
-    *menu_open.borrow_mut() = true;
-
     let (sw_f, sh_f) = app::screen_size();
     let sw = sw_f as i32;
     let sh = sh_f as i32;
@@ -104,63 +105,67 @@ pub fn open_menu(
 
     // --- Callbacks ---
 
-    // Close helper: hide window, clear flag, delete window from event loop.
-    let mo_cfg  = menu_open.clone();
-    let mo_ble  = menu_open.clone();
-    let mo_exit = menu_open.clone();
-    let mo_esc  = menu_open.clone();
+    // Local flag: set by the Configuration callback so we know to open
+    // the config editor after the menu window closes.
+    let open_cfg = Rc::new(RefCell::new(false));
 
+    let open_cfg_c = open_cfg.clone();
     let mut win_cfg  = win.clone();
-    let win_ble  = win.clone();
     let mut win_exit = win.clone();
 
     btn_cfg.set_callback(move |_| {
+        *open_cfg_c.borrow_mut() = true;
         win_cfg.hide();
-        *mo_cfg.borrow_mut() = false;
-        open_config_editor(mo_cfg.clone());
     });
 
     if let Some(conn) = ble_conn_opt {
-        let mut win_ble2 = win_ble.clone();
-        let mo_ble2 = mo_ble.clone();
+        let mut win_ble2 = win.clone();
         btn_ble.set_callback(move |_| {
             if !conn.borrow_mut().send_disconnect() {
                 eprintln!("[menu] Disconnect BLE: failed to send disconnect command");
             }
             win_ble2.hide();
-            *mo_ble2.borrow_mut() = false;
         });
     }
 
     btn_exit.set_callback(move |_| {
         win_exit.hide();
-        *mo_exit.borrow_mut() = false;
         app::quit();
     });
 
     // Escape key closes the menu.
-    win.handle(move |w, ev| {
+    win.handle(|w, ev| {
         if ev == Event::KeyDown && app::event_key() == fltk::enums::Key::Escape {
             w.hide();
-            *mo_esc.borrow_mut() = false;
             return true;
         }
         false
     });
+
+    // --- Modal event loop: blocks until the menu window is closed. ---
+    while win.shown() {
+        app::wait();
+    }
+
+    // If Configuration was selected, open the config editor now
+    // (after the menu window has closed).
+    if *open_cfg.borrow() {
+        open_config_editor();
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Configuration editor
 // ---------------------------------------------------------------------------
 
-/// Open a full-screen configuration editor window.
+/// Open a full-screen configuration editor window with its own modal
+/// event loop.
 ///
+/// This function **blocks** until the editor window is closed.
 /// The editor reads the current config.toml, presents every setting with an
 /// appropriate widget (checkbox, choice, text input), and lets the user save
 /// changes.  On save the application restarts (exec-replace).
-fn open_config_editor(menu_open: Rc<RefCell<bool>>) {
-    *menu_open.borrow_mut() = true;
-
+fn open_config_editor() {
     let (sw_f, sh_f) = app::screen_size();
     let sw = sw_f as i32;
     let sh = sh_f as i32;
@@ -449,8 +454,17 @@ fn open_config_editor(menu_open: Rc<RefCell<bool>>) {
     add_color(&mut pack, "ui.colors.key_label_mod",           "  Key label modifier",      &color_to_hex(cfg.ui.colors.key_label_mod), lbl_size, pack_w, row_h);
 
     pack.end();
-    // Tell FLTK to lay out the children so that total height is known.
-    pack.auto_layout();
+
+    // The Pack was created with height 0.  FLTK Pack only auto-sizes
+    // during draw(), which is too late for the parent Scroll to determine
+    // the scrollable area.  Compute and set the height explicitly.
+    let n_rows = pack.children();
+    if n_rows > 0 {
+        let spacing = pack.spacing();
+        let total_h = n_rows as i32 * row_h + (n_rows as i32 - 1) * spacing;
+        pack.resize(pack.x(), pack.y(), pack_w, total_h);
+    }
+
     scroll.end();
 
     // --- Bottom bar: Cancel / Save & Reload ---
@@ -467,13 +481,9 @@ fn open_config_editor(menu_open: Rc<RefCell<bool>>) {
     win.end();
     win.show();
 
-    let mo_cancel = menu_open.clone();
-    let mo_save   = menu_open.clone();
     let mut win_cancel = win.clone();
-
     btn_cancel.set_callback(move |_| {
         win_cancel.hide();
-        *mo_cancel.borrow_mut() = false;
     });
 
     let mut win_save = win.clone();
@@ -486,7 +496,6 @@ fn open_config_editor(menu_open: Rc<RefCell<bool>>) {
         match build_toml_and_save(&pairs) {
             Ok(_) => {
                 win_save.hide();
-                *mo_save.borrow_mut() = false;
                 // Restart application by re-exec'ing ourselves.
                 restart_application();
             }
@@ -497,15 +506,18 @@ fn open_config_editor(menu_open: Rc<RefCell<bool>>) {
     });
 
     // Escape key closes the config editor.
-    let mo_esc = menu_open.clone();
-    win.handle(move |w, ev| {
+    win.handle(|w, ev| {
         if ev == Event::KeyDown && app::event_key() == fltk::enums::Key::Escape {
             w.hide();
-            *mo_esc.borrow_mut() = false;
             return true;
         }
         false
     });
+
+    // --- Modal event loop: blocks until the config window is closed. ---
+    while win.shown() {
+        app::wait();
+    }
 }
 
 // ---------------------------------------------------------------------------

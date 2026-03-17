@@ -114,7 +114,7 @@ use display::{Colors, ModBtn, ModState};
 /// All shared UI state needed to process a `UserInputEvent`.
 ///
 /// Both the gamepad and the GPIO input sources share the same set of UI widgets
-/// and logical state (current selection, modifier state, menu, ...).  Bundling
+/// and logical state (current selection, modifier state, ...).  Bundling
 /// them here lets [`process_input_events`] be called from any number of input
 /// source callbacks without repeating the context-dispatching logic.
 pub(crate) struct InputCtx {
@@ -133,8 +133,6 @@ pub(crate) struct InputCtx {
     gp_cell:               Rc<RefCell<Option<Gamepad>>>,
     narrator:              Rc<RefCell<Narrator>>,
     audio_mode:            config::AudioMode,
-    /// Shared flag: `true` while any menu / config-editor window is open.
-    menu_open:             Rc<RefCell<bool>>,
     /// BLE connection (if output mode is "ble"), needed for menu.
     ble_conn_opt:          Option<Rc<RefCell<output::BleConnection>>>,
     rollover:              bool,
@@ -165,7 +163,6 @@ impl Clone for InputCtx {
             gp_cell:               self.gp_cell.clone(),
             narrator:              self.narrator.clone(),
             audio_mode:            self.audio_mode.clone(),
-            menu_open:             self.menu_open.clone(),
             ble_conn_opt:          self.ble_conn_opt.clone(),
             rollover:              self.rollover,
             center_key:            self.center_key.clone(),
@@ -227,17 +224,15 @@ pub(crate) fn process_input_events(
         match evt.action {
             UserInputAction::Menu => {
                 if !evt.pressed { continue; }
-                if *ctx.menu_open.borrow() {
-                    // Menu window is already open; ignore.
-                    continue;
-                }
                 // Release any held key before opening the menu window.
                 if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
                     ctx.hook.on_key_release(sc, &ks);
                 }
+                // open_menu runs its own modal event loop and blocks
+                // until the menu window is closed.  While it runs,
+                // the main app's input handlers do not fire.
                 menu::open_menu(
                     ctx.ble_conn_opt.clone(),
-                    ctx.menu_open.clone(),
                 );
             }
 
@@ -258,8 +253,6 @@ pub(crate) fn process_input_events(
                     }
                     continue;
                 }
-                // When a menu window is open, ignore directional input.
-                if *ctx.menu_open.borrow() { continue; }
                 // Mouse mode: send a mouse movement report.
                 if *ctx.mouse_mode.borrow() {
                     let (ddx, ddy) = dir_to_mouse_delta(evt.action);
@@ -303,8 +296,6 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::Activate => {
-                // When a menu window is open, ignore activation.
-                if *ctx.menu_open.borrow() { continue; }
                 // Mouse mode: left button press/release.
                 if *ctx.mouse_mode.borrow() {
                     ctx.hook.on_mouse_report(if evt.pressed { 0x01 } else { 0x00 }, 0, 0);
@@ -345,14 +336,12 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::ActivateEnter => {
-                if *ctx.menu_open.borrow() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Enter, 0x1c, ctx, rumble,
                 );
             }
 
             UserInputAction::ActivateSpace => {
-                if *ctx.menu_open.borrow() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Space, 0x39, ctx, rumble,
                 );
@@ -362,7 +351,6 @@ pub(crate) fn process_input_events(
             | UserInputAction::ActivateArrowRight
             | UserInputAction::ActivateArrowUp
             | UserInputAction::ActivateArrowDown => {
-                if *ctx.menu_open.borrow() { continue; }
                 let (arrow_action, arrow_sc) = match evt.action {
                     UserInputAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
                     UserInputAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
@@ -373,7 +361,6 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::ActivateBksp => {
-                if *ctx.menu_open.borrow() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Backspace, 0x0e, ctx, rumble,
                 );
@@ -383,7 +370,6 @@ pub(crate) fn process_input_events(
             | UserInputAction::ActivateCtrl
             | UserInputAction::ActivateAlt
             | UserInputAction::ActivateAltGr => {
-                if *ctx.menu_open.borrow() { continue; }
                 // Mouse mode: ActivateShift = right mouse button.
                 if *ctx.mouse_mode.borrow()
                     && evt.action == UserInputAction::ActivateShift
@@ -436,7 +422,6 @@ pub(crate) fn process_input_events(
 
             UserInputAction::NavigateCenter => {
                 if !evt.pressed { continue; }
-                if *ctx.menu_open.borrow() { continue; }
                 if let Some(center) = {
                     let ab = ctx.all_btns.borrow();
                     find_center_key(&ab, *ctx.layout_idx.borrow(), &ctx.center_key)
@@ -478,7 +463,6 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::AbsolutePos { horiz, vert } => {
-                if *ctx.menu_open.borrow() { continue; }
                 let new_sel = {
                     let ab  = ctx.all_btns.borrow();
                     let lb  = ctx.lang_btns.borrow();
@@ -733,9 +717,6 @@ fn main() {
         }
     };
 
-    // Shared flag: true while a menu / config-editor window is open.
-    let menu_open: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
-
     let mut ui = build_ui(BuildUiParams {
         cfg: &cfg,
         hook: hook.clone(),
@@ -764,7 +745,6 @@ fn main() {
         gp_cell:               ui.gp_cell.clone(),
         narrator:              narrator.clone(),
         audio_mode:            audio_mode.clone(),
-        menu_open:             menu_open.clone(),
         ble_conn_opt:          ble_conn_opt.clone(),
         rollover:              cfg.navigate.rollover,
         center_key:            cfg.navigate.center_key.clone(),

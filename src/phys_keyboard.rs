@@ -134,9 +134,6 @@ pub fn setup_keyboard_handler(
                     return true;
                 }
 
-                // While a menu window is open, ignore all key events.
-                if *ctx.menu_open.borrow() { return true; }
-
                 let events = translate_key_event(k, true, &nav_keys);
                 if events.is_empty() {
                     return false;
@@ -150,9 +147,6 @@ pub fn setup_keyboard_handler(
             Event::KeyUp => {
                 #[cfg(debug_assertions)]
                 eprintln!("[keyboard] keyup=0x{:04x}", k.bits());
-
-                // While a menu window is open, ignore all key events.
-                if *ctx.menu_open.borrow() { return true; }
 
                 let events = translate_key_event(k, false, &nav_keys);
                 if events.is_empty() {
