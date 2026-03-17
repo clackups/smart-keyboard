@@ -8,9 +8,8 @@ use std::rc::Rc;
 use fltk::{
     app,
     button::Button,
-    enums::{Align, Color, Event, FrameType},
+    enums::{Color, Event, FrameType},
     frame::Frame,
-    group::Group,
     prelude::*,
     text::{TextBuffer, TextDisplay},
     window::Window,
@@ -91,68 +90,6 @@ pub struct ModBtn {
     pub base_col: Color,
     /// Corresponding status-bar indicator frame (shared between LShift & RShift).
     pub status:   Option<Frame>,
-}
-
-// =============================================================================
-// Menu
-// =============================================================================
-
-/// A single entry in the application pop-up menu.
-///
-/// Each item has a human-readable `label`, an `is_enabled` closure that is
-/// evaluated at menu-open time to decide whether the item can be selected, and
-/// an `execute` closure that is called when the item is activated by the user.
-///
-/// Add new items to the `menu_item_defs` `Vec` inside `main` to extend the
-/// menu in the future.
-pub struct MenuItemDef {
-    pub label:      &'static str,
-    pub is_enabled: Box<dyn Fn() -> bool>,
-    pub execute:    Box<dyn Fn()>,
-}
-
-/// Return the index of the first enabled item in `items`, or `None` if all
-/// items are disabled (or the list is empty).
-pub fn menu_first_enabled(items: &[MenuItemDef]) -> Option<usize> {
-    items.iter().position(|it| (it.is_enabled)())
-}
-
-/// Starting from `current`, scan in direction `dir` (+1 = down, -1 = up) for
-/// the next enabled item.  Returns `current` unchanged if no other enabled
-/// item exists in that direction (the cursor stays put at the edge).
-pub fn menu_move_sel(current: usize, dir: i32, items: &[MenuItemDef]) -> usize {
-    let n = items.len() as i32;
-    let mut i = current as i32 + dir;
-    while i >= 0 && i < n {
-        if (items[i as usize].is_enabled)() {
-            return i as usize;
-        }
-        i += dir;
-    }
-    current
-}
-
-/// Refresh the background and label colours of every menu item button to
-/// reflect the current selection and enabled state.
-pub fn menu_set_item_colors(
-    sel:    Option<usize>,
-    items:  &[MenuItemDef],
-    btns:   &mut [Button],
-    colors: Colors,
-) {
-    for (i, btn) in btns.iter_mut().enumerate() {
-        let enabled = (items[i].is_enabled)();
-        if Some(i) == sel {
-            btn.set_color(colors.nav_sel);
-            btn.set_label_color(colors.key_label_normal);
-        } else if enabled {
-            btn.set_color(colors.key_mod);
-            btn.set_label_color(colors.key_label_mod);
-        } else {
-            btn.set_color(colors.status_ind_bg);
-            btn.set_label_color(colors.status_ind_text);
-        }
-    }
 }
 
 // =============================================================================
@@ -1053,7 +990,6 @@ pub struct BuildUiParams<'a> {
     pub narrator:         Rc<RefCell<Narrator>>,
     pub audio_mode:       config::AudioMode,
     pub switch_scancodes: Rc<Vec<Vec<u8>>>,
-    pub menu_item_defs:   Vec<MenuItemDef>,
     pub ble_conn_opt:     Option<Rc<RefCell<output::BleConnection>>>,
 }
 
@@ -1072,10 +1008,6 @@ pub struct UiHandles {
     /// action (the nav-selection button is already highlighted by navigation).
     pub active_btn_pressed: Rc<RefCell<Option<(usize, usize)>>>,
     pub preferred_cx:      Rc<RefCell<i32>>,
-    pub menu_sel:          Rc<RefCell<Option<usize>>>,
-    pub menu_item_defs:    Rc<Vec<MenuItemDef>>,
-    pub menu_item_btns:    Vec<Button>,
-    pub menu_group:        Group,
     pub buf:               TextBuffer,
     pub disp:              TextDisplay,
     pub gamepad_status:    Option<Frame>,
@@ -1100,7 +1032,6 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     let narrator         = p.narrator;
     let audio_mode       = p.audio_mode;
     let switch_scancodes = p.switch_scancodes;
-    let menu_item_defs: Rc<Vec<MenuItemDef>> = Rc::new(p.menu_item_defs);
     let ble_conn_opt     = p.ble_conn_opt;
 
     let layouts = keyboards::get_layouts();
@@ -1711,97 +1642,6 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     // than navigating the on-screen keyboard.
     let mouse_mode: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
 
-    // --- Menu state & UI ---
-    // `menu_sel` tracks whether the pop-up menu is currently open (Some(i) =
-    // open with item i selected; None = closed).
-    let menu_sel: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
-
-    // Layout parameters for the menu overlay (centred on screen).
-    let menu_item_h   = key_h;
-    let menu_title_h  = key_h;
-    let menu_inner_pad = pad * 2;
-    let num_menu_items = menu_item_defs.len();
-    let menu_w = (sw / 2).max(200).min(600);
-    let menu_h = menu_inner_pad * 2 + menu_title_h
-        + if num_menu_items > 0 {
-            gap + num_menu_items as i32 * menu_item_h
-                + (num_menu_items as i32 - 1) * gap
-        } else {
-            0
-        };
-    let menu_x = (sw - menu_w) / 2;
-    let menu_y = (sh - menu_h) / 2;
-
-    // The Group is the last widget added to the window so it renders on top.
-    let mut menu_group = Group::new(menu_x, menu_y, menu_w, menu_h, "");
-
-    let mut menu_bg = Frame::new(menu_x, menu_y, menu_w, menu_h, "");
-    menu_bg.set_color(colors.status_bar_bg);
-    menu_bg.set_frame(FrameType::FlatBox);
-
-    // The leading underscore suppresses the "unused variable" warning; the
-    // Frame must be kept alive so FLTK renders it as part of menu_group.
-    let mut _menu_title = Frame::new(
-        menu_x + menu_inner_pad,
-        menu_y + menu_inner_pad,
-        menu_w - 2 * menu_inner_pad,
-        menu_title_h,
-        "Menu",
-    );
-    _menu_title.set_color(colors.status_bar_bg);
-    _menu_title.set_label_color(colors.status_ind_active_text);
-    _menu_title.set_frame(FrameType::FlatBox);
-    _menu_title.set_label_size(lbl_size);
-
-    // Menu item widgets are Buttons so that:
-    //   * mouse clicks fire the item's callback directly, and
-    //   * keyboard focus can be moved here so Space/Enter reach the button
-    //     callback rather than the keyboard buttons behind the overlay.
-    let mut menu_item_btns: Vec<Button> = Vec::new();
-    for (i, item) in menu_item_defs.iter().enumerate() {
-        let fy = menu_y + menu_inner_pad + menu_title_h + gap
-            + i as i32 * (menu_item_h + gap);
-        let mut b = Button::new(
-            menu_x + menu_inner_pad,
-            fy,
-            menu_w - 2 * menu_inner_pad,
-            menu_item_h,
-            None,
-        );
-        b.set_label(item.label);
-        b.set_color(colors.key_mod);
-        b.set_label_color(colors.key_label_mod);
-        b.set_frame(FrameType::FlatBox);
-        b.set_label_size(lbl_size);
-        b.set_align(Align::Inside | Align::Left);
-        menu_item_btns.push(b);
-    }
-
-    menu_group.end();
-
-    // Give the background Frame an event handler so that clicks in the title /
-    // padding area are absorbed and cannot fall through to keyboard buttons.
-    menu_bg.handle(|_, ev| {
-        matches!(ev, Event::Push | Event::Released)
-    });
-
-    // Set click callbacks on each menu item button.
-    for (i, btn) in menu_item_btns.iter_mut().enumerate() {
-        let items_c     = menu_item_defs.clone();
-        let sel_btn     = menu_sel.clone();
-        let mut grp_btn = menu_group.clone();
-        btn.set_callback(move |_| {
-            if (items_c[i].is_enabled)() {
-                (items_c[i].execute)();
-            }
-            *sel_btn.borrow_mut() = None;
-            grp_btn.hide();
-            app::redraw();
-        });
-    }
-
-    menu_group.hide();
-
     win.end();
     win.show();
 
@@ -1815,10 +1655,6 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         active_nav_key,
         active_btn_pressed,
         preferred_cx,
-        menu_sel,
-        menu_item_defs,
-        menu_item_btns,
-        menu_group,
         buf,
         disp,
         gamepad_status,

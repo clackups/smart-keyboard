@@ -131,14 +131,11 @@ pub fn setup_keyboard_handler(
 
                 // Suppress Escape so FLTK does not close the window.
                 if k == Key::Escape {
-                    // If the menu is open, close it; otherwise just consume.
-                    if ctx.menu_sel.borrow().is_some() {
-                        *ctx.menu_sel.borrow_mut() = None;
-                        ctx.menu_group.hide();
-                        app::redraw();
-                    }
                     return true;
                 }
+
+                // While a menu window is open, ignore all key events.
+                if *ctx.menu_open.borrow() { return true; }
 
                 let events = translate_key_event(k, true, &nav_keys);
                 if events.is_empty() {
@@ -154,10 +151,8 @@ pub fn setup_keyboard_handler(
                 #[cfg(debug_assertions)]
                 eprintln!("[keyboard] keyup=0x{:04x}", k.bits());
 
-                // Consume all key-up events while menu is open.
-                if ctx.menu_sel.borrow().is_some() {
-                    return true;
-                }
+                // While a menu window is open, ignore all key events.
+                if *ctx.menu_open.borrow() { return true; }
 
                 let events = translate_key_event(k, false, &nav_keys);
                 if events.is_empty() {
@@ -167,24 +162,6 @@ pub fn setup_keyboard_handler(
                 // Physical keyboard has no rumble; pass rumble = false.
                 process_input_events(&events, &mut ctx, &mut crate::MouseMoveState::new(), false);
                 true
-            }
-
-            Event::Push => {
-                // Block mouse clicks that land outside the menu overlay when
-                // the menu is open, so on-screen keyboard buttons in those
-                // areas cannot fire accidentally.
-                if ctx.menu_sel.borrow().is_some() {
-                    let ex = app::event_x();
-                    let ey = app::event_y();
-                    let mx = ctx.menu_group.x();
-                    let my = ctx.menu_group.y();
-                    let mw = ctx.menu_group.w();
-                    let mh = ctx.menu_group.h();
-                    if ex < mx || ex >= mx + mw || ey < my || ey >= my + mh {
-                        return true; // absorb the click
-                    }
-                }
-                false
             }
 
             _ => false,
