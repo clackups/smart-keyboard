@@ -5,6 +5,7 @@ mod gpio;
 mod keyboards;
 mod narrator;
 mod output;
+mod phys_keyboard;
 mod user_input;
 
 use std::cell::RefCell;
@@ -116,7 +117,7 @@ use display::{Colors, ModBtn, ModState};
 /// and logical state (current selection, modifier state, menu, ...).  Bundling
 /// them here lets [`process_input_events`] be called from any number of input
 /// source callbacks without repeating the context-dispatching logic.
-struct InputCtx {
+pub(crate) struct InputCtx {
     all_btns:              Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>>,
     lang_btns:             Rc<RefCell<Vec<Button>>>,
     layout_idx:            Rc<RefCell<usize>>,
@@ -186,7 +187,7 @@ impl Clone for InputCtx {
 /// Each physical input source (gamepad, GPIO, ...) keeps its own independent
 /// mouse-movement state so that simultaneous use of two sources does not
 /// interfere.
-struct MouseMoveState {
+pub(crate) struct MouseMoveState {
     dx:    i8,
     dy:    i8,
     start: Option<Instant>,
@@ -216,7 +217,7 @@ impl MouseMoveState {
 ///
 /// `rumble` -- whether to trigger gamepad force-feedback on navigation changes.
 /// Pass `true` only for the gamepad source.
-fn process_input_events(
+pub(crate) fn process_input_events(
     events:      &[UserInputEvent],
     ctx:         &mut InputCtx,
     mouse:       &mut MouseMoveState,
