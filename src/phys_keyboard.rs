@@ -131,10 +131,16 @@ pub fn setup_keyboard_handler(
 
                 // Suppress Escape so FLTK does not close the window.
                 if k == Key::Escape {
-                    // If the menu is open, close it; otherwise just consume.
+                    // If the menu is open, close it.
+                    // If the config editor is open, close it.
+                    // Otherwise just consume.
                     if ctx.menu_sel.borrow().is_some() {
                         *ctx.menu_sel.borrow_mut() = None;
                         ctx.menu_group.hide();
+                        app::redraw();
+                    } else if *ctx.config_editor_open.borrow() {
+                        *ctx.config_editor_open.borrow_mut() = false;
+                        ctx.config_editor_group.hide();
                         app::redraw();
                     }
                     return true;
@@ -184,6 +190,10 @@ pub fn setup_keyboard_handler(
                         return true; // absorb the click
                     }
                 }
+                // The config editor overlay covers the full screen below the
+                // status bar, so clicks always land on editor widgets.  We
+                // consume key-up events but allow FLTK to route Push events
+                // naturally so the TextEditor and the buttons stay clickable.
                 false
             }
 

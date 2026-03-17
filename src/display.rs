@@ -12,7 +12,7 @@ use fltk::{
     frame::Frame,
     group::Group,
     prelude::*,
-    text::{TextBuffer, TextDisplay},
+    text::{TextBuffer, TextDisplay, TextEditor},
     window::Window,
 };
 
@@ -1087,6 +1087,14 @@ pub struct UiHandles {
     pub mouse_mode:        Rc<RefCell<bool>>,
     /// Status-bar indicator frame for mouse mode ("MOUSE" pill).
     pub mouse_mode_ind:    Frame,
+    pub config_editor_open:       Rc<RefCell<bool>>,
+    pub config_editor_group:      Group,
+    pub config_editor_editor:     TextEditor,
+    pub config_editor_buf:        TextBuffer,
+    /// Selected button index: 0 = "Save & Reload", 1 = "Cancel".
+    pub config_editor_sel:        Rc<RefCell<usize>>,
+    pub config_editor_save_btn:   Button,
+    pub config_editor_cancel_btn: Button,
     /// The main application window, returned so callers can register
     /// additional event handlers (e.g., the physical keyboard handler).
     pub win: Window,
@@ -1802,6 +1810,87 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
 
     menu_group.hide();
 
+    // --- Config editor overlay ---
+    // Full-screen overlay (below the status bar) that shows the current
+    // config.toml content in an editable text area together with
+    // "Save & Reload" and "Cancel" buttons navigable via UserInputAction.
+    let config_editor_open: Rc<RefCell<bool>>  = Rc::new(RefCell::new(false));
+    let config_editor_sel:  Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+
+    let ced_y = status_h;
+    let ced_h = sh - status_h;
+    let ced_inner_pad = pad * 2;
+    let ced_btn_h = key_h;
+    let ced_title_h = key_h;
+    // TextEditor occupies the space between the title and the button row.
+    let ced_editor_y = ced_y + ced_inner_pad + ced_title_h + gap;
+    let ced_editor_h = ced_h - ced_inner_pad - ced_title_h - gap - ced_btn_h - gap - ced_inner_pad;
+    let ced_btn_y    = ced_editor_y + ced_editor_h + gap;
+    let ced_btn_w    = (sw - 2 * ced_inner_pad - gap) / 2;
+
+    let mut config_editor_group = Group::new(0, ced_y, sw, ced_h, "");
+
+    let mut ced_bg = Frame::new(0, ced_y, sw, ced_h, "");
+    ced_bg.set_color(colors.status_bar_bg);
+    ced_bg.set_frame(FrameType::FlatBox);
+
+    // Title label.
+    let mut _ced_title = Frame::new(
+        ced_inner_pad,
+        ced_y + ced_inner_pad,
+        sw - 2 * ced_inner_pad,
+        ced_title_h,
+        "Edit Configuration",
+    );
+    _ced_title.set_color(colors.status_bar_bg);
+    _ced_title.set_label_color(colors.status_ind_active_text);
+    _ced_title.set_frame(FrameType::FlatBox);
+    _ced_title.set_label_size(lbl_size);
+
+    // Text editor for the config.toml content.
+    let config_editor_buf = TextBuffer::default();
+    let mut config_editor_editor = TextEditor::new(
+        ced_inner_pad, ced_editor_y,
+        sw - 2 * ced_inner_pad, ced_editor_h,
+        "",
+    );
+    config_editor_editor.set_buffer(config_editor_buf.clone());
+    config_editor_editor.set_color(colors.disp_bg);
+    config_editor_editor.set_text_color(colors.disp_text);
+    config_editor_editor.set_frame(FrameType::DownBox);
+    config_editor_editor.set_text_size(disp_size.min(12));
+
+    // "Save & Reload" button (sel=0) — initially highlighted.
+    let mut config_editor_save_btn = Button::new(
+        ced_inner_pad, ced_btn_y,
+        ced_btn_w, ced_btn_h,
+        "Save && Reload",
+    );
+    config_editor_save_btn.set_color(colors.nav_sel);
+    config_editor_save_btn.set_label_color(colors.key_label_normal);
+    config_editor_save_btn.set_frame(FrameType::FlatBox);
+    config_editor_save_btn.set_label_size(lbl_size);
+
+    // "Cancel" button (sel=1).
+    let mut config_editor_cancel_btn = Button::new(
+        ced_inner_pad + ced_btn_w + gap, ced_btn_y,
+        ced_btn_w, ced_btn_h,
+        "Cancel",
+    );
+    config_editor_cancel_btn.set_color(colors.key_mod);
+    config_editor_cancel_btn.set_label_color(colors.key_label_mod);
+    config_editor_cancel_btn.set_frame(FrameType::FlatBox);
+    config_editor_cancel_btn.set_label_size(lbl_size);
+
+    config_editor_group.end();
+
+    // Absorb all background clicks so the keyboard behind cannot fire.
+    ced_bg.handle(|_, ev| {
+        matches!(ev, Event::Push | Event::Released)
+    });
+
+    config_editor_group.hide();
+
     win.end();
     win.show();
 
@@ -1828,6 +1917,13 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         show_text_display,
         mouse_mode,
         mouse_mode_ind,
+        config_editor_open,
+        config_editor_group,
+        config_editor_editor,
+        config_editor_buf,
+        config_editor_sel,
+        config_editor_save_btn,
+        config_editor_cancel_btn,
         win,
     }
 }

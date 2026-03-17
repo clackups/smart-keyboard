@@ -108,7 +108,7 @@ impl KeyHook for DummyKeyHook {
 // Unified input event processing
 // =============================================================================
 
-use fltk::{button::Button, enums::Color, frame::Frame, group::Group, text::{TextBuffer, TextDisplay}};
+use fltk::{button::Button, enums::Color, frame::Frame, group::Group, text::{TextBuffer, TextDisplay, TextEditor}};
 use display::{Colors, ModBtn, ModState};
 
 /// All shared UI state needed to process a `UserInputEvent`.
@@ -146,6 +146,14 @@ pub(crate) struct InputCtx {
     mouse_mode_ind:        Frame,
     mouse_cfg:             config::MouseConfig,
     colors:                Colors,
+    config_editor_open:       Rc<RefCell<bool>>,
+    config_editor_group:      Group,
+    config_editor_editor:     TextEditor,
+    config_editor_buf:        TextBuffer,
+    /// 0 = "Save & Reload" button selected, 1 = "Cancel" button selected.
+    config_editor_sel:        Rc<RefCell<usize>>,
+    config_editor_save_btn:   Button,
+    config_editor_cancel_btn: Button,
 }
 
 impl Clone for InputCtx {
@@ -178,6 +186,13 @@ impl Clone for InputCtx {
             mouse_mode_ind:        self.mouse_mode_ind.clone(),
             mouse_cfg:             self.mouse_cfg.clone(),
             colors:                self.colors,
+            config_editor_open:       self.config_editor_open.clone(),
+            config_editor_group:      self.config_editor_group.clone(),
+            config_editor_editor:     self.config_editor_editor.clone(),
+            config_editor_buf:        self.config_editor_buf.clone(),
+            config_editor_sel:        self.config_editor_sel.clone(),
+            config_editor_save_btn:   self.config_editor_save_btn.clone(),
+            config_editor_cancel_btn: self.config_editor_cancel_btn.clone(),
         }
     }
 }
@@ -226,6 +241,49 @@ pub(crate) fn process_input_events(
     let colors = ctx.colors;
 
     for evt in events {
+        // --- Config editor mode: intercept all navigation before the keyboard ---
+        if *ctx.config_editor_open.borrow() {
+            if !evt.pressed { continue; }
+            match evt.action {
+                UserInputAction::Menu => {
+                    // Close the config editor (cancel).
+                    *ctx.config_editor_open.borrow_mut() = false;
+                    ctx.config_editor_group.hide();
+                    app::redraw();
+                }
+                UserInputAction::Up => {
+                    let cur = *ctx.config_editor_sel.borrow();
+                    if cur > 0 {
+                        config_editor_set_sel(ctx, cur - 1);
+                    }
+                }
+                UserInputAction::Down => {
+                    let cur = *ctx.config_editor_sel.borrow();
+                    if cur < 1 {
+                        config_editor_set_sel(ctx, cur + 1);
+                    }
+                }
+                UserInputAction::Activate => {
+                    let sel = *ctx.config_editor_sel.borrow();
+                    if sel == 0 {
+                        // "Save & Reload": write file then restart.
+                        let text = ctx.config_editor_buf.text();
+                        *ctx.config_editor_open.borrow_mut() = false;
+                        ctx.config_editor_group.hide();
+                        app::redraw();
+                        save_and_reload_config(&text);
+                    } else {
+                        // "Cancel": just close.
+                        *ctx.config_editor_open.borrow_mut() = false;
+                        ctx.config_editor_group.hide();
+                        app::redraw();
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+
         match evt.action {
             UserInputAction::Menu => {
                 if !evt.pressed { continue; }
@@ -715,6 +773,69 @@ fn maybe_center_after_activate(ctx: &mut InputCtx, rumble: bool) {
     }
 }
 
+/// Update the config-editor button-selection highlight.
+///
+/// `new_sel`: 0 = "Save & Reload", 1 = "Cancel".
+fn config_editor_set_sel(ctx: &mut InputCtx, new_sel: usize) {
+    let colors  = ctx.colors;
+    let old_sel = *ctx.config_editor_sel.borrow();
+    *ctx.config_editor_sel.borrow_mut() = new_sel;
+    // Restore the previously selected button to its unselected style.
+    {
+        let mut btn = if old_sel == 0 {
+            ctx.config_editor_save_btn.clone()
+        } else {
+            ctx.config_editor_cancel_btn.clone()
+        };
+        btn.set_color(colors.key_mod);
+        btn.set_label_color(colors.key_label_mod);
+    }
+    // Highlight the newly selected button.
+    {
+        let mut btn = if new_sel == 0 {
+            ctx.config_editor_save_btn.clone()
+        } else {
+            ctx.config_editor_cancel_btn.clone()
+        };
+        btn.set_color(colors.nav_sel);
+        btn.set_label_color(colors.key_label_normal);
+    }
+    app::redraw();
+}
+
+/// Write `text` to `config.toml` and restart the application to apply changes.
+fn save_and_reload_config(text: &str) {
+    let path = config::config_path();
+    match std::fs::write(&path, text.as_bytes()) {
+        Ok(()) => eprintln!("[config_editor] Saved config to {}", path.display()),
+        Err(e) => {
+            eprintln!("[config_editor] Failed to save {}: {}", path.display(), e);
+            return;
+        }
+    }
+    // Re-exec the current process so the new config is loaded from scratch.
+    match std::env::current_exe() {
+        Ok(exe) => {
+            match std::process::Command::new(&exe)
+                .args(std::env::args().skip(1))
+                .envs(std::env::vars())
+                .spawn()
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("[config_editor] Failed to restart: {}", e);
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[config_editor] Could not locate current exe: {}", e);
+            return;
+        }
+    }
+    app::quit();
+}
+
 // =============================================================================
 // Main
 // =============================================================================
@@ -794,6 +915,23 @@ fn main() {
         }
     }
 
+    // "Edit configuration": always enabled; opens the config editor overlay.
+    // The actual open-logic is wired after build_ui returns (lazy init below).
+    let open_editor_fn: Rc<RefCell<Option<Box<dyn Fn()>>>> =
+        Rc::new(RefCell::new(None));
+    {
+        let open_editor_fn_c = open_editor_fn.clone();
+        menu_item_defs.push(MenuItemDef {
+            label:      "Edit configuration",
+            is_enabled: Box::new(|| true),
+            execute:    Box::new(move || {
+                if let Some(ref f) = *open_editor_fn_c.borrow() {
+                    f();
+                }
+            }),
+        });
+    }
+
     // "Quit Smart Keyboard": always enabled; terminates the application.
     menu_item_defs.push(MenuItemDef {
         label:      "Quit Smart Keyboard",
@@ -845,7 +983,70 @@ fn main() {
         mouse_mode_ind:        ui.mouse_mode_ind.clone(),
         mouse_cfg:             cfg.mouse.clone(),
         colors,
+        config_editor_open:       ui.config_editor_open.clone(),
+        config_editor_group:      ui.config_editor_group.clone(),
+        config_editor_editor:     ui.config_editor_editor.clone(),
+        config_editor_buf:        ui.config_editor_buf.clone(),
+        config_editor_sel:        ui.config_editor_sel.clone(),
+        config_editor_save_btn:   ui.config_editor_save_btn.clone(),
+        config_editor_cancel_btn: ui.config_editor_cancel_btn.clone(),
     };
+
+    // --- Wire up "Edit configuration" open logic (lazy init) ---
+    // Now that build_ui has returned we have access to the config editor
+    // widgets; populate the Rc<RefCell<Option<Box<dyn Fn()>>>> that the
+    // menu item execute closure uses.
+    {
+        let ced_open   = ui.config_editor_open.clone();
+        let ced_group  = ui.config_editor_group.clone();
+        let ced_buf    = ui.config_editor_buf.clone();
+        let ced_sel    = ui.config_editor_sel.clone();
+        let ced_save   = ui.config_editor_save_btn.clone();
+        let ced_cancel = ui.config_editor_cancel_btn.clone();
+        let ced_editor = ui.config_editor_editor.clone();
+        *open_editor_fn.borrow_mut() = Some(Box::new(move || {
+            // Load the current config.toml, or generate a default if absent.
+            let text = std::fs::read_to_string(config::config_path())
+                .unwrap_or_else(|_| config::generate_default_toml());
+            ced_buf.clone().set_text(&text);
+            // Reset selection to "Save & Reload" (index 0).
+            *ced_sel.borrow_mut() = 0;
+            let mut save   = ced_save.clone();
+            let mut cancel = ced_cancel.clone();
+            save.set_color(colors.nav_sel);
+            save.set_label_color(colors.key_label_normal);
+            cancel.set_color(colors.key_mod);
+            cancel.set_label_color(colors.key_label_mod);
+            // Show overlay and give the text editor keyboard focus.
+            *ced_open.borrow_mut() = true;
+            ced_group.clone().show();
+            let _ = ced_editor.clone().take_focus();
+            app::redraw();
+        }));
+    }
+
+    // --- Config editor: mouse-click callbacks for Save & Cancel buttons ---
+    {
+        let save_buf   = ui.config_editor_buf.clone();
+        let save_open  = ui.config_editor_open.clone();
+        let save_grp   = ui.config_editor_group.clone();
+        ui.config_editor_save_btn.clone().set_callback(move |_| {
+            let text = save_buf.text();
+            *save_open.borrow_mut() = false;
+            save_grp.clone().hide();
+            app::redraw();
+            save_and_reload_config(&text);
+        });
+    }
+    {
+        let cancel_open = ui.config_editor_open.clone();
+        let cancel_grp  = ui.config_editor_group.clone();
+        ui.config_editor_cancel_btn.clone().set_callback(move |_| {
+            *cancel_open.borrow_mut() = false;
+            cancel_grp.clone().hide();
+            app::redraw();
+        });
+    }
 
     // --- Physical keyboard navigation ---
     phys_keyboard::setup_keyboard_handler(

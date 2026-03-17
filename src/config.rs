@@ -967,6 +967,231 @@ impl Default for Config {
 }
 
 // =============================================================================
+// Configuration item descriptions
+// =============================================================================
+//
+// These string constants describe each configuration item.  They are reused
+// both as comments in `generate_default_toml()` and as labels in the
+// configuration editor dialog.
+
+pub const DESC_OUTPUT_MODE: &str =
+    "Output mode: \"print\" prints key events to stdout (default). \
+     \"ble\" sends USB HID reports to the BLE dongle (esp_hid_serial_bridge).";
+
+pub const DESC_OUTPUT_AUDIO: &str =
+    "Audio feedback mode: \"none\" (default), \"narrate\" (WAV clips per key), \
+     \"tone\" (musical tone per key category), \
+     \"tone_hint\" (tones for F/J, digits and special keys only).";
+
+pub const DESC_BLE_VID: &str =
+    "USB Vendor ID of the BLE dongle (default: 0x1209).";
+
+pub const DESC_BLE_PID: &str =
+    "USB Product ID of the BLE dongle (default: 0xbbd1).";
+
+pub const DESC_BLE_SERIAL: &str =
+    "Optional USB serial string to select a specific dongle when multiple \
+     matching devices are connected. Absent = use the first matching device.";
+
+pub const DESC_BLE_KEY_RELEASE_DELAY: &str =
+    "Delay in microseconds between the key-press report and the key-release \
+     report. Gives the host time to register the press (default: 20000 = 20 ms).";
+
+pub const DESC_BLE_LANG_SWITCH_RELEASE_DELAY: &str =
+    "Delay in microseconds for language-switch key-release reports. \
+     Language combos need a longer hold time than regular keys \
+     (default: 200000 = 200 ms).";
+
+pub const DESC_UI_SHOW_TEXT_DISPLAY: &str =
+    "Show a typed-text display at the top of the keyboard window (default: false).";
+
+pub const DESC_UI_ACTIVE_KEYMAPS: &str =
+    "List of keymap names to display in the UI \
+     (e.g. [\"us\", \"ua\", \"de\", \"fr\"]; default: [\"us\", \"ua\"]).";
+
+pub const DESC_NAVIGATE_ROLLOVER: &str =
+    "When true, navigation wraps around at keyboard edges (default: false).";
+
+pub const DESC_NAVIGATE_CENTER_KEY: &str =
+    "Key label used as the navigation center reference point (default: \"h\").";
+
+pub const DESC_NAVIGATE_CENTER_AFTER_ACTIVATE: &str =
+    "When true, jump to the center key after every activate action (default: false).";
+
+pub const DESC_MOUSE_MOVE_MAX_SIZE: &str =
+    "Maximum pointer delta in pixels per HID report when a direction is held \
+     (ramps from 1 to this value; default: 20).";
+
+pub const DESC_MOUSE_REPEAT_INTERVAL: &str =
+    "Interval in milliseconds between successive mouse-movement HID reports \
+     while a direction is held (default: 20).";
+
+pub const DESC_MOUSE_MOVE_MAX_TIME: &str =
+    "Time in milliseconds over which the movement delta ramps from 1 to \
+     move_max_size (default: 1000).";
+
+pub const DESC_KBD_NAVIGATE_UP: &str =
+    "FLTK key code for navigate-up (default: 0xff52 = Key::Up).";
+
+pub const DESC_KBD_NAVIGATE_DOWN: &str =
+    "FLTK key code for navigate-down (default: 0xff54 = Key::Down).";
+
+pub const DESC_KBD_NAVIGATE_LEFT: &str =
+    "FLTK key code for navigate-left (default: 0xff51 = Key::Left).";
+
+pub const DESC_KBD_NAVIGATE_RIGHT: &str =
+    "FLTK key code for navigate-right (default: 0xff53 = Key::Right).";
+
+pub const DESC_KBD_ACTIVATE: &str =
+    "FLTK key code for activate / confirm (default: 0x20 = Space).";
+
+pub const DESC_KBD_MENU: &str =
+    "FLTK key code for open/close menu (default: 0x6d = 'm').";
+
+pub const DESC_GAMEPAD_ENABLED: &str =
+    "Enable gamepad input (default: true).";
+
+pub const DESC_GAMEPAD_DEVICE: &str =
+    "Gamepad device path, or \"auto\" to auto-detect the first connected gamepad.";
+
+pub const DESC_GAMEPAD_RUMBLE: &str =
+    "Send a short force-feedback rumble on every navigation selection change \
+     (default: false).";
+
+pub const DESC_GAMEPAD_AXIS_THRESHOLD: &str =
+    "Minimum absolute axis value (0-32767) needed to register as active \
+     (default: 16384).";
+
+pub const DESC_GPIO_ENABLED: &str =
+    "Enable GPIO button input (default: false).";
+
+pub const DESC_GPIO_CHIP: &str =
+    "Path to the GPIO chip character device (default: \"/dev/gpiochip0\").";
+
+pub const DESC_GPIO_SIGNAL: &str =
+    "Which signal level means \"pressed\": \"high\" or \"low\" (default: \"low\").";
+
+pub const DESC_GPIO_PULL: &str =
+    "Internal pull-resistor: \"up\", \"down\", or \"null\" for none (default: \"null\").";
+
+// =============================================================================
+// Config file path helpers
+// =============================================================================
+
+/// Return the directory used to locate `config.toml`.
+///
+/// Reads the `SMART_KBD_CONFIG_PATH` environment variable; falls back to `"."`.
+pub fn config_dir() -> String {
+    env::var("SMART_KBD_CONFIG_PATH").unwrap_or_else(|_| ".".into())
+}
+
+/// Return the full path to `config.toml`.
+pub fn config_path() -> std::path::PathBuf {
+    std::path::Path::new(&config_dir()).join("config.toml")
+}
+
+// =============================================================================
+// Default TOML generator
+// =============================================================================
+
+/// Generate a complete default `config.toml` with each setting preceded by its
+/// description as a comment.
+///
+/// Used by the configuration editor when no `config.toml` exists yet, so the
+/// user sees a fully annotated template ready for editing.
+pub fn generate_default_toml() -> String {
+    macro_rules! ln {
+        ($s:expr, $($arg:tt)*) => { $s.push_str(&format!($($arg)*)); $s.push('\n'); }
+    }
+    let mut s = String::new();
+    ln!(s, "# Smart Keyboard configuration file.");
+    ln!(s, "# Edit settings as needed, then choose Save & Reload from the menu.");
+    ln!(s, "");
+    ln!(s, "[input.keyboard]");
+    ln!(s, "# {}", DESC_KBD_NAVIGATE_UP);
+    ln!(s, "navigate_up    = 0xff52");
+    ln!(s, "# {}", DESC_KBD_NAVIGATE_DOWN);
+    ln!(s, "navigate_down  = 0xff54");
+    ln!(s, "# {}", DESC_KBD_NAVIGATE_LEFT);
+    ln!(s, "navigate_left  = 0xff51");
+    ln!(s, "# {}", DESC_KBD_NAVIGATE_RIGHT);
+    ln!(s, "navigate_right = 0xff53");
+    ln!(s, "# {}", DESC_KBD_ACTIVATE);
+    ln!(s, "activate       = 0x20");
+    ln!(s, "# {}", DESC_KBD_MENU);
+    ln!(s, "menu           = 0x6d");
+    ln!(s, "");
+    ln!(s, "[input.gamepad]");
+    ln!(s, "# {}", DESC_GAMEPAD_ENABLED);
+    ln!(s, "enabled = true");
+    ln!(s, "# {}", DESC_GAMEPAD_DEVICE);
+    ln!(s, "device  = \"auto\"");
+    ln!(s, "# {}", DESC_GAMEPAD_RUMBLE);
+    ln!(s, "# rumble = false");
+    ln!(s, "# {}", DESC_GAMEPAD_AXIS_THRESHOLD);
+    ln!(s, "# axis_threshold = 16384");
+    ln!(s, "");
+    ln!(s, "[input.gpio]");
+    ln!(s, "# {}", DESC_GPIO_ENABLED);
+    ln!(s, "enabled = false");
+    ln!(s, "# {}", DESC_GPIO_CHIP);
+    ln!(s, "# chip = \"/dev/gpiochip0\"");
+    ln!(s, "# {}", DESC_GPIO_SIGNAL);
+    ln!(s, "# gpio_signal = \"low\"");
+    ln!(s, "# {}", DESC_GPIO_PULL);
+    ln!(s, "# gpio_pull = \"null\"");
+    ln!(s, "");
+    ln!(s, "[mouse]");
+    ln!(s, "# {}", DESC_MOUSE_MOVE_MAX_SIZE);
+    ln!(s, "# move_max_size = 20");
+    ln!(s, "# {}", DESC_MOUSE_REPEAT_INTERVAL);
+    ln!(s, "# repeat_interval = 20");
+    ln!(s, "# {}", DESC_MOUSE_MOVE_MAX_TIME);
+    ln!(s, "# move_max_time = 1000");
+    ln!(s, "");
+    ln!(s, "[navigate]");
+    ln!(s, "# {}", DESC_NAVIGATE_ROLLOVER);
+    ln!(s, "# rollover = false");
+    ln!(s, "# {}", DESC_NAVIGATE_CENTER_KEY);
+    ln!(s, "center_key = \"h\"");
+    ln!(s, "# {}", DESC_NAVIGATE_CENTER_AFTER_ACTIVATE);
+    ln!(s, "# center_after_activate = false");
+    ln!(s, "");
+    ln!(s, "[output]");
+    ln!(s, "# {}", DESC_OUTPUT_MODE);
+    ln!(s, "mode = \"print\"");
+    ln!(s, "# {}", DESC_OUTPUT_AUDIO);
+    ln!(s, "# audio = \"none\"");
+    ln!(s, "");
+    ln!(s, "[output.ble]");
+    ln!(s, "# {}", DESC_BLE_VID);
+    ln!(s, "vid = 0x1209");
+    ln!(s, "# {}", DESC_BLE_PID);
+    ln!(s, "pid = 0xbbd1");
+    ln!(s, "# {}", DESC_BLE_SERIAL);
+    ln!(s, "# serial = null");
+    ln!(s, "# {}", DESC_BLE_KEY_RELEASE_DELAY);
+    ln!(s, "# key_release_delay = 20000");
+    ln!(s, "# {}", DESC_BLE_LANG_SWITCH_RELEASE_DELAY);
+    ln!(s, "# lang_switch_release_delay = 200000");
+    ln!(s, "");
+    ln!(s, "[ui]");
+    ln!(s, "# {}", DESC_UI_SHOW_TEXT_DISPLAY);
+    ln!(s, "# show_text_display = false");
+    ln!(s, "# {}", DESC_UI_ACTIVE_KEYMAPS);
+    ln!(s, "# active_keymaps = [\"us\", \"ua\"]");
+    ln!(s, "");
+    ln!(s, "[keymap.us]");
+    ln!(s, "# Ctrl+Shift+1 (modifier=0x03, HID keycode 0x1e)");
+    ln!(s, "switch_scancode = [0x03, 0x1e]");
+    ln!(s, "");
+    ln!(s, "[keymap.ua]");
+    ln!(s, "# Ctrl+Shift+4 (modifier=0x03, HID keycode 0x21)");
+    ln!(s, "switch_scancode = [0x03, 0x21]");
+    s
+}
+
+// =============================================================================
 // Loading
 // =============================================================================
 
