@@ -3,6 +3,7 @@ mod display;
 mod gamepad;
 mod gpio;
 mod keyboards;
+mod menu;
 mod narrator;
 mod output;
 mod phys_keyboard;
@@ -19,8 +20,7 @@ use gpio::GpioInput;
 use narrator::Narrator;
 use user_input::{UserInputAction, UserInputEvent};
 use display::{
-    NavSel, MenuItemDef,
-    menu_first_enabled, menu_move_sel, menu_set_item_colors,
+    NavSel,
     nav_set, nav_move, find_center_key, find_btn_by_action,
     execute_action,
     on_nav_changed,
@@ -108,13 +108,13 @@ impl KeyHook for DummyKeyHook {
 // Unified input event processing
 // =============================================================================
 
-use fltk::{button::Button, enums::Color, frame::Frame, group::Group, text::{TextBuffer, TextDisplay}};
+use fltk::{button::Button, enums::Color, frame::Frame, text::{TextBuffer, TextDisplay}};
 use display::{Colors, ModBtn, ModState};
 
 /// All shared UI state needed to process a `UserInputEvent`.
 ///
 /// Both the gamepad and the GPIO input sources share the same set of UI widgets
-/// and logical state (current selection, modifier state, menu, ...).  Bundling
+/// and logical state (current selection, modifier state, ...).  Bundling
 /// them here lets [`process_input_events`] be called from any number of input
 /// source callbacks without repeating the context-dispatching logic.
 pub(crate) struct InputCtx {
@@ -133,10 +133,8 @@ pub(crate) struct InputCtx {
     gp_cell:               Rc<RefCell<Option<Gamepad>>>,
     narrator:              Rc<RefCell<Narrator>>,
     audio_mode:            config::AudioMode,
-    menu_sel:              Rc<RefCell<Option<usize>>>,
-    menu_item_defs:        Rc<Vec<MenuItemDef>>,
-    menu_item_btns:        Vec<Button>,
-    menu_group:            Group,
+    /// BLE connection (if output mode is "ble"), needed for menu.
+    ble_conn_opt:          Option<Rc<RefCell<output::BleConnection>>>,
     rollover:              bool,
     center_key:            String,
     center_after_activate: bool,
@@ -165,10 +163,7 @@ impl Clone for InputCtx {
             gp_cell:               self.gp_cell.clone(),
             narrator:              self.narrator.clone(),
             audio_mode:            self.audio_mode.clone(),
-            menu_sel:              self.menu_sel.clone(),
-            menu_item_defs:        self.menu_item_defs.clone(),
-            menu_item_btns:        self.menu_item_btns.clone(),
-            menu_group:            self.menu_group.clone(),
+            ble_conn_opt:          self.ble_conn_opt.clone(),
             rollover:              self.rollover,
             center_key:            self.center_key.clone(),
             center_after_activate: self.center_after_activate,
@@ -229,27 +224,16 @@ pub(crate) fn process_input_events(
         match evt.action {
             UserInputAction::Menu => {
                 if !evt.pressed { continue; }
-                if ctx.menu_sel.borrow().is_some() {
-                    // Menu is open: close it.
-                    *ctx.menu_sel.borrow_mut() = None;
-                    ctx.menu_group.hide();
-                    app::redraw();
-                } else {
-                    // Menu is closed: open it if any items are enabled.
-                    if let Some(first) = menu_first_enabled(&ctx.menu_item_defs) {
-                        if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
-                            ctx.hook.on_key_release(sc, &ks);
-                        }
-                        *ctx.menu_sel.borrow_mut() = Some(first);
-                        menu_set_item_colors(
-                            Some(first), &ctx.menu_item_defs,
-                            &mut ctx.menu_item_btns, colors,
-                        );
-                        let _ = ctx.menu_item_btns[first].take_focus();
-                        ctx.menu_group.show();
-                        app::redraw();
-                    }
+                // Release any held key before opening the menu window.
+                if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
+                    ctx.hook.on_key_release(sc, &ks);
                 }
+                // open_menu runs its own modal event loop and blocks
+                // until the menu window is closed.  While it runs,
+                // the main app's input handlers do not fire.
+                menu::open_menu(
+                    ctx.ble_conn_opt.clone(),
+                );
             }
 
             UserInputAction::Up
@@ -266,26 +250,6 @@ pub(crate) fn process_input_events(
                             mouse.start = None;
                             mouse.next  = None;
                         }
-                    }
-                    continue;
-                }
-                // When menu is open, route vertical nav to menu.
-                if ctx.menu_sel.borrow().is_some() {
-                    let dir = match evt.action {
-                        UserInputAction::Up   => -1i32,
-                        UserInputAction::Down =>  1i32,
-                        _                     => continue, // ignore left/right in menu
-                    };
-                    let cur  = ctx.menu_sel.borrow().unwrap();
-                    let next = menu_move_sel(cur, dir, &ctx.menu_item_defs);
-                    if next != cur {
-                        *ctx.menu_sel.borrow_mut() = Some(next);
-                        menu_set_item_colors(
-                            Some(next), &ctx.menu_item_defs,
-                            &mut ctx.menu_item_btns, colors,
-                        );
-                        let _ = ctx.menu_item_btns[next].take_focus();
-                        app::redraw();
                     }
                     continue;
                 }
@@ -332,19 +296,6 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::Activate => {
-                // When menu is open, Activate executes the selected item.
-                if ctx.menu_sel.borrow().is_some() {
-                    if evt.pressed {
-                        let idx = ctx.menu_sel.borrow().unwrap();
-                        if (ctx.menu_item_defs[idx].is_enabled)() {
-                            (ctx.menu_item_defs[idx].execute)();
-                        }
-                        *ctx.menu_sel.borrow_mut() = None;
-                        ctx.menu_group.hide();
-                        app::redraw();
-                    }
-                    continue;
-                }
                 // Mouse mode: left button press/release.
                 if *ctx.mouse_mode.borrow() {
                     ctx.hook.on_mouse_report(if evt.pressed { 0x01 } else { 0x00 }, 0, 0);
@@ -385,14 +336,12 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::ActivateEnter => {
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Enter, 0x1c, ctx, rumble,
                 );
             }
 
             UserInputAction::ActivateSpace => {
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Space, 0x39, ctx, rumble,
                 );
@@ -402,7 +351,6 @@ pub(crate) fn process_input_events(
             | UserInputAction::ActivateArrowRight
             | UserInputAction::ActivateArrowUp
             | UserInputAction::ActivateArrowDown => {
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 let (arrow_action, arrow_sc) = match evt.action {
                     UserInputAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
                     UserInputAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
@@ -413,7 +361,6 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::ActivateBksp => {
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Backspace, 0x0e, ctx, rumble,
                 );
@@ -423,7 +370,6 @@ pub(crate) fn process_input_events(
             | UserInputAction::ActivateCtrl
             | UserInputAction::ActivateAlt
             | UserInputAction::ActivateAltGr => {
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 // Mouse mode: ActivateShift = right mouse button.
                 if *ctx.mouse_mode.borrow()
                     && evt.action == UserInputAction::ActivateShift
@@ -476,7 +422,6 @@ pub(crate) fn process_input_events(
 
             UserInputAction::NavigateCenter => {
                 if !evt.pressed { continue; }
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 if let Some(center) = {
                     let ab = ctx.all_btns.borrow();
                     find_center_key(&ab, *ctx.layout_idx.borrow(), &ctx.center_key)
@@ -518,7 +463,6 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::AbsolutePos { horiz, vert } => {
-                if ctx.menu_sel.borrow().is_some() { continue; }
                 let new_sel = {
                     let ab  = ctx.all_btns.borrow();
                     let lb  = ctx.lang_btns.borrow();
@@ -754,7 +698,6 @@ fn main() {
 
     let a = app::App::default().with_scheme(app::Scheme::Gleam);
 
-    let ble_mode = matches!(cfg.output.mode, config::OutputMode::Ble);
     let mut ble_conn_opt: Option<std::rc::Rc<std::cell::RefCell<output::BleConnection>>> = None;
     let hook: Rc<dyn KeyHook> = match cfg.output.mode {
         config::OutputMode::Print => {
@@ -774,43 +717,13 @@ fn main() {
         }
     };
 
-    let mut menu_item_defs: Vec<MenuItemDef> = Vec::new();
-
-    // "Disconnect BLE": only available when BLE mode is active and the dongle
-    // is currently connected.
-    if ble_mode {
-        if let Some(ref conn) = ble_conn_opt {
-            let conn_check = conn.clone();
-            let conn_exec  = conn.clone();
-            menu_item_defs.push(MenuItemDef {
-                label:      "Disconnect BLE",
-                is_enabled: Box::new(move || conn_check.borrow().is_connected()),
-                execute:    Box::new(move || {
-                    if !conn_exec.borrow_mut().send_disconnect() {
-                        eprintln!("[menu] Disconnect BLE: failed to send disconnect command");
-                    }
-                }),
-            });
-        }
-    }
-
-    // "Quit Smart Keyboard": always enabled; terminates the application.
-    menu_item_defs.push(MenuItemDef {
-        label:      "Quit Smart Keyboard",
-        is_enabled: Box::new(|| true),
-        execute:    Box::new(|| {
-            app::quit();
-        }),
-    });
-
     let mut ui = build_ui(BuildUiParams {
         cfg: &cfg,
         hook: hook.clone(),
         narrator: narrator.clone(),
         audio_mode: audio_mode.clone(),
         switch_scancodes: switch_scancodes.clone(),
-        menu_item_defs,
-        ble_conn_opt,
+        ble_conn_opt: ble_conn_opt.clone(),
     });
 
     let colors = ui.colors;
@@ -832,10 +745,7 @@ fn main() {
         gp_cell:               ui.gp_cell.clone(),
         narrator:              narrator.clone(),
         audio_mode:            audio_mode.clone(),
-        menu_sel:              ui.menu_sel.clone(),
-        menu_item_defs:        ui.menu_item_defs.clone(),
-        menu_item_btns:        ui.menu_item_btns.clone(),
-        menu_group:            ui.menu_group.clone(),
+        ble_conn_opt:          ble_conn_opt.clone(),
         rollover:              cfg.navigate.rollover,
         center_key:            cfg.navigate.center_key.clone(),
         center_after_activate: cfg.navigate.center_after_activate,
