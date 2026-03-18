@@ -576,7 +576,11 @@ fn open_config_editor() {
     // --- Modal event loop: blocks until the config window is closed. ---
     // After each wait cycle, ensure the focused widget is visible inside
     // the scroll area (auto-scroll on Tab / arrow-key navigation).
+    // We clamp the scroll position to [0, max_yp] so that we never try to
+    // scroll beyond the content (which would cause an infinite loop when
+    // focus moves to the Cancel/Save buttons outside the scroll).
     let mut scroll_loop = scroll.clone();
+    let content_h = pack.h();
     while win.shown() {
         app::wait();
         if let Some(focused) = app::focus() {
@@ -584,12 +588,14 @@ fn open_config_editor() {
             let fh = focused.h();
             let vis_top = scroll_loop.y();
             let vis_bot = vis_top + scroll_loop.h();
-            if fy < vis_top {
+            let yp = scroll_loop.yposition();
+            let max_yp = (content_h - scroll_loop.h()).max(0);
+            if fy < vis_top && yp > 0 {
                 let delta = vis_top - fy;
-                scroll_loop.scroll_to(0, scroll_loop.yposition() - delta);
-            } else if fy + fh > vis_bot {
+                scroll_loop.scroll_to(0, (yp - delta).max(0));
+            } else if fy + fh > vis_bot && yp < max_yp {
                 let delta = (fy + fh) - vis_bot;
-                scroll_loop.scroll_to(0, scroll_loop.yposition() + delta);
+                scroll_loop.scroll_to(0, (yp + delta).min(max_yp));
             }
         }
     }
