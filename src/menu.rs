@@ -651,29 +651,38 @@ fn open_config_editor() {
     });
 
     // --- Modal event loop: blocks until the config window is closed. ---
-    // After each wait cycle, ensure the focused widget is visible inside
-    // the scroll area (auto-scroll on Tab / arrow-key navigation).
-    // We clamp the scroll position to [0, max_yp] so that we never try to
-    // scroll beyond the content (which would cause an infinite loop when
-    // focus moves to the Cancel/Save buttons outside the scroll).
+    // Auto-scroll the Scroll widget so that the focused widget is visible,
+    // but **only when focus actually changes** (e.g. Tab / arrow-key
+    // navigation).  Without this guard every scrollbar-drag or
+    // mouse-wheel scroll would be immediately undone by auto-scroll
+    // snapping back to the (unchanged) focused widget.
     let mut scroll_loop = scroll.clone();
     let content_h = pack.h();
+    let mut last_focus_addr: usize = 0;
     while win.shown() {
         app::wait();
         if let Some(focused) = app::focus() {
-            let fy = focused.y();
-            let fh = focused.h();
-            let vis_top = scroll_loop.y();
-            let vis_bot = vis_top + scroll_loop.h();
-            let yp = scroll_loop.yposition();
-            let max_yp = (content_h - scroll_loop.h()).max(0);
-            if fy < vis_top && yp > 0 {
-                let delta = vis_top - fy;
-                scroll_loop.scroll_to(0, (yp - delta).max(0));
-            } else if fy + fh > vis_bot && yp < max_yp {
-                let delta = (fy + fh) - vis_bot;
-                scroll_loop.scroll_to(0, (yp + delta).min(max_yp));
+            // Compare raw widget pointer addresses so we detect when a
+            // *different* widget receives focus (e.g. after Tab).
+            let cur_addr = focused.as_widget_ptr() as usize;
+            if cur_addr != last_focus_addr {
+                last_focus_addr = cur_addr;
+                let fy = focused.y();
+                let fh = focused.h();
+                let vis_top = scroll_loop.y();
+                let vis_bot = vis_top + scroll_loop.h();
+                let yp = scroll_loop.yposition();
+                let max_yp = (content_h - scroll_loop.h()).max(0);
+                if fy < vis_top && yp > 0 {
+                    let delta = vis_top - fy;
+                    scroll_loop.scroll_to(0, (yp - delta).max(0));
+                } else if fy + fh > vis_bot && yp < max_yp {
+                    let delta = (fy + fh) - vis_bot;
+                    scroll_loop.scroll_to(0, (yp + delta).min(max_yp));
+                }
             }
+        } else {
+            last_focus_addr = 0;
         }
     }
 }
