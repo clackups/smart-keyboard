@@ -22,7 +22,7 @@ use fltk::{
     button::{Button, CheckButton},
     enums::{Align, Color, Event, FrameType},
     frame::Frame,
-    group::{Group, Scroll, Pack},
+    group::{Group, Scroll, ScrollType, Pack},
     input::Input,
     menu::Choice,
     prelude::*,
@@ -191,8 +191,10 @@ fn open_config_editor() {
     let row_h    = ((sh as f32 / 22.0) as i32).clamp(24, 48);
     let pad      = 8;
 
-    // Scrollable area
+    // Scrollable area (vertical only – prevents horizontal content shift
+    // when the vertical scrollbar appears).
     let mut scroll = Scroll::new(0, 0, sw, sh - row_h - pad * 2, "");
+    scroll.set_type(ScrollType::Vertical);
     scroll.set_color(BG);
     scroll.set_frame(FrameType::FlatBox);
     let pack_w = (sw - 40).min(900);
