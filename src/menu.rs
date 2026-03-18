@@ -36,10 +36,10 @@ use crate::output;
 // Colour helpers
 // ---------------------------------------------------------------------------
 
-const BG:       Color = Color::from_hex(0x28282b);
+const BG:       Color = Color::from_hex(0x77767b);
 const BTN_BG:   Color = Color::from_hex(0x3c3c42);
 const TEXT_FG:  Color = Color::from_hex(0xe0e0e0);
-const LABEL_FG: Color = Color::from_hex(0xc8c8c8);
+const LABEL_FG: Color = Color::from_hex(0xf6f5f4);
 const TITLE_FG: Color = Color::from_hex(0xffffff);
 const DISABLED: Color = Color::from_hex(0x5a5a5a);
 
@@ -262,6 +262,7 @@ fn open_config_editor() {
             cb.set_label_size(lbl_size);
             cb.set_label_color(LABEL_FG);
             cb.set_selection_color(TITLE_FG);
+            cb.set_visible_focus();
             focs.borrow_mut().push(unsafe { fltk::widget::Widget::from_widget_ptr(cb.as_widget_ptr()) });
             grp.end();
             pack.add(&grp);
