@@ -58,9 +58,7 @@ const DISABLED: Color = Color::from_hex(0x5a5a5a);
 pub fn open_menu(
     ble_conn_opt: Option<Rc<RefCell<output::BleConnection>>>,
 ) {
-    let (sw_f, sh_f) = app::screen_size();
-    let sw = sw_f as i32;
-    let sh = sh_f as i32;
+    let (sw, sh) = app::screen_size();
 
     let mut win = Window::new(0, 0, sw, sh, "Menu");
     win.set_color(BG);
@@ -182,9 +180,7 @@ pub fn open_menu(
 /// appropriate widget (checkbox, choice, text input), and lets the user save
 /// changes.  On save the application restarts (exec-replace).
 fn open_config_editor() {
-    let (sw_f, sh_f) = app::screen_size();
-    let sw = sw_f as i32;
-    let sh = sh_f as i32;
+    let (sw, sh) = app::screen_size();
 
     let mut win = Window::new(0, 0, sw, sh, "Configuration");
     win.set_color(BG);
@@ -563,7 +559,7 @@ fn open_config_editor() {
                 restart_application();
             }
             Err(e) => {
-                fltk::dialog::alert_default(&format!("Failed to save configuration:\n{}", e));
+                fltk::dialog::alert(&format!("Failed to save configuration:\n{}", e));
             }
         }
     });
