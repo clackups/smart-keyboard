@@ -22,7 +22,7 @@ use fltk::{
     button::{Button, CheckButton},
     enums::{Align, Color, Event, FrameType},
     frame::Frame,
-    group::{Group, Scroll, Pack},
+    group::{Group, Scroll, ScrollType, Pack},
     input::Input,
     menu::Choice,
     prelude::*,
@@ -196,6 +196,7 @@ fn open_config_editor() {
     // Visual centering is achieved by positioning children at pack_x
     // inside each row Group.
     let mut scroll = Scroll::new(0, 0, sw, sh - row_h - pad * 2, "");
+    scroll.set_type(ScrollType::Vertical);
     scroll.set_color(BG);
     scroll.set_frame(FrameType::FlatBox);
     let pack_w = (sw - 40).min(900);
