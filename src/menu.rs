@@ -214,6 +214,11 @@ fn open_config_editor() {
     // Collect focusable (interactive) widgets so we can wrap Tab / Shift-Tab
     // at the boundaries instead of letting focus escape to the Cancel/Save
     // buttons (which would trigger an endless auto-scroll).
+    //
+    // Safety: we use `Widget::from_widget_ptr()` to create generic handles
+    // from concrete widget pointers.  This is safe because every widget
+    // stored here lives inside the Pack which is owned by the Scroll which
+    // is owned by the Window; all of them outlive the `focusables` Vec.
     let focusables: Rc<RefCell<Vec<fltk::widget::Widget>>> =
         Rc::new(RefCell::new(Vec::new()));
 
@@ -340,6 +345,7 @@ fn open_config_editor() {
     // -- Text input (string) --
     let add_text = {
         let cols = collectors.clone();
+        let focs = focusables.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
@@ -357,6 +363,7 @@ fn open_config_editor() {
             inp.set_text_color(TEXT_FG);
             inp.set_color(Color::from_hex(0x1c1c1c));
             inp.set_cursor_color(TEXT_FG);
+            focs.borrow_mut().push(unsafe { fltk::widget::Widget::from_widget_ptr(inp.as_widget_ptr()) });
             grp.end();
             pack.add(&grp);
             let inp_c = inp.clone();
@@ -369,6 +376,7 @@ fn open_config_editor() {
     // -- Color input (hex string) --
     let add_color = {
         let cols = collectors.clone();
+        let focs = focusables.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
@@ -386,6 +394,7 @@ fn open_config_editor() {
             inp.set_text_color(TEXT_FG);
             inp.set_color(Color::from_hex(0x1c1c1c));
             inp.set_cursor_color(TEXT_FG);
+            focs.borrow_mut().push(unsafe { fltk::widget::Widget::from_widget_ptr(inp.as_widget_ptr()) });
             grp.end();
             pack.add(&grp);
             let inp_c = inp.clone();
@@ -559,10 +568,14 @@ fn open_config_editor() {
         }
     });
 
-    // Keyboard navigation: Tab/Shift-Tab cycle through fields (FLTK built-in).
-    // Enter does nothing (prevents FLTK default of moving focus like Tab).
-    // Escape closes the config editor.  Ctrl+S triggers Save & Reload.
+    // Keyboard navigation: Tab/Shift-Tab wrap around within focusable
+    // widgets so focus never escapes to the Cancel/Save buttons (which
+    // would trigger an endless auto-scroll).  Enter is consumed to
+    // prevent FLTK's default focus-move.  Escape closes the editor.
+    // Ctrl+S triggers Save & Reload.
     let mut btn_save_k = btn_save.clone();
+    let focs_handle = focusables.clone();
+    let mut scroll_handle = scroll.clone();
     win.handle(move |w, ev| {
         if ev == Event::KeyDown {
             let key = app::event_key();
@@ -581,6 +594,58 @@ fn open_config_editor() {
                 // Consume Enter so it does not move focus between widgets.
                 return true;
             }
+            // Tab / Shift-Tab: wrap around at boundaries.
+            if key == fltk::enums::Key::Tab {
+                let focs = focs_handle.borrow();
+                if let Some(focused) = app::focus() {
+                    let fptr = focused.as_widget_ptr();
+                    let shift = app::event_state().contains(fltk::enums::Shortcut::Shift);
+                    if !shift {
+                        // Forward Tab: if on last focusable, wrap to first.
+                        if let Some(last) = focs.last() {
+                            if last.as_widget_ptr() == fptr {
+                                if let Some(first) = focs.first() {
+                                    let mut fw = first.clone();
+                                    let _ = fw.take_focus();
+                                    scroll_handle.scroll_to(0, 0);
+                                    return true;
+                                }
+                            }
+                        }
+                    } else {
+                        // Backward Tab: if on first focusable, wrap to last.
+                        if let Some(first) = focs.first() {
+                            if first.as_widget_ptr() == fptr {
+                                if let Some(last) = focs.last() {
+                                    let mut lw = last.clone();
+                                    let _ = lw.take_focus();
+                                    // Scroll to bottom so last widget is visible.
+                                    let max_yp = (scroll_handle.child(0).map_or(0, |c| c.h()) - scroll_handle.h()).max(0);
+                                    scroll_handle.scroll_to(0, max_yp);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Forward mouse-wheel events to the scroll widget so that
+        // scrolling works even when an input field has focus.
+        if ev == Event::MouseWheel {
+            let dy = app::event_dy();
+            let step = 40;
+            let yp = scroll_handle.yposition();
+            let max_yp = (scroll_handle.child(0).map_or(0, |c| c.h()) - scroll_handle.h()).max(0);
+            let new_yp = match dy {
+                app::MouseWheel::Up   => (yp - step).max(0),
+                app::MouseWheel::Down => (yp + step).min(max_yp),
+                _ => yp,
+            };
+            if new_yp != yp {
+                scroll_handle.scroll_to(0, new_yp);
+            }
+            return true;
         }
         false
     });
