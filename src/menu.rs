@@ -245,6 +245,7 @@ fn open_config_editor() {
             cb.set_value(val);
             cb.set_label_size(lbl_size);
             cb.set_label_color(LABEL_FG);
+            cb.set_selection_color(TITLE_FG);
             grp.end();
             pack.add(&grp);
             let cb_c = cb.clone();
@@ -548,12 +549,20 @@ fn open_config_editor() {
 
     // Keyboard navigation: Tab/Shift-Tab cycle through fields (FLTK built-in).
     // Enter does nothing (prevents FLTK default of moving focus like Tab).
-    // Escape closes the config editor.
-    win.handle(|w, ev| {
+    // Escape closes the config editor.  Ctrl+S triggers Save & Reload.
+    let mut btn_save_k = btn_save.clone();
+    win.handle(move |w, ev| {
         if ev == Event::KeyDown {
             let key = app::event_key();
             if key == fltk::enums::Key::Escape {
                 w.hide();
+                return true;
+            }
+            // Ctrl+S → Save & Reload
+            if key == fltk::enums::Key::from_char('s')
+                && app::event_state().contains(fltk::enums::Shortcut::Ctrl)
+            {
+                btn_save_k.do_callback();
                 return true;
             }
             if key == fltk::enums::Key::Enter {
@@ -565,8 +574,24 @@ fn open_config_editor() {
     });
 
     // --- Modal event loop: blocks until the config window is closed. ---
+    // After each wait cycle, ensure the focused widget is visible inside
+    // the scroll area (auto-scroll on Tab / arrow-key navigation).
+    let mut scroll_loop = scroll.clone();
     while win.shown() {
         app::wait();
+        if let Some(focused) = app::focus() {
+            let fy = focused.y();
+            let fh = focused.h();
+            let vis_top = scroll_loop.y();
+            let vis_bot = vis_top + scroll_loop.h();
+            if fy < vis_top {
+                let delta = vis_top - fy;
+                scroll_loop.scroll_to(0, scroll_loop.yposition() - delta);
+            } else if fy + fh > vis_bot {
+                let delta = (fy + fh) - vis_bot;
+                scroll_loop.scroll_to(0, scroll_loop.yposition() + delta);
+            }
+        }
     }
 }
 
