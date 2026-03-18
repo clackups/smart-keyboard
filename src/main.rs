@@ -793,7 +793,7 @@ fn main() {
         // Poll at ~60 Hz; this keeps input latency low without burning CPU
         // the way an idle callback would.  When the gamepad is disconnected
         // the timer slows to 1 Hz and retries opening the device.
-        app::add_timeout3(0.016, move |handle| {
+        app::add_timeout(0.016, move |handle| {
             // Phase 1 - reconnect if currently disconnected.
             if gp_cell_t.borrow().is_none() {
                 match Gamepad::open(&gp_cfg) {
@@ -808,7 +808,7 @@ fn main() {
                     }
                     None => {
                         // Still no device; retry in 1 s.
-                        app::repeat_timeout3(1.0, handle);
+                        app::repeat_timeout(1.0, handle);
                         return;
                     }
                 }
@@ -827,7 +827,7 @@ fn main() {
                     icon.set_label_color(colors.conn_disconnected);
                     app::redraw();
                 }
-                app::repeat_timeout3(1.0, handle);
+                app::repeat_timeout(1.0, handle);
                 return;
             }
 
@@ -837,7 +837,7 @@ fn main() {
             // Phase 4 - mouse-mode auto-repeat.
             mouse_auto_repeat(&ctx_gp, &mut mouse_gp);
 
-            app::repeat_timeout3(0.016, handle);
+            app::repeat_timeout(0.016, handle);
         });
     }
 
@@ -867,7 +867,7 @@ fn main() {
         let mut mouse_gpio = MouseMoveState::new();
 
         // Poll at ~60 Hz.  When lines are not yet open, retry every 1 s.
-        app::add_timeout3(0.016, move |handle| {
+        app::add_timeout(0.016, move |handle| {
             // Phase 1 - try to open if currently unavailable.
             if gpio_cell_t.borrow().is_none() {
                 match GpioInput::open(&gpio_cfg) {
@@ -880,7 +880,7 @@ fn main() {
                         }
                     }
                     None => {
-                        app::repeat_timeout3(1.0, handle);
+                        app::repeat_timeout(1.0, handle);
                         return;
                     }
                 }
@@ -898,7 +898,7 @@ fn main() {
             // Phase 4 - mouse-mode auto-repeat.
             mouse_auto_repeat(&ctx_gpio, &mut mouse_gpio);
 
-            app::repeat_timeout3(0.016, handle);
+            app::repeat_timeout(0.016, handle);
         });
     }
 

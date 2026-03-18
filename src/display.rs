@@ -1039,9 +1039,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
     let colors = Colors::from_config(&cfg.ui.colors);
     let show_text_display = cfg.ui.show_text_display;
 
-    let (sw_f, sh_f) = app::screen_size();
-    let sw = sw_f as i32;
-    let sh = sh_f as i32;
+    let (sw, sh) = app::screen_size();
 
     let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
     win.set_color(colors.win_bg);
@@ -1193,13 +1191,13 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
         let mut conn_status_t = conn_status.clone();
         let ble_conn_t = ble_conn.clone();
         let ble_state = Rc::new(RefCell::new(BleState::Disconnected));
-            app::add_timeout3(0.0, move |handle| {
+            app::add_timeout(0.0, move |handle| {
                 if !ble_conn_t.borrow().is_connected() {
                     if ble_conn_t.borrow_mut().try_connect() {
                         *ble_state.borrow_mut() = BleState::Connecting;
                         conn_status_t.set_label_color(colors.conn_connecting);
                         app::redraw();
-                        app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                        app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
                     } else {
                         if *ble_state.borrow() != BleState::Disconnected {
                             println!("BLE disconnected");
@@ -1207,7 +1205,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                         *ble_state.borrow_mut() = BleState::Disconnected;
                         conn_status_t.set_label_color(colors.conn_disconnected);
                         app::redraw();
-                        app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
+                        app::repeat_timeout(BLE_RETRY_INTERVAL_S, handle);
                     }
                 } else {
                     match ble_conn_t.borrow_mut().check_status() {
@@ -1219,7 +1217,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                             *ble_state.borrow_mut() = BleState::Disconnected;
                             conn_status_t.set_label_color(colors.conn_disconnected);
                             app::redraw();
-                            app::repeat_timeout3(BLE_RETRY_INTERVAL_S, handle);
+                            app::repeat_timeout(BLE_RETRY_INTERVAL_S, handle);
                         }
                         Ok(Some(ref s)) if s.starts_with("STATUS:CONNECTED:") => {
                             if *ble_state.borrow() != BleState::Connected {
@@ -1229,7 +1227,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                             *ble_state.borrow_mut() = BleState::Connected;
                             conn_status_t.set_label_color(colors.conn_connected);
                             app::redraw();
-                            app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                            app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
                         }
                         Ok(Some(ref s)) if s.starts_with("STATUS:NOTCONNECTED") => {
                             // The dongle is reachable but the BLE link to the
@@ -1240,14 +1238,14 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                             *ble_state.borrow_mut() = BleState::Connecting;
                             conn_status_t.set_label_color(colors.conn_connecting);
                             app::redraw();
-                            app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                            app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
                         }
                         Ok(_) => {
                             // Connected but remote host not paired / not ready.
                             *ble_state.borrow_mut() = BleState::Connecting;
                             conn_status_t.set_label_color(colors.conn_connecting);
                             app::redraw();
-                            app::repeat_timeout3(BLE_STATUS_INTERVAL_S, handle);
+                            app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
                         }
                     }
                 }
