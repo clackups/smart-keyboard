@@ -22,7 +22,7 @@ use fltk::{
     button::{Button, CheckButton},
     enums::{Align, Color, Event, FrameType},
     frame::Frame,
-    group::{Group, Scroll, ScrollType, Pack},
+    group::{Group, Scroll, Pack},
     input::Input,
     menu::Choice,
     prelude::*,
@@ -191,15 +191,16 @@ fn open_config_editor() {
     let row_h    = ((sh as f32 / 22.0) as i32).clamp(24, 48);
     let pad      = 8;
 
-    // Scrollable area (vertical only – prevents horizontal content shift
-    // when the vertical scrollbar appears).
+    // Scrollable area.  The Pack fills the full Scroll width so that
+    // FLTK cannot shift it horizontally when scrolling begins.
+    // Visual centering is achieved by positioning children at pack_x
+    // inside each row Group.
     let mut scroll = Scroll::new(0, 0, sw, sh - row_h - pad * 2, "");
-    scroll.set_type(ScrollType::Vertical);
     scroll.set_color(BG);
     scroll.set_frame(FrameType::FlatBox);
     let pack_w = (sw - 40).min(900);
     let pack_x = (sw - pack_w) / 2;
-    let mut pack = Pack::new(pack_x, pad, pack_w, 0, "");
+    let mut pack = Pack::new(0, pad, sw, 0, "");
     pack.set_spacing(4);
 
     // Load current config as raw TOML text for defaults.
@@ -226,14 +227,18 @@ fn open_config_editor() {
 
     // -- Section header --
     let add_section = |pack: &mut Pack, label: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
-        let mut f = Frame::new(0, 0, pack_w, row_h, None);
+        let mut grp = Group::new(0, 0, pack_w, row_h, "");
+        grp.set_frame(FrameType::FlatBox);
+        grp.set_color(BG);
+        let mut f = Frame::new(pack_x, 0, pack_w, row_h, None);
         f.set_label(label);
         f.set_label_size(lbl_size + 2);
         f.set_label_color(TITLE_FG);
         f.set_frame(FrameType::FlatBox);
         f.set_color(Color::from_hex(0x1e1e22));
         f.set_align(Align::Inside | Align::Left);
-        pack.add(&f);
+        grp.end();
+        pack.add(&grp);
     };
 
     // -- Boolean checkbox --
@@ -244,14 +249,14 @@ fn open_config_editor() {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
             grp.set_color(BG);
-            let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
+            let mut lbl = Frame::new(pack_x, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
             lbl.set_frame(FrameType::FlatBox);
             lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
-            let mut cb = CheckButton::new(pack_w / 2, 0, pack_w / 2, row_h, "");
+            let mut cb = CheckButton::new(pack_x + pack_w / 2, 0, pack_w / 2, row_h, "");
             cb.set_value(val);
             cb.set_label_size(lbl_size);
             cb.set_label_color(LABEL_FG);
@@ -274,14 +279,14 @@ fn open_config_editor() {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
             grp.set_color(BG);
-            let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
+            let mut lbl = Frame::new(pack_x, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
             lbl.set_frame(FrameType::FlatBox);
             lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
-            let mut ch = Choice::new(pack_w / 2, 0, pack_w / 2, row_h, "");
+            let mut ch = Choice::new(pack_x + pack_w / 2, 0, pack_w / 2, row_h, "");
             ch.set_text_size(lbl_size);
             for opt in options {
                 ch.add_choice(opt);
@@ -317,14 +322,14 @@ fn open_config_editor() {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
             grp.set_color(BG);
-            let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
+            let mut lbl = Frame::new(pack_x, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
             lbl.set_frame(FrameType::FlatBox);
             lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
-            let mut inp = Input::new(pack_w / 2, 0, pack_w / 2, row_h, "");
+            let mut inp = Input::new(pack_x + pack_w / 2, 0, pack_w / 2, row_h, "");
             inp.set_value(val);
             inp.set_text_size(lbl_size);
             inp.set_text_color(TEXT_FG);
@@ -348,14 +353,14 @@ fn open_config_editor() {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
             grp.set_color(BG);
-            let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
+            let mut lbl = Frame::new(pack_x, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
             lbl.set_frame(FrameType::FlatBox);
             lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
-            let mut inp = Input::new(pack_w / 2, 0, pack_w / 2, row_h, "");
+            let mut inp = Input::new(pack_x + pack_w / 2, 0, pack_w / 2, row_h, "");
             inp.set_value(val);
             inp.set_text_size(lbl_size);
             inp.set_text_color(TEXT_FG);
@@ -379,14 +384,14 @@ fn open_config_editor() {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
             grp.set_color(BG);
-            let mut lbl = Frame::new(0, 0, pack_w / 2, row_h, None);
+            let mut lbl = Frame::new(pack_x, 0, pack_w / 2, row_h, None);
             lbl.set_label(label);
             lbl.set_label_size(lbl_size);
             lbl.set_label_color(LABEL_FG);
             lbl.set_frame(FrameType::FlatBox);
             lbl.set_color(BG);
             lbl.set_align(Align::Inside | Align::Left);
-            let mut inp = Input::new(pack_w / 2, 0, pack_w / 2, row_h, "");
+            let mut inp = Input::new(pack_x + pack_w / 2, 0, pack_w / 2, row_h, "");
             inp.set_value(val);
             inp.set_text_size(lbl_size);
             inp.set_text_color(TEXT_FG);
@@ -523,7 +528,7 @@ fn open_config_editor() {
     if n_rows > 0 {
         let spacing = pack.spacing();
         let total_h = n_rows as i32 * row_h + (n_rows as i32 - 1) * spacing;
-        pack.resize(pack.x(), pack.y(), pack_w, total_h);
+        pack.resize(pack.x(), pack.y(), sw, total_h);
     }
 
     scroll.end();
