@@ -211,6 +211,12 @@ fn open_config_editor() {
     let collectors: Rc<RefCell<Vec<(&'static str, Box<dyn Fn() -> String>)>>> =
         Rc::new(RefCell::new(Vec::new()));
 
+    // Collect focusable (interactive) widgets so we can wrap Tab / Shift-Tab
+    // at the boundaries instead of letting focus escape to the Cancel/Save
+    // buttons (which would trigger an endless auto-scroll).
+    let focusables: Rc<RefCell<Vec<fltk::widget::Widget>>> =
+        Rc::new(RefCell::new(Vec::new()));
+
     // =====================================================================
     // Helper closures to add widgets
     // =====================================================================
@@ -230,6 +236,7 @@ fn open_config_editor() {
     // -- Boolean checkbox --
     let add_bool = {
         let cols = collectors.clone();
+        let focs = focusables.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: bool, lbl_size: i32, pack_w: i32, row_h: i32| {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
@@ -246,6 +253,7 @@ fn open_config_editor() {
             cb.set_label_size(lbl_size);
             cb.set_label_color(LABEL_FG);
             cb.set_selection_color(TITLE_FG);
+            focs.borrow_mut().push(unsafe { fltk::widget::Widget::from_widget_ptr(cb.as_widget_ptr()) });
             grp.end();
             pack.add(&grp);
             let cb_c = cb.clone();
@@ -258,6 +266,7 @@ fn open_config_editor() {
     // -- Choice list --
     let add_choice = {
         let cols = collectors.clone();
+        let focs = focusables.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, options: &[&str], current: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
@@ -281,6 +290,7 @@ fn open_config_editor() {
                     break;
                 }
             }
+            focs.borrow_mut().push(unsafe { fltk::widget::Widget::from_widget_ptr(ch.as_widget_ptr()) });
             grp.end();
             pack.add(&grp);
             let ch_c = ch.clone();
@@ -299,6 +309,7 @@ fn open_config_editor() {
     // -- Numeric text input --
     let add_number = {
         let cols = collectors.clone();
+        let focs = focusables.clone();
         move |pack: &mut Pack, key: &'static str, label: &str, val: &str, lbl_size: i32, pack_w: i32, row_h: i32| {
             let mut grp = Group::new(0, 0, pack_w, row_h, "");
             grp.set_frame(FrameType::FlatBox);
@@ -316,6 +327,7 @@ fn open_config_editor() {
             inp.set_text_color(TEXT_FG);
             inp.set_color(Color::from_hex(0x1c1c1c));
             inp.set_cursor_color(TEXT_FG);
+            focs.borrow_mut().push(unsafe { fltk::widget::Widget::from_widget_ptr(inp.as_widget_ptr()) });
             grp.end();
             pack.add(&grp);
             let inp_c = inp.clone();
