@@ -24,6 +24,7 @@ use display::{
     nav_set, nav_move, find_center_key, find_btn_by_action,
     execute_action,
     on_nav_changed,
+    action_audio_slug, action_tone_hz,
     BuildUiParams, build_ui,
 };
 
@@ -305,10 +306,18 @@ pub(crate) fn process_input_events(
                     let cur_sel = *ctx.sel.borrow();
                     match cur_sel {
                         NavSel::Lang(li) => {
-                            ctx.lang_btns.borrow_mut()[li].do_callback();
+                            // Clone the button so the RefCell borrow is released
+                            // before do_callback runs (the callback borrows
+                            // lang_btns internally).
+                            let mut btn = ctx.lang_btns.borrow()[li].clone();
+                            btn.do_callback();
                             *ctx.active_nav_key.borrow_mut() = None;
+                            // The lang callback already narrates the switch;
+                            // still honour center_after_activate if configured.
+                            maybe_center_after_activate(ctx, rumble);
                         }
                         NavSel::Key(row, col) => {
+                            let shifted_pre = ctx.mod_state.borrow().is_shifted();
                             let (action, scancode) = {
                                 let ab = ctx.all_btns.borrow();
                                 (ab[row][col].1, ab[row][col].2)
@@ -325,9 +334,19 @@ pub(crate) fn process_input_events(
                             *ctx.active_nav_key.borrow_mut() = Some((scancode, key_str));
                             ctx.all_btns.borrow_mut()[row][col].0.set_color(colors.nav_sel);
                             app::redraw();
+                            // Narrate the activated key (or the center key
+                            // when center_after_activate jumps).
+                            let jumped = maybe_center_after_activate(ctx, rumble);
+                            if !jumped {
+                                let slug = action_audio_slug(action, *ctx.layout_idx.borrow(), shifted_pre);
+                                let fallback = if shifted_pre { action_audio_slug(action, *ctx.layout_idx.borrow(), false) } else { String::new() };
+                                ctx.narrator.borrow_mut().play_with_fallback(
+                                    &slug, &fallback,
+                                    action_tone_hz(action, &ctx.audio_mode),
+                                );
+                            }
                         }
                     }
-                    maybe_center_after_activate(ctx, rumble);
                 } else {
                     if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
                         ctx.hook.on_key_release(sc, &ks);
@@ -390,10 +409,13 @@ pub(crate) fn process_input_events(
                     let cur_sel = *ctx.sel.borrow();
                     match cur_sel {
                         NavSel::Lang(li) => {
-                            ctx.lang_btns.borrow_mut()[li].do_callback();
+                            let mut btn = ctx.lang_btns.borrow()[li].clone();
+                            btn.do_callback();
                             *ctx.active_nav_key.borrow_mut() = None;
+                            maybe_center_after_activate(ctx, rumble);
                         }
                         NavSel::Key(row, col) => {
+                            let shifted_pre = ctx.mod_state.borrow().is_shifted();
                             let (action, scancode) = {
                                 let ab = ctx.all_btns.borrow();
                                 (ab[row][col].1, ab[row][col].2)
@@ -410,9 +432,17 @@ pub(crate) fn process_input_events(
                             *ctx.active_nav_key.borrow_mut() = Some((scancode, key_str));
                             ctx.all_btns.borrow_mut()[row][col].0.set_color(colors.nav_sel);
                             app::redraw();
+                            let jumped = maybe_center_after_activate(ctx, rumble);
+                            if !jumped {
+                                let slug = action_audio_slug(action, *ctx.layout_idx.borrow(), shifted_pre);
+                                let fallback = if shifted_pre { action_audio_slug(action, *ctx.layout_idx.borrow(), false) } else { String::new() };
+                                ctx.narrator.borrow_mut().play_with_fallback(
+                                    &slug, &fallback,
+                                    action_tone_hz(action, &ctx.audio_mode),
+                                );
+                            }
                         }
                     }
-                    maybe_center_after_activate(ctx, rumble);
                 } else {
                     if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
                         ctx.hook.on_key_release(sc, &ks);
@@ -599,6 +629,7 @@ fn activate_direct_key(
     rumble:       bool,
 ) {
     if pressed {
+        let shifted_pre = ctx.mod_state.borrow().is_shifted();
         let btn_pos = find_btn_by_action(&ctx.all_btns.borrow(), action);
         if let Some((r, c)) = btn_pos {
             ctx.all_btns.borrow_mut()[r][c].0.set_color(ctx.colors.nav_sel);
@@ -612,7 +643,15 @@ fn activate_direct_key(
             ctx.show_text_display,
         );
         *ctx.active_nav_key.borrow_mut() = Some((scancode, key_str));
-        maybe_center_after_activate(ctx, rumble);
+        let jumped = maybe_center_after_activate(ctx, rumble);
+        if !jumped {
+            let slug = action_audio_slug(action, *ctx.layout_idx.borrow(), shifted_pre);
+            let fallback = if shifted_pre { action_audio_slug(action, *ctx.layout_idx.borrow(), false) } else { String::new() };
+            ctx.narrator.borrow_mut().play_with_fallback(
+                &slug, &fallback,
+                action_tone_hz(action, &ctx.audio_mode),
+            );
+        }
     } else {
         if let Some((r, c)) = ctx.active_btn_pressed.borrow_mut().take() {
             let restore = {
@@ -630,9 +669,11 @@ fn activate_direct_key(
 }
 
 /// If `center_after_activate` is configured, move the navigation cursor to the
-/// center key after an activation.
-fn maybe_center_after_activate(ctx: &mut InputCtx, rumble: bool) {
-    if !ctx.center_after_activate { return; }
+/// center key after an activation.  Returns `true` when the center jump
+/// occurred and the new position was narrated, `false` otherwise (the caller
+/// should then narrate the activated key itself).
+fn maybe_center_after_activate(ctx: &mut InputCtx, rumble: bool) -> bool {
+    if !ctx.center_after_activate { return false; }
     if let Some(center) = {
         let ab = ctx.all_btns.borrow();
         find_center_key(&ab, *ctx.layout_idx.borrow(), &ctx.center_key)
@@ -656,6 +697,9 @@ fn maybe_center_after_activate(ctx: &mut InputCtx, rumble: bool) {
             &ctx.narrator, &ctx.audio_mode,
             ctx.mod_state.borrow().is_shifted(),
         );
+        changed
+    } else {
+        false
     }
 }
 
