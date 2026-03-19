@@ -94,6 +94,12 @@ EOT
 
 
 su - smartkbd
+
+# this is needed for systemctl --user
+echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' >>~/.bashrc
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
+
 # build the app under smartkbd user
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 . "$HOME/.cargo/env"

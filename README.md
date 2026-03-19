@@ -18,6 +18,7 @@ compositor. [Cage](https://github.com/cage-kiosk/cage) is the
 recommended compositor, although Weston, Sway and others can also be
 used.
 
+* [Hardware requirements](HARDWARE_REQS.md)
 * [Installation instructions for Debian/Ubuntu](INSTALL.md)
 * [Configuration](CONFIGURATION.md)
 
