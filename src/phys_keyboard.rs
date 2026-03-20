@@ -131,6 +131,11 @@ pub fn setup_keyboard_handler(
     // Clone ctx for the auto-repeat timer before the event handler moves it.
     let ctx_timer = ctx.clone();
 
+    // Extract activate keys for the timer closure (before nav_keys is moved
+    // into the window handler closure).
+    let activate_key = nav_keys.activate;
+    let activate_shift_key = nav_keys.activate_shift;
+
     // false = our handler fires BEFORE FLTK routes the event to child widgets.
     win.super_handle_first(false);
     let mouse_ev = mouse_state.clone();
@@ -145,6 +150,28 @@ pub fn setup_keyboard_handler(
                 // Suppress Escape so FLTK does not close the window.
                 if k == Key::Escape {
                     return true;
+                }
+
+                // In mouse mode, sync the activate-key physical state
+                // with the mouse-button bitmask before processing the
+                // event.  FLTK sends keyboard events to the focused
+                // button widget first; `handle_mouse_mode_key` in
+                // display.rs sets the bitmask there.  However, when
+                // the user presses a direction key while holding the
+                // activate key, FLTK may deliver a spurious activate
+                // key-up (from X11 auto-repeat filtering) that clears
+                // the bitmask.  Re-syncing from `event_key_down` —
+                // which reflects the true physical key state — restores
+                // the correct bitmask so the very first movement report
+                // includes the mouse button for drag operations.
+                if *ctx.mouse_mode.borrow() {
+                    let mut mb = ctx.mouse_buttons.borrow_mut();
+                    if app::event_key_down(nav_keys.activate) {
+                        *mb |= 0x01;
+                    }
+                    if nav_keys.activate_shift.map_or(false, |ask| app::event_key_down(ask)) {
+                        *mb |= 0x02;
+                    }
                 }
 
                 let events = translate_key_event(k, true, &nav_keys);
@@ -179,6 +206,31 @@ pub fn setup_keyboard_handler(
     // gamepad / GPIO sources).
     let mouse_timer = mouse_state;
     app::add_timeout(0.016, move |handle| {
+        // Sync the physical keyboard's activate-key state with the mouse
+        // button bitmask.  FLTK's event dispatch sends Space/Enter to the
+        // focused button widget *before* the window handler, so the
+        // window-level handler never sees those keys.  The button-level
+        // `handle_mouse_mode_key` sets the bitmask, but when the user
+        // presses an arrow key while Space is held, FLTK may (on X11)
+        // deliver a spurious Space key-up as part of its auto-repeat
+        // filtering.  Checking `event_key_down` — which queries the
+        // physical key state tracked by FLTK's internal key vector —
+        // ensures the bitmask stays correct for drag operations.
+        if *ctx_timer.mouse_mode.borrow() {
+            let mut mb = ctx_timer.mouse_buttons.borrow_mut();
+            if app::event_key_down(activate_key) {
+                *mb |= 0x01;
+            } else {
+                *mb &= !0x01;
+            }
+            if let Some(ask) = activate_shift_key {
+                if app::event_key_down(ask) {
+                    *mb |= 0x02;
+                } else {
+                    *mb &= !0x02;
+                }
+            }
+        }
         crate::mouse_auto_repeat(&ctx_timer, &mut mouse_timer.borrow_mut());
         app::repeat_timeout(0.016, handle);
     });
