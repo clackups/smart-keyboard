@@ -824,7 +824,7 @@ fn main() {
         mouse_mode:            ui.mouse_mode.clone(),
         mouse_mode_ind:        ui.mouse_mode_ind.clone(),
         mouse_cfg:             cfg.mouse.clone(),
-        mouse_buttons:         Rc::new(RefCell::new(0u8)),
+        mouse_buttons:         ui.mouse_buttons.clone(),
         colors,
     };
 
