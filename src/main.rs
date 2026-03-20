@@ -600,7 +600,7 @@ pub(crate) fn process_input_events(
 ///
 /// Called once per timer tick (after [`process_input_events`]) to keep the
 /// pointer moving smoothly when a directional button is held.
-fn mouse_auto_repeat(ctx: &InputCtx, mouse: &mut MouseMoveState) {
+pub(crate) fn mouse_auto_repeat(ctx: &InputCtx, mouse: &mut MouseMoveState) {
     if mouse.dx == 0 && mouse.dy == 0 { return; }
     let now = Instant::now();
     if let Some(next) = mouse.next {
