@@ -1027,6 +1027,40 @@ pub struct UiHandles {
     pub win: Window,
 }
 
+/// Check whether a keyboard event (Space / Enter) should be intercepted in
+/// mouse mode.  If so, update the shared `mouse_buttons` bitmask and send a
+/// mouse-click report via `hook`, then return `true` (event consumed).
+///
+/// This prevents FLTK's built-in Button keyboard activation from firing a
+/// button callback (which would produce a letter instead of a mouse click).
+fn handle_mouse_mode_key(
+    ev:            Event,
+    mouse_mode:    &RefCell<bool>,
+    mouse_buttons: &RefCell<u8>,
+    hook:          &dyn crate::KeyHook,
+) -> bool {
+    if !*mouse_mode.borrow() {
+        return false;
+    }
+    match ev {
+        Event::KeyDown | Event::KeyUp => {
+            let k = app::event_key();
+            if k == Key::from_char(' ') || k == Key::Enter {
+                let pressed = ev == Event::KeyDown;
+                let btns = {
+                    let mut mb = mouse_buttons.borrow_mut();
+                    if pressed { *mb |= 0x01; } else { *mb &= !0x01; }
+                    *mb
+                };
+                hook.on_mouse_report(btns, 0, 0);
+                return true;
+            }
+        }
+        _ => {}
+    }
+    false
+}
+
 /// Build the full keyboard UI: window, widgets, event handlers.
 /// Calls `win.end()` and `win.show()` before returning.
 pub fn build_ui(p: BuildUiParams) -> UiHandles {
@@ -1343,25 +1377,7 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 let mouse_buttons_h = mouse_buttons.clone();
                 let hook_h          = Rc::clone(&hook);
                 btn.handle(move |_b, ev| {
-                    if *mouse_mode_h.borrow() {
-                        match ev {
-                            Event::KeyDown | Event::KeyUp => {
-                                let k = app::event_key();
-                                if k == Key::from_char(' ') || k == Key::Enter {
-                                    let pressed = ev == Event::KeyDown;
-                                    let btns = {
-                                        let mut mb = mouse_buttons_h.borrow_mut();
-                                        if pressed { *mb |= 0x01; } else { *mb &= !0x01; }
-                                        *mb
-                                    };
-                                    hook_h.on_mouse_report(btns, 0, 0);
-                                    return true;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    false
+                    handle_mouse_mode_key(ev, &mouse_mode_h, &mouse_buttons_h, &*hook_h)
                 });
             }
 
@@ -1489,23 +1505,8 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                     // (which would produce a letter).  Instead, send a mouse
                     // click report.  Mouse/touch Push/Released events still
                     // pass through normally.
-                    if *mouse_mode_h.borrow() {
-                        match ev {
-                            Event::KeyDown | Event::KeyUp => {
-                                let k = app::event_key();
-                                if k == Key::from_char(' ') || k == Key::Enter {
-                                    let pressed = ev == Event::KeyDown;
-                                    let btns = {
-                                        let mut mb = mouse_buttons_h.borrow_mut();
-                                        if pressed { *mb |= 0x01; } else { *mb &= !0x01; }
-                                        *mb
-                                    };
-                                    hook_c.on_mouse_report(btns, 0, 0);
-                                    return true;
-                                }
-                            }
-                            _ => {}
-                        }
+                    if handle_mouse_mode_key(ev, &mouse_mode_h, &mouse_buttons_h, &*hook_c) {
+                        return true;
                     }
                     let key_str: &str = match action {
                         Action::Regular(slot) => {
