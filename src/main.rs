@@ -144,6 +144,11 @@ pub(crate) struct InputCtx {
     mouse_mode:            Rc<RefCell<bool>>,
     mouse_mode_ind:        Frame,
     mouse_cfg:             config::MouseConfig,
+    /// Currently held mouse-button bitmask (bit 0 (0x01) = left,
+    /// bit 1 (0x02) = right).  Shared across all input sources so that a
+    /// button held by one source is included in movement reports generated
+    /// by any source.
+    mouse_buttons:         Rc<RefCell<u8>>,
     colors:                Colors,
 }
 
@@ -173,6 +178,7 @@ impl Clone for InputCtx {
             mouse_mode:            self.mouse_mode.clone(),
             mouse_mode_ind:        self.mouse_mode_ind.clone(),
             mouse_cfg:             self.mouse_cfg.clone(),
+            mouse_buttons:         self.mouse_buttons.clone(),
             colors:                self.colors,
         }
     }
@@ -265,7 +271,7 @@ pub(crate) fn process_input_events(
                     }
                     let interval = std::time::Duration::from_millis(ctx.mouse_cfg.repeat_interval);
                     mouse.next = Some(now + interval);
-                    ctx.hook.on_mouse_report(0, ddx, ddy);
+                    ctx.hook.on_mouse_report(*ctx.mouse_buttons.borrow(), ddx, ddy);
                     continue;
                 }
                 let (dr, dc) = match evt.action {
@@ -299,7 +305,8 @@ pub(crate) fn process_input_events(
             UserInputAction::Activate => {
                 // Mouse mode: left button press/release.
                 if *ctx.mouse_mode.borrow() {
-                    ctx.hook.on_mouse_report(if evt.pressed { 0x01 } else { 0x00 }, 0, 0);
+                    let btns = update_mouse_buttons(ctx, 0x01, evt.pressed);
+                    ctx.hook.on_mouse_report(btns, 0, 0);
                     continue;
                 }
                 if evt.pressed {
@@ -355,12 +362,14 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::ActivateEnter => {
+                if *ctx.mouse_mode.borrow() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Enter, 0x1c, ctx, rumble,
                 );
             }
 
             UserInputAction::ActivateSpace => {
+                if *ctx.mouse_mode.borrow() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Space, 0x39, ctx, rumble,
                 );
@@ -370,6 +379,7 @@ pub(crate) fn process_input_events(
             | UserInputAction::ActivateArrowRight
             | UserInputAction::ActivateArrowUp
             | UserInputAction::ActivateArrowDown => {
+                if *ctx.mouse_mode.borrow() { continue; }
                 let (arrow_action, arrow_sc) = match evt.action {
                     UserInputAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
                     UserInputAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
@@ -380,6 +390,7 @@ pub(crate) fn process_input_events(
             }
 
             UserInputAction::ActivateBksp => {
+                if *ctx.mouse_mode.borrow() { continue; }
                 activate_direct_key(
                     evt.pressed, Action::Backspace, 0x0e, ctx, rumble,
                 );
@@ -389,11 +400,14 @@ pub(crate) fn process_input_events(
             | UserInputAction::ActivateCtrl
             | UserInputAction::ActivateAlt
             | UserInputAction::ActivateAltGr => {
-                // Mouse mode: ActivateShift = right mouse button.
-                if *ctx.mouse_mode.borrow()
-                    && evt.action == UserInputAction::ActivateShift
-                {
-                    ctx.hook.on_mouse_report(if evt.pressed { 0x02 } else { 0x00 }, 0, 0);
+                // Mouse mode: suppress all keyboard actions.
+                // ActivateShift = right mouse button; ActivateCtrl,
+                // ActivateAlt, and ActivateAltGr are suppressed.
+                if *ctx.mouse_mode.borrow() {
+                    if evt.action == UserInputAction::ActivateShift {
+                        let btns = update_mouse_buttons(ctx, 0x02, evt.pressed);
+                        ctx.hook.on_mouse_report(btns, 0, 0);
+                    }
                     continue;
                 }
                 if evt.pressed {
@@ -483,6 +497,7 @@ pub(crate) fn process_input_events(
                 *ctx.mouse_mode.borrow_mut() = new_val;
                 if !new_val {
                     mouse.stop();
+                    *ctx.mouse_buttons.borrow_mut() = 0;
                 }
                 if new_val {
                     ctx.mouse_mode_ind.set_label_color(colors.status_ind_active_text);
@@ -585,7 +600,7 @@ pub(crate) fn process_input_events(
 ///
 /// Called once per timer tick (after [`process_input_events`]) to keep the
 /// pointer moving smoothly when a directional button is held.
-fn mouse_auto_repeat(ctx: &InputCtx, mouse: &mut MouseMoveState) {
+pub(crate) fn mouse_auto_repeat(ctx: &InputCtx, mouse: &mut MouseMoveState) {
     if mouse.dx == 0 && mouse.dy == 0 { return; }
     let now = Instant::now();
     if let Some(next) = mouse.next {
@@ -597,7 +612,7 @@ fn mouse_auto_repeat(ctx: &InputCtx, mouse: &mut MouseMoveState) {
             let delta = ((elapsed_ms.min(ramp_ms) * max_size / ramp_ms) as i8).max(1);
             let dx = if mouse.dx > 0 { delta } else if mouse.dx < 0 { -delta } else { 0i8 };
             let dy = if mouse.dy > 0 { delta } else if mouse.dy < 0 { -delta } else { 0i8 };
-            ctx.hook.on_mouse_report(0, dx, dy);
+            ctx.hook.on_mouse_report(*ctx.mouse_buttons.borrow(), dx, dy);
             let interval = std::time::Duration::from_millis(ctx.mouse_cfg.repeat_interval);
             mouse.next = Some(now + interval);
         }
@@ -617,6 +632,17 @@ fn dir_to_mouse_delta(action: UserInputAction) -> (i8, i8) {
         UserInputAction::Left  => (-1i8,  0i8),
         _                      => ( 1i8,  0i8), // Right
     }
+}
+
+/// Update the shared `mouse_buttons` bitmask and return the new value.
+///
+/// Sets the given `bit` on press and clears it on release, then returns the
+/// full bitmask so it can be forwarded to `on_mouse_report`.
+#[inline]
+fn update_mouse_buttons(ctx: &InputCtx, bit: u8, pressed: bool) -> u8 {
+    let mut mb = ctx.mouse_buttons.borrow_mut();
+    if pressed { *mb |= bit; } else { *mb &= !bit; }
+    *mb
 }
 
 /// Activate a "direct" key (Enter, Space, arrows, Backspace): highlight it,
@@ -798,6 +824,7 @@ fn main() {
         mouse_mode:            ui.mouse_mode.clone(),
         mouse_mode_ind:        ui.mouse_mode_ind.clone(),
         mouse_cfg:             cfg.mouse.clone(),
+        mouse_buttons:         ui.mouse_buttons.clone(),
         colors,
     };
 

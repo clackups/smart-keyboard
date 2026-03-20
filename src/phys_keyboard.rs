@@ -63,8 +63,13 @@ pub fn translate_key_event(
         if nav_keys.activate_altgr .map_or(false, |ak| k == ak) { return evt(UserInputAction::ActivateAltGr); }
     } else {
         // -- Release events -----------------------------------------------
-        // Only activate-style keys produce a release event; directional and
-        // toggle keys do not hold state that needs an explicit release.
+        // Directional keys need a release event so that mouse-mode
+        // auto-repeat knows when to stop moving the pointer.
+        if k == nav_keys.up    { return evt(UserInputAction::Up);    }
+        if k == nav_keys.down  { return evt(UserInputAction::Down);  }
+        if k == nav_keys.left  { return evt(UserInputAction::Left);  }
+        if k == nav_keys.right { return evt(UserInputAction::Right); }
+
         if k == nav_keys.activate {
             return evt(UserInputAction::Activate);
         }
@@ -119,8 +124,16 @@ pub fn setup_keyboard_handler(
     nav_keys: NavKeys,
     mut ctx:  InputCtx,
 ) {
+    // Persistent mouse-movement state, shared between the event handler and
+    // the auto-repeat timer via Rc<RefCell<…>>.
+    let mouse_state = std::rc::Rc::new(std::cell::RefCell::new(crate::MouseMoveState::new()));
+
+    // Clone ctx for the auto-repeat timer before the event handler moves it.
+    let ctx_timer = ctx.clone();
+
     // false = our handler fires BEFORE FLTK routes the event to child widgets.
     win.super_handle_first(false);
+    let mouse_ev = mouse_state.clone();
     win.handle(move |_w, ev| {
         let k = app::event_key();
 
@@ -140,7 +153,7 @@ pub fn setup_keyboard_handler(
                 }
 
                 // Physical keyboard has no rumble; pass rumble = false.
-                process_input_events(&events, &mut ctx, &mut crate::MouseMoveState::new(), false);
+                process_input_events(&events, &mut ctx, &mut mouse_ev.borrow_mut(), false);
                 true
             }
 
@@ -154,11 +167,27 @@ pub fn setup_keyboard_handler(
                 }
 
                 // Physical keyboard has no rumble; pass rumble = false.
-                process_input_events(&events, &mut ctx, &mut crate::MouseMoveState::new(), false);
+                process_input_events(&events, &mut ctx, &mut mouse_ev.borrow_mut(), false);
                 true
             }
 
             _ => false,
         }
+    });
+
+    // Auto-repeat timer for mouse-mode movement (same 60 Hz rate as
+    // gamepad / GPIO sources).
+    //
+    // Mouse-button state (`mouse_buttons` bitmask) is NOT managed here.
+    // It is maintained by `process_input_events` (Activate / ActivateShift
+    // press / release events) and by `handle_mouse_mode_key` in display.rs
+    // (Space / Enter on focused FLTK button widgets).  The bitmask is
+    // shared across all input sources, so only the event-driven paths
+    // should write to it — a timer-based overwrite would clobber state
+    // set by the gamepad or GPIO source.
+    let mouse_timer = mouse_state;
+    app::add_timeout(0.016, move |handle| {
+        crate::mouse_auto_repeat(&ctx_timer, &mut mouse_timer.borrow_mut());
+        app::repeat_timeout(0.016, handle);
     });
 }
