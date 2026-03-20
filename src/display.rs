@@ -1381,7 +1381,12 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 });
             }
 
+            let mouse_mode_cb = mouse_mode.clone();
             btn.set_callback(move |_| {
+                // In mouse mode, suppress all keyboard actions from the
+                // callback — mouse-click events are already handled by
+                // handle_mouse_mode_key in the handle() closure above.
+                if *mouse_mode_cb.borrow() { return; }
                 // Execute the language switch.
                 *layout_idx_c.borrow_mut() = li;
                 for (j, lb) in lang_btns_c.borrow_mut().iter_mut().enumerate() {
@@ -1539,7 +1544,12 @@ pub fn build_ui(p: BuildUiParams) -> UiHandles {
                 let center_key_c          = cfg.navigate.center_key.clone();
                 let action                = phys.action;
                 let scancode              = phys.scancode;
+                let mouse_mode_cb         = mouse_mode.clone();
                 btn.set_callback(move |_| {
+                    // In mouse mode, suppress all keyboard actions from the
+                    // callback — mouse-click events are already handled by
+                    // handle_mouse_mode_key in the handle() closure above.
+                    if *mouse_mode_cb.borrow() { return; }
                     // Capture shift state BEFORE execute_action, which releases
                     // sticky modifiers (including Shift) for non-modifier keys.
                     let shifted_pre = mod_state_c.borrow().is_shifted();
