@@ -734,6 +734,7 @@ impl SmartKeyboard {
 
         for (ri, btn_row) in self.all_btns.iter().enumerate() {
             let mut r = row![].spacing(metrics.gap as f32);
+            let mut total_cols: u16 = 0;
 
             for (ci, btn_data) in btn_row.iter().enumerate() {
                 let action = btn_data.action;
@@ -746,10 +747,17 @@ impl SmartKeyboard {
                 // separator).
                 for _ in 0..btn_data.spacers_before {
                     r = r.push(Space::new().width(Length::FillPortion(1)));
+                    total_cols += 1;
                 }
 
-                // Compute fill-portion: space bar spans ~6 standard key widths.
-                let portion = ((btn_data.w + metrics.key_w / 2) / metrics.key_w).max(1) as u16;
+                // Ortholinear: all standard keys get portion 1; space bar
+                // spans SPACE_COLS columns so columns align across rows.
+                let portion = if action == Action::Space {
+                    keyboards::SPACE_COLS
+                } else {
+                    1u16
+                };
+                total_cols += portion;
 
                 // Determine background color
                 let bg = if is_selected || is_active_pressed {
@@ -765,15 +773,18 @@ impl SmartKeyboard {
                     _ => colors.key_label_mod,
                 };
 
-                // Build button content: for number/punctuation keys that have a
-                // shifted variant (label_shifted non-empty), show both symbols
-                // stacked vertically ("!\n1").  For single-char letter keys, use
-                // the bigger font size.
+                // Build button content.
+                //
+                // Two font sizes for efficient surface use:
+                //   big_lbl_size — single-row labels (letters, modifiers,
+                //                  function keys, arrows)
+                //   lbl_size     — two-row labels (number / punctuation keys
+                //                  with a shifted variant)
                 let btn_content: Element<'_, Message> = match action {
                     Action::Regular(n) if self.layout_idx < layouts.len() => {
                         let key = &layouts[self.layout_idx].keys[n];
                         if !key.label_shifted.is_empty() {
-                            // Number / punctuation key: two-line label
+                            // Number / punctuation key: two-line label (smaller)
                             let top = text(key.label_shifted.clone())
                                 .size(lbl_size)
                                 .color(label_color)
@@ -787,15 +798,14 @@ impl SmartKeyboard {
                                 .width(Length::Fill)
                                 .into()
                         } else {
-                            // Letter key: single char, big label
+                            // Letter key: single line, big label
                             let lbl = if self.mod_state.caps {
                                 key.label_unshifted.to_uppercase()
                             } else {
                                 key.label_unshifted.clone()
                             };
-                            let sz = if lbl.chars().count() == 1 { big_lbl_size } else { lbl_size };
                             text(lbl)
-                                .size(sz)
+                                .size(big_lbl_size)
                                 .color(label_color)
                                 .align_x(iced::alignment::Horizontal::Center)
                                 .width(Length::Fill)
@@ -806,9 +816,10 @@ impl SmartKeyboard {
                         Space::new().into()
                     }
                     other => {
+                        // Modifier / function / arrow key: single line, big label
                         let lbl = keyboards::special_label(other).to_string();
                         text(lbl)
-                            .size(lbl_size)
+                            .size(big_lbl_size)
                             .color(label_color)
                             .align_x(iced::alignment::Horizontal::Center)
                             .width(Length::Fill)
@@ -832,6 +843,12 @@ impl SmartKeyboard {
                 });
 
                 r = r.push(btn);
+            }
+
+            // Pad row with trailing spacers to reach GRID_COLS so every
+            // row occupies the same total column count (ortholinear grid).
+            for _ in 0..keyboards::GRID_COLS.saturating_sub(total_cols) {
+                r = r.push(Space::new().width(Length::FillPortion(1)));
             }
 
             grid = grid.push(r);
@@ -954,6 +971,7 @@ impl SmartKeyboard {
                     if self.mouse_mode {
                         let (ddx, ddy) = dir_to_mouse_delta(evt.action);
                         let interval = Duration::from_millis(self.mouse_cfg.repeat_interval);
+                        self.sync_mouse_buttons();
                         let mouse_buttons = self.mouse_buttons;
                         let mouse = self.mouse_state_for(source);
                         if ddx != 0 { mouse.dx = ddx; }
@@ -1219,6 +1237,11 @@ impl SmartKeyboard {
 
     /// Handle a button click from the GUI.
     fn handle_button_click(&mut self, row: usize, col: usize) {
+        // In mouse mode, button activations are handled via the Activate
+        // action in process_input_events; ignore widget-level clicks so we
+        // don't send spurious keyboard HID reports.
+        if self.mouse_mode { return; }
+
         // Move selection to the clicked button.
         let _ = nav_set(&mut self.sel, NavSel::Key(row, col));
 
@@ -1252,6 +1275,8 @@ impl SmartKeyboard {
 
     /// Handle a language button click.
     fn handle_lang_click(&mut self, li: usize) {
+        if self.mouse_mode { return; }
+
         let layouts = keyboards::get_layouts();
         if li >= layouts.len() { return; }
 
@@ -1287,8 +1312,28 @@ impl SmartKeyboard {
         self.mouse_buttons
     }
 
+    /// Synchronise `mouse_buttons` bitmask from `pressed_keys`.
+    ///
+    /// Polls the pressed-key set to ensure the left-click and right-click
+    /// bits accurately reflect whether the activate / activate_shift keys
+    /// are physically held.  Called in the auto-repeat timer and before
+    /// sending direction-key mouse reports to overcome event ordering
+    /// issues (e.g. iced widget captures preventing timely delivery).
+    fn sync_mouse_buttons(&mut self) {
+        if !self.mouse_mode { return; }
+        // Left button ↔ activate key
+        let left_down = self.pressed_keys.contains(&self.nav_keys.activate);
+        if left_down { self.mouse_buttons |= 0x01; } else { self.mouse_buttons &= !0x01; }
+        // Right button ↔ activate_shift key
+        if let Some(sc) = self.nav_keys.activate_shift {
+            let right_down = self.pressed_keys.contains(&sc);
+            if right_down { self.mouse_buttons |= 0x02; } else { self.mouse_buttons &= !0x02; }
+        }
+    }
+
     fn do_mouse_auto_repeat(&mut self, source: InputSource) {
         let mouse_cfg = self.mouse_cfg.clone();
+        self.sync_mouse_buttons();
         let mouse_buttons = self.mouse_buttons;
         let mouse = self.mouse_state_for(source);
         if mouse.dx == 0 && mouse.dy == 0 { return; }
