@@ -160,9 +160,11 @@ const MENU_ITEM_DISCONNECT_BLE: usize = 1;
 const MENU_ITEM_EXIT: usize = 2;
 const MENU_ITEM_COUNT: usize = 3;
 
-// Well-known scancodes for menu navigation (fallbacks).
+// Well-known scancodes for menu navigation (fallbacks when not overridden by config).
 const SC_ENTER: u32 = 28;
 const SC_ESC: u32 = 1;
+const SC_ARROW_UP: u32 = 103;
+const SC_ARROW_DOWN: u32 = 108;
 
 // =============================================================================
 // Configuration editor state
@@ -495,7 +497,7 @@ impl SmartKeyboard {
 
                 let events =
                     phys_keyboard::translate_key_event(sc, true, &self.nav_keys);
-                self.process_input_events(&events, InputSource::Keyboard);
+                return self.process_input_events(&events, InputSource::Keyboard);
             }
 
             Message::KeyReleased(sc) => {
@@ -508,23 +510,27 @@ impl SmartKeyboard {
 
                 let events =
                     phys_keyboard::translate_key_event(sc, false, &self.nav_keys);
-                self.process_input_events(&events, InputSource::Keyboard);
+                return self.process_input_events(&events, InputSource::Keyboard);
             }
 
             Message::PollTick => {
+                let mut tasks = Vec::new();
                 // Poll gamepad
                 if self.gp_cfg.is_some() {
-                    self.poll_gamepad();
+                    tasks.push(self.poll_gamepad());
                 }
                 // Poll GPIO
                 if self.gpio_cfg.is_some() {
-                    self.poll_gpio();
+                    tasks.push(self.poll_gpio());
                 }
                 // Mouse auto-repeat for all sources (only when not in menu)
                 if !self.showing_menu && self.config_editor.is_none() {
                     self.do_mouse_auto_repeat(InputSource::Keyboard);
                     self.do_mouse_auto_repeat(InputSource::Gamepad);
                     self.do_mouse_auto_repeat(InputSource::Gpio);
+                }
+                if !tasks.is_empty() {
+                    return Task::batch(tasks);
                 }
             }
 
@@ -563,7 +569,7 @@ impl SmartKeyboard {
             }
 
             Message::MenuExitApp => {
-                std::process::exit(0);
+                return iced::exit();
             }
 
             Message::MenuOpenConfig => {
@@ -1248,8 +1254,8 @@ impl SmartKeyboard {
 
     /// Handle a physical key-press while the main menu is showing.
     fn handle_menu_key_press(&mut self, sc: u32) -> Task<Message> {
-        let is_up   = sc == self.nav_keys.up   || sc == 103;
-        let is_down = sc == self.nav_keys.down  || sc == 108;
+        let is_up   = sc == self.nav_keys.up   || sc == SC_ARROW_UP;
+        let is_down = sc == self.nav_keys.down  || sc == SC_ARROW_DOWN;
         let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
         let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
 
@@ -1272,17 +1278,26 @@ impl SmartKeyboard {
     fn activate_menu_item(&mut self) -> Task<Message> {
         match self.menu_sel {
             MENU_ITEM_CONFIGURATION => {
-                self.update(Message::MenuOpenConfig)
+                let pairs = menu::load_config_pairs();
+                self.config_editor = Some(ConfigEditorState {
+                    pairs,
+                    sel: 0,
+                    editing: false,
+                });
+                Task::none()
             }
             MENU_ITEM_DISCONNECT_BLE => {
                 if self.ble_can_disconnect() {
-                    self.update(Message::MenuDisconnectBle)
-                } else {
-                    Task::none()
+                    if let Some(ref rc) = self.ble_conn {
+                        rc.borrow_mut().send_disconnect();
+                        self.ble_state = BleState::Disconnected;
+                    }
+                    self.showing_menu = false;
                 }
+                Task::none()
             }
             MENU_ITEM_EXIT => {
-                self.update(Message::MenuExitApp)
+                iced::exit()
             }
             _ => Task::none(),
         }
@@ -1291,8 +1306,8 @@ impl SmartKeyboard {
     /// Handle a physical key-press while the config editor is showing
     /// (but not editing a text field).
     fn handle_config_key_press(&mut self, sc: u32) -> Task<Message> {
-        let is_up   = sc == self.nav_keys.up   || sc == 103;
-        let is_down = sc == self.nav_keys.down  || sc == 108;
+        let is_up   = sc == self.nav_keys.up   || sc == SC_ARROW_UP;
+        let is_down = sc == self.nav_keys.down  || sc == SC_ARROW_DOWN;
         let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
         let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
 
@@ -1323,7 +1338,7 @@ impl SmartKeyboard {
     /// Handle gamepad/GPIO events while the main menu or config editor is
     /// showing.  Translates directional + activate + menu actions to
     /// menu/config navigation.
-    fn process_overlay_input_events(&mut self, events: &[UserInputEvent]) {
+    fn process_overlay_input_events(&mut self, events: &[UserInputEvent]) -> Task<Message> {
         for evt in events {
             if !evt.pressed { continue; }
 
@@ -1357,7 +1372,7 @@ impl SmartKeyboard {
                         }
                     }
                     UserInputAction::Activate => {
-                        let _ = self.activate_menu_item();
+                        return self.activate_menu_item();
                     }
                     UserInputAction::Menu => {
                         self.showing_menu = false;
@@ -1366,17 +1381,17 @@ impl SmartKeyboard {
                 }
             }
         }
+        Task::none()
     }
 
     // =========================================================================
     // Input event processing (replaces old process_input_events + InputCtx)
     // =========================================================================
 
-    fn process_input_events(&mut self, events: &[UserInputEvent], source: InputSource) {
+    fn process_input_events(&mut self, events: &[UserInputEvent], source: InputSource) -> Task<Message> {
         // Redirect gamepad/GPIO events when the menu or config editor is open.
         if self.showing_menu || self.config_editor.is_some() {
-            self.process_overlay_input_events(events);
-            return;
+            return self.process_overlay_input_events(events);
         }
 
         let rumble = matches!(source, InputSource::Gamepad) && self.gp_rumble;
@@ -1568,6 +1583,7 @@ impl SmartKeyboard {
                 }
             }
         }
+        Task::none()
     }
 
     // =========================================================================
@@ -1806,10 +1822,10 @@ impl SmartKeyboard {
     // Gamepad / GPIO polling
     // =========================================================================
 
-    fn poll_gamepad(&mut self) {
+    fn poll_gamepad(&mut self) -> Task<Message> {
         let gp_cfg = match &self.gp_cfg {
             Some(cfg) => cfg.clone(),
-            None => return,
+            None => return Task::none(),
         };
 
         // Try reconnect if disconnected.
@@ -1819,7 +1835,7 @@ impl SmartKeyboard {
                 self.gp_cell = Some(gp);
                 self.gp_connected = true;
             }
-            return;
+            return Task::none();
         }
 
         let mut evt_buf: Vec<UserInputEvent> = Vec::new();
@@ -1829,16 +1845,16 @@ impl SmartKeyboard {
             eprintln!("[gamepad] disconnected");
             self.gp_cell = None;
             self.gp_connected = false;
-            return;
+            return Task::none();
         }
 
-        self.process_input_events(&evt_buf, InputSource::Gamepad);
+        self.process_input_events(&evt_buf, InputSource::Gamepad)
     }
 
-    fn poll_gpio(&mut self) {
+    fn poll_gpio(&mut self) -> Task<Message> {
         let gpio_cfg = match &self.gpio_cfg {
             Some(cfg) => cfg.clone(),
-            None => return,
+            None => return Task::none(),
         };
 
         // Try open if not yet available.
@@ -1848,13 +1864,13 @@ impl SmartKeyboard {
                 self.gpio_cell = Some(gpio);
                 self.gpio_connected = true;
             }
-            return;
+            return Task::none();
         }
 
         let mut evt_buf: Vec<UserInputEvent> = Vec::new();
         self.gpio_cell.as_mut().unwrap().poll(&mut evt_buf);
 
-        self.process_input_events(&evt_buf, InputSource::Gpio);
+        self.process_input_events(&evt_buf, InputSource::Gpio)
     }
 
     // =========================================================================
