@@ -15,7 +15,7 @@ insert_shifted = "!"
 [[keys]]
 label_unshifted = "2"
 insert_unshifted = "2"
-label_shifted = "@@"
+label_shifted = "@"
 insert_shifted = "@"
 
 [[keys]]
@@ -45,7 +45,7 @@ insert_shifted = "^"
 [[keys]]
 label_unshifted = "7"
 insert_unshifted = "7"
-label_shifted = "&&"
+label_shifted = "&"
 insert_shifted = "&"
 
 [[keys]]
