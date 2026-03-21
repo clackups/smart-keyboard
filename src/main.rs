@@ -1549,11 +1549,12 @@ impl SmartKeyboard {
             if idx >= ce.pairs.len() { return Task::none(); }
             let key = ce.pairs[idx].0.clone();
             if let Some(opts) = menu::field_options(&key) {
+                if opts.is_empty() { return Task::none(); }
                 let cur = &ce.pairs[idx].1;
                 let cur_pos = opts.iter().position(|o| *o == cur);
                 let next = if backward {
                     match cur_pos {
-                        Some(0) | None => opts.len().saturating_sub(1),
+                        Some(0) | None => opts.len() - 1,
                         Some(p) => p - 1,
                     }
                 } else {
