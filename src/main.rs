@@ -485,7 +485,7 @@ impl SmartKeyboard {
                             ce.editing = false;
                         }
                     }
-                    // Ctrl+S → Save & Restart even while editing.
+                    // Ctrl+S -> Save & Restart even while editing.
                     let ctrl_held = self.pressed_keys.contains(&SC_LCTRL)
                         || self.pressed_keys.contains(&SC_RCTRL);
                     if ctrl_held && sc == SC_S {
@@ -611,7 +611,7 @@ impl SmartKeyboard {
                         .collect();
                     match menu::build_toml_and_save(&pairs) {
                         Ok(()) => {
-                            eprintln!("[menu] config saved, restarting…");
+                            eprintln!("[menu] config saved, restarting...");
                             menu::restart_application();
                         }
                         Err(e) => {
@@ -1043,7 +1043,7 @@ impl SmartKeyboard {
             .size(28)
             .color(Color::WHITE);
 
-        let items: [(& str, Message, bool); MENU_ITEM_COUNT] = [
+        let items: [(&str, Message, bool); MENU_ITEM_COUNT] = [
             ("Configuration",    Message::MenuOpenConfig,     true),
             ("Disconnect BLE",   Message::MenuDisconnectBle,  self.ble_can_disconnect()),
             ("Exit Application", Message::MenuExitApp,        true),
@@ -1333,7 +1333,7 @@ impl SmartKeyboard {
         let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
         let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
 
-        // Ctrl+S → Save & Restart.
+        // Ctrl+S -> Save & Restart.
         let ctrl_held = self.pressed_keys.contains(&SC_LCTRL)
             || self.pressed_keys.contains(&SC_RCTRL);
         if ctrl_held && sc == SC_S {
@@ -1368,8 +1368,8 @@ impl SmartKeyboard {
     /// selected item is visible.
     fn config_scroll_to_sel(&self) -> Task<Message> {
         if let Some(ref ce) = self.config_editor {
-            let total = ce.pairs.len().max(1);
-            let frac = ce.sel as f32 / total as f32;
+            let last = ce.pairs.len().saturating_sub(1).max(1);
+            let frac = ce.sel as f32 / last as f32;
             return widget::operation::snap_to(
                 widget::Id::from("cfg-scroll"),
                 scrollable::RelativeOffset { x: 0.0, y: frac },

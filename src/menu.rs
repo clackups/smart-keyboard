@@ -64,9 +64,14 @@ fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
                         Some(i) => &key[i+1..],
                         None => *key,
                     };
-                    let formatted = format_toml_value(key, val);
-                    out.push_str(&format!("{} = {}\n", field, formatted));
                     written_keys.insert(*key);
+                    if val.is_empty() {
+                        // Empty -> comment out so serde uses the default.
+                        out.push_str(&format!("# {} = null\n", field));
+                    } else {
+                        let formatted = format_toml_value(key, val);
+                        out.push_str(&format!("{} = {}\n", field, formatted));
+                    }
                 }
             }
         };
@@ -97,8 +102,13 @@ fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
 
                 if let Some(new_val) = updates.get(dotted.as_str()) {
                     written_keys.insert(updates.keys().find(|k| **k == dotted.as_str()).copied().unwrap_or(""));
-                    let formatted = format_toml_value(&dotted, new_val);
-                    out.push_str(&format!("{} = {}\n", raw_key, formatted));
+                    if new_val.is_empty() {
+                        // Empty -> comment out so serde uses the default.
+                        out.push_str(&format!("# {} = null\n", raw_key));
+                    } else {
+                        let formatted = format_toml_value(&dotted, new_val);
+                        out.push_str(&format!("{} = {}\n", raw_key, formatted));
+                    }
                     continue;
                 }
             }
@@ -118,11 +128,18 @@ fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
             Some(i) => (&key[..i], &key[i+1..]),
             None => ("", *key),
         };
-        let formatted = format_toml_value(key, val);
-        let line = format!("{} = {}", field, formatted);
-        pending_sections.entry(section.to_string())
-            .or_default()
-            .push(line);
+        if val.is_empty() {
+            let line = format!("# {} = null", field);
+            pending_sections.entry(section.to_string())
+                .or_default()
+                .push(line);
+        } else {
+            let formatted = format_toml_value(key, val);
+            let line = format!("{} = {}", field, formatted);
+            pending_sections.entry(section.to_string())
+                .or_default()
+                .push(line);
+        }
     }
     for (section, lines) in &pending_sections {
         if !section.is_empty() {
@@ -137,8 +154,13 @@ fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
     out
 }
 
-/// Format a value for TOML output based on the key name.
+/// Format a non-empty value for TOML output based on the key name.
+///
+/// Empty values are handled by `build_toml_text` (commented out as null)
+/// and should not reach this function.
 fn format_toml_value(key: &str, val: &str) -> String {
+    debug_assert!(!val.is_empty(), "format_toml_value called with empty value for {}", key);
+
     if val == "true" || val == "false" {
         return val.to_string();
     }
@@ -155,6 +177,7 @@ fn format_toml_value(key: &str, val: &str) -> String {
         return val.to_string();
     }
 
+    // ui.active_keymaps -> ["item1", "item2", ...]
     if key == "ui.active_keymaps" {
         let items: Vec<String> = val.split(',')
             .map(|s| format!("\"{}\"", s.trim()))
@@ -162,10 +185,48 @@ fn format_toml_value(key: &str, val: &str) -> String {
         return format!("[{}]", items.join(", "));
     }
 
-    if val.is_empty() {
-        return "\"\"".to_string();
+    // keymap.*.switch_scancode -> [0x03, 0x1e, ...]
+    if key.ends_with(".switch_scancode") {
+        return format_int_array(val);
     }
 
+    // axis_navigate_horizontal / axis_navigate_vertical -> [int, "string"] or int
+    if key.ends_with(".axis_navigate_horizontal") || key.ends_with(".axis_navigate_vertical") {
+        return format_axis_config(val);
+    }
+
+    format!("\"{}\"", val)
+}
+
+/// Format a comma-separated list of integers as a TOML array.
+///
+/// Each element is written in its original notation (hex if prefixed with
+/// `0x`, decimal otherwise).  Example: `"0x03, 0x1e"` -> `[0x03, 0x1e]`.
+fn format_int_array(val: &str) -> String {
+    let items: Vec<&str> = val.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if items.is_empty() {
+        return "[]".to_string();
+    }
+    format!("[{}]", items.join(", "))
+}
+
+/// Format an axis configuration value.
+///
+/// Accepts:
+///   - `"0, normal"` -> `[0, "normal"]`
+///   - `"1, inverted"` -> `[1, "inverted"]`
+///   - `"0"` (plain integer) -> `0`
+fn format_axis_config(val: &str) -> String {
+    let parts: Vec<&str> = val.split(',').map(|s| s.trim()).collect();
+    if parts.len() >= 2 {
+        let axis = parts[0];
+        let dir = parts[1];
+        return format!("[{}, \"{}\"]", axis, dir);
+    }
+    // Plain integer
+    if let Some(_) = parse_int_relaxed(val) {
+        return val.to_string();
+    }
     format!("\"{}\"", val)
 }
 
@@ -416,5 +477,87 @@ device = \"auto\"
             .filter(|l| l.trim() == "[input.gamepad]")
             .count();
         assert_eq!(count, 1, "Duplicate section headers:\n{}", result);
+    }
+
+    /// Empty values must be written as `# key = null` (commented out) so
+    /// that the TOML parser treats them as absent keys and serde applies
+    /// defaults.  Writing them as `key = ""` would fail for non-String types.
+    #[test]
+    fn empty_values_become_null_comments() {
+        let existing = "\
+[input.keyboard]
+navigate_up = 103
+activate_shift = 42
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("input.keyboard.navigate_up",     "103".into()),
+            ("input.keyboard.activate_shift",  "".into()),    // user cleared it
+            ("input.keyboard.mouse_toggle",    "".into()),    // new empty key
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        assert!(result.contains("navigate_up = 103"),
+            "navigate_up missing:\n{}", result);
+        assert!(result.contains("# activate_shift = null"),
+            "activate_shift should be commented out:\n{}", result);
+        assert!(!result.contains("activate_shift = \"\""),
+            "activate_shift should NOT be an empty string:\n{}", result);
+        assert!(result.contains("# mouse_toggle = null"),
+            "mouse_toggle should be commented out:\n{}", result);
+    }
+
+    /// Array-typed values must round-trip correctly:
+    /// switch_scancode, active_keymaps, axis configs.
+    #[test]
+    fn array_values_round_trip() {
+        let existing = "\
+[keymap.us]
+switch_scancode = [0x03, 0x1e]
+
+[ui]
+active_keymaps = [\"us\", \"ua\"]
+
+[input.gamepad]
+enabled = true
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("keymap.us.switch_scancode",  "0x03, 0x1e".into()),
+            ("ui.active_keymaps",          "us, ua, de".into()),
+            ("input.gamepad.enabled",      "true".into()),
+            ("input.gamepad.axis_navigate_horizontal", "0, normal".into()),
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        assert!(result.contains("switch_scancode = [0x03, 0x1e]"),
+            "switch_scancode format wrong:\n{}", result);
+        assert!(result.contains("active_keymaps = [\"us\", \"ua\", \"de\"]"),
+            "active_keymaps format wrong:\n{}", result);
+        assert!(result.contains("axis_navigate_horizontal = [0, \"normal\"]"),
+            "axis config format wrong:\n{}", result);
+    }
+
+    /// The saved TOML text must be parseable by `config::Config`.
+    /// This simulates the full round-trip: load pairs -> edit -> save -> parse.
+    #[test]
+    fn saved_config_is_parseable() {
+        let existing = std::fs::read_to_string("config.toml")
+            .expect("config.toml should exist in the repo root");
+
+        // Simulate what the config editor does: load all pairs, then save.
+        let pairs = load_config_pairs();
+        let save_pairs: Vec<(&str, String)> = pairs.iter()
+            .map(|(k, v)| (k.as_str(), v.clone()))
+            .collect();
+        let result = build_toml_text(&existing, &save_pairs);
+
+        // The saved text must be valid TOML parseable by our Config struct.
+        let processed = crate::config::strip_null_values(&result);
+        let parsed: Result<crate::config::Config, _> = toml::from_str(processed.as_ref());
+        match parsed {
+            Ok(_) => {},
+            Err(e) => panic!(
+                "Saved config failed to parse: {}\n\nSaved text:\n{}",
+                e, result),
+        }
     }
 }
