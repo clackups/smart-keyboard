@@ -190,10 +190,10 @@ impl Clone for InputCtx {
 /// mouse-movement state so that simultaneous use of two sources does not
 /// interfere.
 pub(crate) struct MouseMoveState {
-    dx:    i8,
-    dy:    i8,
-    start: Option<Instant>,
-    next:  Option<Instant>,
+    pub(crate) dx:    i8,
+    pub(crate) dy:    i8,
+    pub(crate) start: Option<Instant>,
+    pub(crate) next:  Option<Instant>,
 }
 
 impl MouseMoveState {
