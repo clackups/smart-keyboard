@@ -78,6 +78,9 @@ pub struct BtnData {
     pub base_color: Color,
     pub x:          i32,
     pub w:          i32,
+    /// Number of invisible spacer columns that precede this button in the row.
+    /// Used by the iced view to insert FillPortion gaps.
+    pub spacers_before: u16,
 }
 
 /// Data for a language-toggle button, without any widget reference.
@@ -966,12 +969,14 @@ pub fn build_btn_grid(metrics: &LayoutMetrics, colors: &Colors) -> Vec<Vec<BtnDa
     for row in KEYS.iter() {
         let mut x = metrics.pad_left;
         let mut btn_row: Vec<BtnData> = Vec::new();
+        let mut pending_spacers: u16 = 0;
 
         for phys in row.iter() {
             let w = px(phys.kw);
 
             if matches!(phys.kw, KW::Spacer) {
                 x += w + metrics.gap;
+                pending_spacers += 1;
                 continue;
             }
 
@@ -986,7 +991,9 @@ pub fn build_btn_grid(metrics: &LayoutMetrics, colors: &Colors) -> Vec<Vec<BtnDa
                 base_color,
                 x,
                 w,
+                spacers_before: pending_spacers,
             });
+            pending_spacers = 0;
             x += w + metrics.gap;
         }
         grid.push(btn_row);

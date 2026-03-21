@@ -9,7 +9,9 @@ mod output;
 mod phys_keyboard;
 mod user_input;
 
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use iced::widget::{button, column, container, row, text, Space};
@@ -215,8 +217,8 @@ struct SmartKeyboard {
     gpio_cell: Option<GpioInput>,
     gpio_cfg: Option<config::GpioInputConfig>,
 
-    // BLE
-    ble_conn: Option<output::BleConnection>,
+    // BLE – shared with BleKeyHook so both use the same serial connection
+    ble_conn: Option<Rc<RefCell<output::BleConnection>>>,
     ble_state: BleState,
 
     // Keyboard physical key tracking
@@ -273,7 +275,7 @@ impl SmartKeyboard {
         let narrator = Narrator::new(cfg.output.audio.clone());
         let audio_mode = cfg.output.audio.clone();
 
-        let mut ble_conn_opt: Option<output::BleConnection> = None;
+        let mut ble_conn_opt: Option<Rc<RefCell<output::BleConnection>>> = None;
         let hook: Box<dyn KeyHook> = match cfg.output.mode {
             config::OutputMode::Print => Box::new(output::PrintKeyHook),
             config::OutputMode::Ble => {
@@ -285,20 +287,9 @@ impl SmartKeyboard {
                     ble_cfg.key_release_delay,
                     ble_cfg.lang_switch_release_delay,
                 );
-                // Extract the BleConnection from the Rc<RefCell<>> for our state.
-                // We take it out here; the BleKeyHook keeps its own Rc clone.
-                ble_conn_opt = Some(
-                    std::rc::Rc::try_unwrap(ble_conn)
-                        .ok()
-                        .map(|rc| rc.into_inner())
-                        .unwrap_or_else(|| {
-                            output::BleConnection::new(
-                                ble_cfg.vid,
-                                ble_cfg.pid,
-                                ble_cfg.serial.clone(),
-                            )
-                        }),
-                );
+                // Keep the shared Rc so manage_ble_connection() operates on
+                // the same BleConnection instance the hook uses for output.
+                ble_conn_opt = Some(ble_conn);
                 Box::new(ble_hook)
             }
         };
@@ -541,7 +532,6 @@ impl SmartKeyboard {
 
                 let label_color = colors.lang_btn_label;
                 let label = lang.name.clone();
-                let w = lang.w as f32;
                 let h = metrics.lang_btn_h as f32;
                 let lbl_size = metrics.lbl_size as f32;
 
@@ -549,7 +539,7 @@ impl SmartKeyboard {
                     text(label).size(lbl_size).color(label_color)
                         .align_x(iced::alignment::Horizontal::Center)
                 )
-                .width(Length::Fixed(w))
+                .width(Length::Fill)
                 .height(Length::Fixed(h))
                 .on_press(Message::LangClicked(li))
                 .style(move |_theme: &iced::Theme, _status| button::Style {
@@ -736,7 +726,6 @@ impl SmartKeyboard {
     fn view_keyboard_grid(&self) -> Element<'_, Message> {
         let colors = self.colors;
         let metrics = &self.metrics;
-        let key_h = metrics.key_h as f32;
         let lbl_size = metrics.lbl_size as f32;
         let big_lbl_size = metrics.big_lbl_size as f32;
         let layouts = keyboards::get_layouts();
@@ -747,11 +736,20 @@ impl SmartKeyboard {
             let mut r = row![].spacing(metrics.gap as f32);
 
             for (ci, btn_data) in btn_row.iter().enumerate() {
-                let w = btn_data.w as f32;
                 let action = btn_data.action;
                 let is_selected = self.sel == NavSel::Key(ri, ci);
                 let is_active_pressed =
                     self.active_btn_pressed == Some((ri, ci));
+
+                // Insert invisible spacer(s) to maintain the visual gap where
+                // Spacer slots exist in the physical layout (e.g. arrow cluster
+                // separator).
+                for _ in 0..btn_data.spacers_before {
+                    r = r.push(Space::new().width(Length::FillPortion(1)));
+                }
+
+                // Compute fill-portion: space bar spans ~6 standard key widths.
+                let portion = ((btn_data.w + metrics.key_w / 2) / metrics.key_w).max(1) as u16;
 
                 // Determine background color
                 let bg = if is_selected || is_active_pressed {
@@ -819,8 +817,8 @@ impl SmartKeyboard {
                 };
 
                 let btn = button(btn_content)
-                .width(Length::Fixed(w))
-                .height(Length::Fixed(key_h))
+                .width(Length::FillPortion(portion))
+                .height(Length::Fill)
                 .on_press(Message::ButtonClicked(ri, ci))
                 .style(move |_theme: &iced::Theme, _status| button::Style {
                     background: Some(iced::Background::Color(bg)),
@@ -841,6 +839,7 @@ impl SmartKeyboard {
 
         container(grid)
             .width(Length::Fill)
+            .height(Length::Fill)
             .padding([0, metrics.pad as u16])
             .into()
     }
@@ -1371,10 +1370,11 @@ impl SmartKeyboard {
     // =========================================================================
 
     fn manage_ble_connection(&mut self) {
-        let conn = match self.ble_conn.as_mut() {
+        let rc = match self.ble_conn.as_ref() {
             Some(c) => c,
             None => return,
         };
+        let conn = &mut *rc.borrow_mut();
 
         if !conn.is_connected() {
             if conn.try_connect() {
