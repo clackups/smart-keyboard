@@ -8,7 +8,7 @@ name = "smart-keyboard"
 path = "src/main.rs"
 
 [dependencies]
-fltk2 = "0.1.7"
+iced = "0.14"
 gpio-cdev = "0.6"
 libc = "0.2.183"
 serde = { version = "1", features = ["derive"] }

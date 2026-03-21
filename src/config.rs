@@ -9,7 +9,6 @@ use std::env;
 use std::fmt;
 use std::fs;
 
-use fltk::enums::Key;
 use serde::Deserialize;
 
 // =============================================================================
@@ -139,14 +138,13 @@ impl<'de> serde::Deserialize<'de> for AxisConfig {
     }
 }
 
-// FLTK key code constants (X11 KeySym values) used as defaults.
-// These match the values returned by `fltk::app::event_key().bits()`.
-const FLTK_KEY_UP:    i32 = 0xff52;
-const FLTK_KEY_DOWN:  i32 = 0xff54;
-const FLTK_KEY_LEFT:  i32 = 0xff51;
-const FLTK_KEY_RIGHT: i32 = 0xff53;
-const FLTK_KEY_SPACE: i32 = 0x20;
-const FLTK_KEY_M:     i32 = 0x6d;
+// Linux evdev scancode constants (linux/input-event-codes.h) used as defaults.
+const EVDEV_KEY_UP:    u32 = 103;
+const EVDEV_KEY_DOWN:  u32 = 108;
+const EVDEV_KEY_LEFT:  u32 = 105;
+const EVDEV_KEY_RIGHT: u32 = 106;
+const EVDEV_KEY_SPACE: u32 = 57;
+const EVDEV_KEY_M:     u32 = 50;
 
 // =============================================================================
 // TOML-deserializable structs
@@ -154,68 +152,68 @@ const FLTK_KEY_M:     i32 = 0x6d;
 
 #[derive(Deserialize)]
 pub struct KeyboardInputConfig {
-    /// FLTK key code for "navigate up" (as returned by `event_key().bits()`).
-    /// Default: 0xff52 (Key::Up).
+    /// Raw scan code for "navigate up" (evdev scancode from
+    /// linux/input-event-codes.h).  Default: 103 (KEY_UP).
     pub navigate_up: u32,
-    /// FLTK key code for "navigate down". Default: 0xff54 (Key::Down).
+    /// Raw scan code for "navigate down". Default: 108 (KEY_DOWN).
     pub navigate_down: u32,
-    /// FLTK key code for "navigate left". Default: 0xff51 (Key::Left).
+    /// Raw scan code for "navigate left". Default: 105 (KEY_LEFT).
     pub navigate_left: u32,
-    /// FLTK key code for "navigate right". Default: 0xff53 (Key::Right).
+    /// Raw scan code for "navigate right". Default: 106 (KEY_RIGHT).
     pub navigate_right: u32,
-    /// FLTK key code for "activate". Default: 0x20 (Space).
+    /// Raw scan code for "activate". Default: 57 (KEY_SPACE).
     pub activate: u32,
-    /// FLTK key code for "menu". Default: 0x6d ('m').
+    /// Raw scan code for "menu". Default: 50 (KEY_M).
     pub menu: u32,
-    /// FLTK key code for "activate with Shift" (default: None / disabled).
+    /// Raw scan code for "activate with Shift" (default: None / disabled).
     /// Equivalent to activate when Shift is held.
     #[serde(default)]
     pub activate_shift: Option<u32>,
-    /// FLTK key code for "activate with Ctrl" (default: None / disabled).
+    /// Raw scan code for "activate with Ctrl" (default: None / disabled).
     /// Equivalent to activate when Ctrl is held.
     #[serde(default)]
     pub activate_ctrl: Option<u32>,
-    /// FLTK key code for "activate with Alt" (default: None / disabled).
+    /// Raw scan code for "activate with Alt" (default: None / disabled).
     /// Equivalent to activate when Alt is held.
     #[serde(default)]
     pub activate_alt: Option<u32>,
-    /// FLTK key code for "activate with AltGr" (default: None / disabled).
+    /// Raw scan code for "activate with AltGr" (default: None / disabled).
     /// Equivalent to activate when AltGr is held.
     #[serde(default)]
     pub activate_altgr: Option<u32>,
-    /// FLTK key code for "activate Enter" (default: None / disabled).
+    /// Raw scan code for "activate Enter" (default: None / disabled).
     /// Produces the Enter output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_enter: Option<u32>,
-    /// FLTK key code for "activate Space" (default: None / disabled).
+    /// Raw scan code for "activate Space" (default: None / disabled).
     /// Produces the Space output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_space: Option<u32>,
-    /// FLTK key code for "activate Arrow Left" (default: None / disabled).
+    /// Raw scan code for "activate Arrow Left" (default: None / disabled).
     /// Produces the Left Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_left: Option<u32>,
-    /// FLTK key code for "activate Arrow Right" (default: None / disabled).
+    /// Raw scan code for "activate Arrow Right" (default: None / disabled).
     /// Produces the Right Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_right: Option<u32>,
-    /// FLTK key code for "activate Arrow Up" (default: None / disabled).
+    /// Raw scan code for "activate Arrow Up" (default: None / disabled).
     /// Produces the Up Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_up: Option<u32>,
-    /// FLTK key code for "activate Arrow Down" (default: None / disabled).
+    /// Raw scan code for "activate Arrow Down" (default: None / disabled).
     /// Produces the Down Arrow output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_arrow_down: Option<u32>,
-    /// FLTK key code for "activate Backspace" (default: None / disabled).
+    /// Raw scan code for "activate Backspace" (default: None / disabled).
     /// Produces the Backspace output regardless of the current keyboard selection.
     #[serde(default)]
     pub activate_bksp: Option<u32>,
-    /// FLTK key code for "navigate center" (default: None / disabled).
+    /// Raw scan code for "navigate center" (default: None / disabled).
     /// Moves the selection to the center of the keyboard.
     #[serde(default)]
     pub navigate_center: Option<u32>,
-    /// FLTK key code for "mouse toggle" (default: None / disabled).
+    /// Raw scan code for "mouse toggle" (default: None / disabled).
     /// Toggles between keyboard-navigation mode and mouse mode.
     #[serde(default)]
     pub mouse_toggle: Option<u32>,
@@ -884,12 +882,12 @@ pub struct Config {
 impl Default for KeyboardInputConfig {
     fn default() -> Self {
         KeyboardInputConfig {
-            navigate_up:    FLTK_KEY_UP    as u32,
-            navigate_down:  FLTK_KEY_DOWN  as u32,
-            navigate_left:  FLTK_KEY_LEFT  as u32,
-            navigate_right: FLTK_KEY_RIGHT as u32,
-            activate:       FLTK_KEY_SPACE as u32,
-            menu:           FLTK_KEY_M     as u32,
+            navigate_up:    EVDEV_KEY_UP,
+            navigate_down:  EVDEV_KEY_DOWN,
+            navigate_left:  EVDEV_KEY_LEFT,
+            navigate_right: EVDEV_KEY_RIGHT,
+            activate:       EVDEV_KEY_SPACE,
+            menu:           EVDEV_KEY_M,
             activate_shift: None,
             activate_ctrl:  None,
             activate_alt:   None,
@@ -1053,71 +1051,73 @@ fn strip_null_values(content: &str) -> std::borrow::Cow<'_, str> {
 }
 
 // =============================================================================
-// Resolved navigation keys (FLTK Key values)
+// Resolved navigation keys (raw evdev scan codes)
 // =============================================================================
 
-/// FLTK [`Key`] values resolved from the keyboard section of the config.
+/// Raw evdev scan codes resolved from the keyboard section of the config.
+///
+/// Each field holds a Linux evdev scancode (`linux/input-event-codes.h`).
+/// The values are matched against the `physical_key` scancode extracted from
+/// iced keyboard events.
 #[derive(Clone, Copy)]
 pub struct NavKeys {
-    pub up:    Key,
-    pub down:  Key,
-    pub left:  Key,
-    pub right: Key,
-    pub activate: Key,
-    pub menu: Key,
+    pub up:    u32,
+    pub down:  u32,
+    pub left:  u32,
+    pub right: u32,
+    pub activate: u32,
+    pub menu: u32,
     /// Key that activates the current selection with Shift held (None = disabled).
-    pub activate_shift: Option<Key>,
+    pub activate_shift: Option<u32>,
     /// Key that activates the current selection with Ctrl held (None = disabled).
-    pub activate_ctrl:  Option<Key>,
+    pub activate_ctrl:  Option<u32>,
     /// Key that activates the current selection with Alt held (None = disabled).
-    pub activate_alt:   Option<Key>,
+    pub activate_alt:   Option<u32>,
     /// Key that activates the current selection with AltGr held (None = disabled).
-    pub activate_altgr: Option<Key>,
+    pub activate_altgr: Option<u32>,
     /// Key that produces the Enter output directly (None = disabled).
-    pub activate_enter: Option<Key>,
+    pub activate_enter: Option<u32>,
     /// Key that produces the Space output directly (None = disabled).
-    pub activate_space: Option<Key>,
+    pub activate_space: Option<u32>,
     /// Key that produces the Left Arrow output directly (None = disabled).
-    pub activate_arrow_left: Option<Key>,
+    pub activate_arrow_left: Option<u32>,
     /// Key that produces the Right Arrow output directly (None = disabled).
-    pub activate_arrow_right: Option<Key>,
+    pub activate_arrow_right: Option<u32>,
     /// Key that produces the Up Arrow output directly (None = disabled).
-    pub activate_arrow_up: Option<Key>,
+    pub activate_arrow_up: Option<u32>,
     /// Key that produces the Down Arrow output directly (None = disabled).
-    pub activate_arrow_down: Option<Key>,
+    pub activate_arrow_down: Option<u32>,
     /// Key that produces the Backspace output directly (None = disabled).
-    pub activate_bksp: Option<Key>,
+    pub activate_bksp: Option<u32>,
     /// Key that moves the selection to the center of the keyboard (None = disabled).
-    pub navigate_center: Option<Key>,
+    pub navigate_center: Option<u32>,
     /// Key that toggles mouse mode on/off (None = disabled).
-    pub mouse_toggle: Option<Key>,
+    pub mouse_toggle: Option<u32>,
 }
 
 impl NavKeys {
-    /// Build from the keyboard config.  Each field is a FLTK key code
-    /// (the integer returned by `event_key().bits()`), stored directly in
-    /// the config without any translation layer.
+    /// Build from the keyboard config.  Each field is a raw evdev scancode.
     pub fn from_config(cfg: &KeyboardInputConfig) -> Self {
         NavKeys {
-            up:       Key::from_i32(cfg.navigate_up    as i32),
-            down:     Key::from_i32(cfg.navigate_down  as i32),
-            left:     Key::from_i32(cfg.navigate_left  as i32),
-            right:    Key::from_i32(cfg.navigate_right as i32),
-            activate: Key::from_i32(cfg.activate       as i32),
-            menu:     Key::from_i32(cfg.menu           as i32),
-            activate_shift:  cfg.activate_shift .map(|v| Key::from_i32(v as i32)),
-            activate_ctrl:   cfg.activate_ctrl  .map(|v| Key::from_i32(v as i32)),
-            activate_alt:    cfg.activate_alt   .map(|v| Key::from_i32(v as i32)),
-            activate_altgr:  cfg.activate_altgr .map(|v| Key::from_i32(v as i32)),
-            activate_enter:  cfg.activate_enter .map(|v| Key::from_i32(v as i32)),
-            activate_space:  cfg.activate_space .map(|v| Key::from_i32(v as i32)),
-            activate_arrow_left:  cfg.activate_arrow_left .map(|v| Key::from_i32(v as i32)),
-            activate_arrow_right: cfg.activate_arrow_right.map(|v| Key::from_i32(v as i32)),
-            activate_arrow_up:    cfg.activate_arrow_up   .map(|v| Key::from_i32(v as i32)),
-            activate_arrow_down:  cfg.activate_arrow_down .map(|v| Key::from_i32(v as i32)),
-            activate_bksp:        cfg.activate_bksp       .map(|v| Key::from_i32(v as i32)),
-            navigate_center: cfg.navigate_center.map(|v| Key::from_i32(v as i32)),
-            mouse_toggle:    cfg.mouse_toggle   .map(|v| Key::from_i32(v as i32)),
+            up:       cfg.navigate_up,
+            down:     cfg.navigate_down,
+            left:     cfg.navigate_left,
+            right:    cfg.navigate_right,
+            activate: cfg.activate,
+            menu:     cfg.menu,
+            activate_shift:       cfg.activate_shift,
+            activate_ctrl:        cfg.activate_ctrl,
+            activate_alt:         cfg.activate_alt,
+            activate_altgr:       cfg.activate_altgr,
+            activate_enter:       cfg.activate_enter,
+            activate_space:       cfg.activate_space,
+            activate_arrow_left:  cfg.activate_arrow_left,
+            activate_arrow_right: cfg.activate_arrow_right,
+            activate_arrow_up:    cfg.activate_arrow_up,
+            activate_arrow_down:  cfg.activate_arrow_down,
+            activate_bksp:        cfg.activate_bksp,
+            navigate_center: cfg.navigate_center,
+            mouse_toggle:    cfg.mouse_toggle,
         }
     }
 }
