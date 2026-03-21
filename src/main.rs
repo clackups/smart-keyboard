@@ -518,6 +518,7 @@ impl SmartKeyboard {
             Space::new().into()
         } else {
             let mut lr = row![].spacing(metrics.gap as f32);
+            let num_lang = self.lang_btns.len() as u16;
             for (li, lang) in self.lang_btns.iter().enumerate() {
                 let is_active = li == self.layout_idx;
                 let is_selected = self.sel == NavSel::Lang(li);
@@ -539,7 +540,7 @@ impl SmartKeyboard {
                     text(label).size(lbl_size).color(label_color)
                         .align_x(iced::alignment::Horizontal::Center)
                 )
-                .width(Length::Fill)
+                .width(Length::FillPortion(1))
                 .height(Length::Fixed(h))
                 .on_press(Message::LangClicked(li))
                 .style(move |_theme: &iced::Theme, _status| button::Style {
@@ -551,6 +552,10 @@ impl SmartKeyboard {
                 });
 
                 lr = lr.push(btn);
+            }
+            // Pad with trailing spacers so lang buttons match the 17-column grid width.
+            for _ in 0..keyboards::GRID_COLS.saturating_sub(num_lang) {
+                lr = lr.push(Space::new().width(Length::FillPortion(1)));
             }
             container(lr)
                 .width(Length::Fill)
@@ -971,7 +976,9 @@ impl SmartKeyboard {
                     if self.mouse_mode {
                         let (ddx, ddy) = dir_to_mouse_delta(evt.action);
                         let interval = Duration::from_millis(self.mouse_cfg.repeat_interval);
-                        self.sync_mouse_buttons();
+                        if source == InputSource::Keyboard {
+                            self.sync_mouse_buttons_for_keyboard();
+                        }
                         let mouse_buttons = self.mouse_buttons;
                         let mouse = self.mouse_state_for(source);
                         if ddx != 0 { mouse.dx = ddx; }
@@ -1319,7 +1326,10 @@ impl SmartKeyboard {
     /// are physically held.  Called in the auto-repeat timer and before
     /// sending direction-key mouse reports to overcome event ordering
     /// issues (e.g. iced widget captures preventing timely delivery).
-    fn sync_mouse_buttons(&mut self) {
+    /// Synchronise `mouse_buttons` from physical keyboard state only.
+    /// Only called for InputSource::Keyboard so that gamepad/GPIO button
+    /// state is not overwritten.
+    fn sync_mouse_buttons_for_keyboard(&mut self) {
         if !self.mouse_mode { return; }
         // Left button ↔ activate key
         let left_down = self.pressed_keys.contains(&self.nav_keys.activate);
@@ -1333,7 +1343,9 @@ impl SmartKeyboard {
 
     fn do_mouse_auto_repeat(&mut self, source: InputSource) {
         let mouse_cfg = self.mouse_cfg.clone();
-        self.sync_mouse_buttons();
+        if source == InputSource::Keyboard {
+            self.sync_mouse_buttons_for_keyboard();
+        }
         let mouse_buttons = self.mouse_buttons;
         let mouse = self.mouse_state_for(source);
         if mouse.dx == 0 && mouse.dy == 0 { return; }
@@ -1499,7 +1511,7 @@ impl SmartKeyboard {
 // Input source identifier
 // =============================================================================
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum InputSource {
     Keyboard,
     Gamepad,

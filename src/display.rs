@@ -925,13 +925,14 @@ pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
     let space_w = 6 * key_w + 5 * gap;
     let pad_left = pad + (avail_w - 17 * key_w - 16 * gap) / 2;
 
-    // Font sizes: base on the smaller button dimension for efficient surface
-    // use.  big_lbl_size is for single-row labels (letters, modifiers, arrows);
-    // lbl_size is for two-row labels (number / punctuation keys with a shifted
-    // variant).
-    let min_dim = key_w.min(key_h);
-    let big_lbl_size = (min_dim / 2).max(12);
-    let lbl_size     = (min_dim / 3).max(10);
+    // Cap key height so buttons are never taller than wide.
+    let key_h = key_h.min(key_w);
+
+    // Font sizes: scale to fill the button surface efficiently.
+    // big_lbl_size — single-row labels (letters, modifiers, arrows)
+    // lbl_size     — two-row labels (number / punctuation with shifted variant)
+    let big_lbl_size = (key_h * 2 / 3).max(12);
+    let lbl_size     = (key_h * 2 / 5).max(10);
     let disp_size    = (display_h * 2 / 5).max(12).min(28);
     let btn_size     = lbl_size;
 
