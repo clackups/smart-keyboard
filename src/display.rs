@@ -1,26 +1,16 @@
 // src/display.rs
 //
-// Display-related types and UI for the on-screen keyboard.
+// Display-related types, navigation logic, action execution, and audio helpers
+// for the on-screen keyboard.  UI rendering is delegated to the iced framework;
+// this module contains only data types and pure logic.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use fltk::{
-    app,
-    button::Button,
-    enums::{Color, Event, FrameType, Key},
-    frame::Frame,
-    prelude::*,
-    text::{TextBuffer, TextDisplay},
-    window::Window,
-};
+use iced::Color;
 
 use crate::{config, KeyHook};
-use crate::keyboards::{self, is_modifier, is_sticky, special_hook_str, special_label,
+use crate::keyboards::{self, is_modifier, special_hook_str, special_label,
     Action, KW, KEYS};
 use crate::gamepad::Gamepad;
 use crate::narrator::Narrator;
-use crate::output;
 
 
 
@@ -28,8 +18,7 @@ use crate::output;
 // UI colour palette (resolved from config)
 // =============================================================================
 
-/// All UI colours resolved from [`config::ColorsConfig`] into FLTK [`Color`] values.
-/// Implements `Copy` because [`Color`] is a newtype over `u32`.
+/// All UI colours resolved from [`config::ColorsConfig`] into [`iced::Color`] values.
 #[derive(Clone, Copy)]
 pub struct Colors {
     pub key_normal:              Color,
@@ -54,7 +43,7 @@ pub struct Colors {
 
 impl Colors {
     pub fn from_config(cfg: &config::ColorsConfig) -> Self {
-        let c = |rgb: &config::ColorRgb| Color::from_rgb(rgb.0, rgb.1, rgb.2);
+        let c = |rgb: &config::ColorRgb| Color::from_rgb8(rgb.0, rgb.1, rgb.2);
         Colors {
             key_normal:              c(&cfg.key_normal),
             key_mod:                 c(&cfg.key_mod),
@@ -79,17 +68,35 @@ impl Colors {
 }
 
 // =============================================================================
+// Button data (replaces FLTK widget tuples)
+// =============================================================================
+
+/// Data for a single keyboard key, without any widget reference.
+pub struct BtnData {
+    pub action:     Action,
+    pub scancode:   u16,
+    pub base_color: Color,
+    pub x:          i32,
+    pub w:          i32,
+}
+
+/// Data for a language-toggle button, without any widget reference.
+pub struct LangBtnData {
+    pub name: String,
+    pub x:    i32,
+    pub w:    i32,
+}
+
+// =============================================================================
 // Modifier button descriptor
 // =============================================================================
 
-/// A modifier-key button together with its action and base (inactive) color.
-/// Stored in a shared list so execute_action can update visual state.
+/// A modifier-key entry together with its grid position and base colour.
 pub struct ModBtn {
-    pub btn:      Button,
-    pub action:   Action,
-    pub base_col: Color,
-    /// Corresponding status-bar indicator frame (shared between LShift & RShift).
-    pub status:   Option<Frame>,
+    pub row:        usize,
+    pub col:        usize,
+    pub action:     Action,
+    pub base_color: Color,
 }
 
 // =============================================================================
@@ -191,7 +198,7 @@ impl ModState {
 // Navigation selection
 // =============================================================================
 
-/// Identifies which button currently holds the amber navigation highlight.
+/// Identifies which button currently holds the navigation highlight.
 #[derive(Clone, Copy, PartialEq)]
 pub enum NavSel {
     /// A language-toggle button; index into `lang_btns`.
@@ -218,70 +225,31 @@ pub fn closest_to_cx(items: impl Iterator<Item = (i32, i32)>, cx: i32) -> usize 
 }
 
 /// Find the index in a keyboard row whose x-range best covers pixel centre `cx`.
-pub fn closest_col(row: &[(Button, Action, u16, Color)], cx: i32) -> usize {
-    closest_to_cx(row.iter().map(|b| (b.0.x(), b.0.w())), cx)
+pub fn closest_col(row: &[BtnData], cx: i32) -> usize {
+    closest_to_cx(row.iter().map(|b| (b.x, b.w)), cx)
 }
 
 /// Find the index in the lang-button strip whose x-range best covers pixel centre `cx`.
-pub fn closest_lang(lang_btns: &[Button], cx: i32) -> usize {
-    closest_to_cx(lang_btns.iter().map(|b| (b.x(), b.w())), cx)
+pub fn closest_lang(lang_btns: &[LangBtnData], cx: i32) -> usize {
+    closest_to_cx(lang_btns.iter().map(|b| (b.x, b.w)), cx)
 }
 
-/// Apply a specific navigation selection, updating highlight colours.
+/// Apply a specific navigation selection.
 ///
 /// Does nothing if `new_sel` equals the current `*sel`.
 /// Returns `true` if the selection changed, `false` if it was already at `new_sel`.
 pub fn nav_set(
-    all_btns:   &mut Vec<Vec<(Button, Action, u16, Color)>>,
-    lang_btns:  &mut Vec<Button>,
-    layout_idx: usize,
-    sel:        &mut NavSel,
-    mod_state:  &Rc<RefCell<ModState>>,
-    new_sel:    NavSel,
-    colors:     Colors,
+    sel:     &mut NavSel,
+    new_sel: NavSel,
 ) -> bool {
-    // Nothing to do when already at the target.
     if new_sel == *sel {
         return false;
     }
-
-    // Restore the old selection's colour.
-    match *sel {
-        NavSel::Lang(li) => {
-            let c = if li == layout_idx { colors.mod_active }
-                    else                { colors.lang_btn_inactive };
-            lang_btns[li].set_color(c);
-        }
-        NavSel::Key(row, col) => {
-            let old_action = all_btns[row][col].1;
-            let old_base   = all_btns[row][col].3;
-            let c = if is_modifier(old_action) && mod_state.borrow().is_active(old_action) {
-                colors.mod_active
-            } else {
-                old_base
-            };
-            all_btns[row][col].0.set_color(c);
-        }
-    }
-
-    // Highlight the new selection and give it keyboard focus.
-    match new_sel {
-        NavSel::Lang(li) => {
-            lang_btns[li].set_color(colors.nav_sel);
-            let _ = lang_btns[li].take_focus();
-        }
-        NavSel::Key(row, col) => {
-            all_btns[row][col].0.set_color(colors.nav_sel);
-            let _ = all_btns[row][col].0.take_focus();
-        }
-    }
-
     *sel = new_sel;
-    app::redraw();
     true
 }
 
-/// Move the keyboard-navigation cursor and update highlight colours.
+/// Move the keyboard-navigation cursor.
 ///
 /// When `rollover` is `false`, navigation clamps at all edges (no wrap-around).
 /// When `rollover` is `true`, moving past the edge of the keyboard wraps the
@@ -292,14 +260,11 @@ pub fn nav_set(
 /// Returns `true` if the selection actually changed, `false` if it was already
 /// at the edge in the requested direction (only possible when rollover is false).
 pub fn nav_move(
-    all_btns:     &mut Vec<Vec<(Button, Action, u16, Color)>>,
-    lang_btns:    &mut Vec<Button>,
-    layout_idx:   usize,
+    all_btns:     &[Vec<BtnData>],
+    lang_btns:    &[LangBtnData],
     sel:          &mut NavSel,
-    mod_state:    &Rc<RefCell<ModState>>,
     dr:           i32,
     dc:           i32,
-    colors:       Colors,
     rollover:     bool,
     preferred_cx: &mut i32,
 ) -> bool {
@@ -312,7 +277,7 @@ pub fn nav_move(
                     if rows == 0 {
                         NavSel::Lang(li)
                     } else {
-                        let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
+                        let cx = lang_btns[li].x + lang_btns[li].w / 2;
                         *preferred_cx = cx;
                         NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
                     }
@@ -322,7 +287,7 @@ pub fn nav_move(
                 }
             } else if dr > 0 {
                 // Down into the first keyboard row, pixel-aligned.
-                let cx = lang_btns[li].x() + lang_btns[li].w() / 2;
+                let cx = lang_btns[li].x + lang_btns[li].w / 2;
                 *preferred_cx = cx;
                 NavSel::Key(0, closest_col(&all_btns[0], cx))
             } else {
@@ -337,40 +302,29 @@ pub fn nav_move(
         }
         NavSel::Key(row, col) => {
             if dr < 0 && row == 0 {
-                // Compute cx from the current key (row 0 is the F-key row, never a
-                // wide Space, so no special case needed here).
-                let cx = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                let cx = all_btns[row][col].x + all_btns[row][col].w / 2;
                 *preferred_cx = cx;
                 if !lang_btns.is_empty() {
-                    // Up from the top keyboard row -> lang strip, but only if
-                    // cx is within a lang button's pixel range.  Keys like F2-F12
-                    // extend beyond the two lang buttons; without this guard they
-                    // would all jump to the UA button (the closest one), even
-                    // though no lang button sits directly above them.
                     let li = closest_lang(lang_btns, cx);
                     let lb = &lang_btns[li];
-                    if cx >= lb.x() && cx < lb.x() + lb.w() {
+                    if cx >= lb.x && cx < lb.x + lb.w {
                         NavSel::Lang(li)
                     } else if rollover {
-                        // cx is not within any lang button (e.g. F2-F12).
-                        // Wrap: scan from the last keyboard row upward and land
-                        // on the first row whose button pixel range covers cx.
                         let rows = all_btns.len();
-                        let mut found = NavSel::Key(row, col); // fallback: stay
+                        let mut found = NavSel::Key(row, col);
                         for scan in (0..rows).rev() {
                             let best = closest_col(&all_btns[scan], cx);
-                            let btn  = &all_btns[scan][best].0;
-                            if cx >= btn.x() && cx < btn.x() + btn.w() {
+                            let b = &all_btns[scan][best];
+                            if cx >= b.x && cx < b.x + b.w {
                                 found = NavSel::Key(scan, best);
                                 break;
                             }
                         }
                         found
                     } else {
-                        NavSel::Key(row, col) // clamp - nothing directly above
+                        NavSel::Key(row, col)
                     }
                 } else if rollover {
-                    // No lang strip: wrap to the last keyboard row.
                     let rows = all_btns.len();
                     NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
                 } else {
@@ -378,87 +332,61 @@ pub fn nav_move(
                 }
             } else if dr != 0 {
                 let rows = all_btns.len();
-                // When the current key is the Spacebar (a wide key), use the stored
-                // preferred column position so the cursor returns to the same column
-                // the user navigated from, rather than drifting to the Spacebar's
-                // wide centre.  For all other keys, update preferred_cx so that
-                // subsequent Spacebar navigation remembers this column.
-                let cx = if all_btns[row][col].1 == Action::Space {
+                let cx = if all_btns[row][col].action == Action::Space {
                     *preferred_cx
                 } else {
-                    let c = all_btns[row][col].0.x() + all_btns[row][col].0.w() / 2;
+                    let c = all_btns[row][col].x + all_btns[row][col].w / 2;
                     *preferred_cx = c;
                     c
                 };
-                // Scan rows in direction dr, stopping when cx falls within a
-                // button's pixel range (dist == 0).  Rows where no button
-                // covers cx are skipped, so e.g. End-down skips the home row
-                // and lands directly on ArrowUp.  Using strict containment
-                // (not a distance tolerance) prevents cross-column jumps such
-                // as Bksp-up->F12 or Enter-down->RShift.
                 let mut scan     = row;
-                let mut dest_row = row; // will be updated when we find a close row
+                let mut dest_row = row;
                 loop {
                     let next_raw = scan as i32 + dr;
-                    // Check if we've gone past the edge.
                     if next_raw < 0 || next_raw >= rows as i32 {
                         if rollover {
                             if dr > 0 {
-                                // Wrap: going down past last row -> lang strip (if any).
                                 if !lang_btns.is_empty() {
-                                    dest_row = rows; // sentinel: means "go to lang strip"
+                                    dest_row = rows; // sentinel: go to lang strip
                                 } else {
-                                    // Wrap to first row.
-                                    dest_row = rows + 1; // sentinel: means "wrap to row 0"
+                                    dest_row = rows + 1; // sentinel: wrap to row 0
                                 }
                             } else {
-                                // dr < 0: went up past row 0 without cx landing in any
-                                // row-0 button (e.g. Bksp, Ins, Home, PgUp whose pixel
-                                // range lies beyond the F-key row).  Apply the same wrap
-                                // as the dr < 0 && row == 0 case.
-                                dest_row = rows + 2; // sentinel: means "roll over upward"
+                                dest_row = rows + 2; // sentinel: roll over upward
                             }
                         }
                         break;
                     }
                     scan = next_raw as usize;
                     let best_col = closest_col(&all_btns[scan], cx);
-                    let btn      = &all_btns[scan][best_col].0;
-                    let dist = if cx >= btn.x() && cx < btn.x() + btn.w() {
+                    let b = &all_btns[scan][best_col];
+                    let dist = if cx >= b.x && cx < b.x + b.w {
                         0
-                    } else if cx < btn.x() {
-                        btn.x() - cx
+                    } else if cx < b.x {
+                        b.x - cx
                     } else {
-                        cx - (btn.x() + btn.w())
+                        cx - (b.x + b.w)
                     };
                     if dist == 0 {
                         dest_row = scan;
                         break;
                     }
-                    // cx not within any button in this row - keep scanning.
                 }
                 if dest_row == rows {
-                    // Sentinel: wrap to lang strip (if cx falls within a lang
-                    // button) or further to row 0 scanning downward.
-                    // When rolling over from the Spacebar, skip the lang strip
-                    // entirely and land on the F-key row (row 0) using the
-                    // remembered preferred column.
-                    if all_btns[row][col].1 == Action::Space {
+                    // Sentinel: wrap to lang strip or row 0.
+                    if all_btns[row][col].action == Action::Space {
                         NavSel::Key(0, closest_col(&all_btns[0], cx))
                     } else {
                         let li = closest_lang(lang_btns, cx);
                         let lb = &lang_btns[li];
-                        if cx >= lb.x() && cx < lb.x() + lb.w() {
+                        if cx >= lb.x && cx < lb.x + lb.w {
                             NavSel::Lang(li)
                         } else {
-                            // cx is not within any lang button (e.g. Enter,
-                            // RShift).  Wrap: scan from row 0 downward and land
-                            // on the first row whose button pixel range covers cx.
-                            let mut found = NavSel::Key(row, col); // fallback: stay
+                            let mut found = NavSel::Key(row, col);
                             for scan in 0..rows {
                                 let best = closest_col(&all_btns[scan], cx);
-                                let btn  = &all_btns[scan][best].0;
-                                if cx >= btn.x() && cx < btn.x() + btn.w() {
+                                let b = &all_btns[scan][best];
+                                if cx >= b.x && cx < b.x + b.w {
                                     found = NavSel::Key(scan, best);
                                     break;
                                 }
@@ -467,24 +395,20 @@ pub fn nav_move(
                         }
                     }
                 } else if dest_row == rows + 1 {
-                    // Sentinel: wrap to first row.
                     NavSel::Key(0, closest_col(&all_btns[0], cx))
                 } else if dest_row == rows + 2 {
-                    // Sentinel: went up past row 0 with cx not covered by any
-                    // row-0 button (e.g. Bksp, Ins, Home, PgUp).  Mirror the
-                    // dr < 0 && row == 0 rollover logic: check lang strip first,
-                    // then scan from the last keyboard row upward.
+                    // Went up past row 0 with cx not covered by any row-0 button.
                     if !lang_btns.is_empty() {
                         let li = closest_lang(lang_btns, cx);
                         let lb = &lang_btns[li];
-                        if cx >= lb.x() && cx < lb.x() + lb.w() {
+                        if cx >= lb.x && cx < lb.x + lb.w {
                             NavSel::Lang(li)
                         } else {
-                            let mut found = NavSel::Key(row, col); // fallback: stay
+                            let mut found = NavSel::Key(row, col);
                             for scan in (0..rows).rev() {
                                 let best = closest_col(&all_btns[scan], cx);
-                                let btn  = &all_btns[scan][best].0;
-                                if cx >= btn.x() && cx < btn.x() + btn.w() {
+                                let b = &all_btns[scan][best];
+                                if cx >= b.x && cx < b.x + b.w {
                                     found = NavSel::Key(scan, best);
                                     break;
                                 }
@@ -492,7 +416,6 @@ pub fn nav_move(
                             found
                         }
                     } else {
-                        // No lang strip: wrap to last row.
                         NavSel::Key(rows - 1, closest_col(&all_btns[rows - 1], cx))
                     }
                 } else if dest_row == row {
@@ -508,16 +431,13 @@ pub fn nav_move(
                 } else {
                     (col as i32 + dc).clamp(0, rl as i32 - 1) as usize
                 };
-                // Update preferred_cx so that a subsequent vertical navigation from
-                // the new key's column is used correctly even if the user later moves
-                // onto the Spacebar.
-                *preferred_cx = all_btns[row][new_col].0.x() + all_btns[row][new_col].0.w() / 2;
+                *preferred_cx = all_btns[row][new_col].x + all_btns[row][new_col].w / 2;
                 NavSel::Key(row, new_col)
             }
         }
     };
 
-    nav_set(all_btns, lang_btns, layout_idx, sel, mod_state, new_sel, colors)
+    nav_set(sel, new_sel)
 }
 
 /// Find the key matching `center_key` label in the current layout.
@@ -526,13 +446,13 @@ pub fn nav_move(
 /// [`special_label`]) equals `center_key` (case-sensitive).  Returns the
 /// `NavSel` for that key, or `None` if no match is found.
 pub fn find_center_key(
-    all_btns:   &[Vec<(Button, Action, u16, Color)>],
+    all_btns:   &[Vec<BtnData>],
     layout_idx: usize,
     center_key: &str,
 ) -> Option<NavSel> {
     for (r, row) in all_btns.iter().enumerate() {
-        for (c, (_btn, action, _sc, _col)) in row.iter().enumerate() {
-            let label = match *action {
+        for (c, btn) in row.iter().enumerate() {
+            let label = match btn.action {
                 Action::Regular(n) => keyboards::get_layouts()[layout_idx].keys[n].label_unshifted.as_str(),
                 other              => special_label(other),
             };
@@ -546,17 +466,13 @@ pub fn find_center_key(
 
 /// Find the `(row, col)` position of the first button whose action matches
 /// `target_action`, or `None` if no button has that action.
-///
-/// Used to locate buttons for non-selection activate actions (Enter, Space,
-/// Arrow keys) so their background can be temporarily highlighted when the
-/// corresponding gamepad / GPIO button is pressed.
 pub fn find_btn_by_action(
-    all_btns:      &[Vec<(Button, Action, u16, Color)>],
+    all_btns:      &[Vec<BtnData>],
     target_action: Action,
 ) -> Option<(usize, usize)> {
     for (r, row) in all_btns.iter().enumerate() {
-        for (c, entry) in row.iter().enumerate() {
-            if entry.1 == target_action {
+        for (c, btn) in row.iter().enumerate() {
+            if btn.action == target_action {
                 return Some((r, c));
             }
         }
@@ -568,36 +484,47 @@ pub fn find_btn_by_action(
 // Action execution
 // =============================================================================
 
-/// Perform the action of a key: notify hooks, insert text, update modifiers.
+/// Describes a text-buffer edit returned by [`execute_action`].
+pub enum TextEdit {
+    Append(String),
+    Clear,
+    DeleteLast,
+}
+
+/// Result of [`execute_action`], carrying all information needed for the caller
+/// to update UI state without requiring any widget references.
+pub struct ActionResult {
+    pub key_str:                String,
+    /// Which modifier was toggled and its new on/off state.
+    pub modifier_toggled:       Option<(Action, bool)>,
+    /// Peer modifier that was auto-released (e.g. RShift when LShift toggled).
+    pub modifier_peer_released: Option<Action>,
+    /// Text-buffer operation to perform (only set for non-modifier keys when
+    /// `update_display` is `true`).
+    pub text_edit:              Option<TextEdit>,
+}
+
+/// Perform the action of a key: notify hooks, update text buffer, update modifiers.
 ///
-/// `mod_btns` is the list of modifier buttons so their visual state can be
-/// updated when a modifier is toggled or a sticky modifier auto-releases.
+/// Returns an [`ActionResult`] so the caller can update the UI accordingly.
 ///
-/// Returns the `key_str` that was passed to `on_key_action`, so the caller
-/// can invoke `on_key_release` when the physical activation key is later
-/// released.
+/// `text_buf` is the mutable text buffer (replaces FLTK TextBuffer).
+/// `update_display` controls whether text edits are applied.
 pub fn execute_action(
     action:         Action,
     scancode:       u16,
     layout_i:       usize,
-    buf:            &mut TextBuffer,
-    disp:           &mut TextDisplay,
-    hook:           &Rc<dyn KeyHook>,
-    mod_state:      &Rc<RefCell<ModState>>,
-    mod_btns:       &[ModBtn],
-    colors:         Colors,
+    text_buf:       &mut String,
+    hook:           &dyn KeyHook,
+    mod_state:      &mut ModState,
     update_display: bool,
-) -> String {
+) -> ActionResult {
     // For Regular keys, compute the text to insert respecting Shift / CapsLock.
-    // Symbol/number keys (label_shifted != "") use the shifted character on LShift/RShift;
-    // CapsLock does NOT affect them (standard keyboard behaviour).
-    // Letter keys (label_shifted == "") use to_uppercase() for any of Caps/LShift/RShift.
     let regular_text: Option<String> = if let Action::Regular(slot) = action {
         let key = &keyboards::get_layouts()[layout_i].keys[slot];
-        let ms  = mod_state.borrow();
-        Some(if !key.label_shifted.is_empty() && (ms.lshift || ms.rshift) {
+        Some(if !key.label_shifted.is_empty() && (mod_state.lshift || mod_state.rshift) {
             key.insert_shifted.clone()
-        } else if key.label_shifted.is_empty() && (ms.caps || ms.lshift || ms.rshift) {
+        } else if key.label_shifted.is_empty() && (mod_state.caps || mod_state.lshift || mod_state.rshift) {
             key.insert_unshifted.to_uppercase()
         } else {
             key.insert_unshifted.clone()
@@ -613,95 +540,59 @@ pub fn execute_action(
 
     // Capture modifier state BEFORE any toggles or auto-releases so that
     // on_key_action receives the bits that were active when the key was pressed.
-    // Bit layout (matches USB HID modifier byte):
-    //   0x01 = Ctrl (left), 0x02 = LShift, 0x04 = Alt (left),
-    //   0x08 = Win (left GUI), 0x20 = RShift, 0x40 = AltGr (right alt)
-    let modifier_bits: u8 = {
-        let ms = mod_state.borrow();
-        (if ms.ctrl   { 0x01 } else { 0 })
-            | (if ms.lshift { 0x02 } else { 0 })
-            | (if ms.alt    { 0x04 } else { 0 })
-            | (if ms.win    { 0x08 } else { 0 })
-            | (if ms.rshift { 0x20 } else { 0 })
-            | (if ms.altgr  { 0x40 } else { 0 })
+    let modifier_bits: u8 =
+        (if mod_state.ctrl   { 0x01 } else { 0 })
+            | (if mod_state.lshift { 0x02 } else { 0 })
+            | (if mod_state.alt    { 0x04 } else { 0 })
+            | (if mod_state.win    { 0x08 } else { 0 })
+            | (if mod_state.rshift { 0x20 } else { 0 })
+            | (if mod_state.altgr  { 0x40 } else { 0 });
+
+    let mut result = ActionResult {
+        key_str:                key_str.to_string(),
+        modifier_toggled:       None,
+        modifier_peer_released: None,
+        text_edit:              None,
     };
 
     if is_modifier(action) {
-        // Toggle the modifier and refresh the color of its button(s).
-        let now_active = mod_state.borrow_mut().toggle(action);
-        for m in mod_btns {
-            if m.action == action {
-                m.btn.clone().set_color(if now_active { colors.mod_active } else { m.base_col });
-                if let Some(mut sf) = m.status.clone() {
-                    sf.set_color(if now_active { colors.mod_active } else { colors.status_ind_bg });
-                    sf.set_label_color(if now_active { colors.status_ind_active_text } else { colors.status_ind_text });
-                }
-            }
-        }
-        // Synchronize paired modifier keys: pressing/releasing either Shift
-        // releases the other Shift; pressing/releasing either Alt releases
-        // the other Alt (AltGr).
+        let now_active = mod_state.toggle(action);
+        result.modifier_toggled = Some((action, now_active));
+
+        // Synchronize paired modifier keys.
         let peer = {
-            let mut ms = mod_state.borrow_mut();
-            let p = ms.release_shift_peer(action);
-            if p.is_some() { p } else { ms.release_alt_peer(action) }
+            let p = mod_state.release_shift_peer(action);
+            if p.is_some() { p } else { mod_state.release_alt_peer(action) }
         };
-        if let Some(peer_action) = peer {
-            for m in mod_btns {
-                if m.action == peer_action {
-                    m.btn.clone().set_color(m.base_col);
-                    if let Some(mut sf) = m.status.clone() {
-                        sf.set_color(colors.status_ind_bg);
-                        sf.set_label_color(colors.status_ind_text);
-                    }
-                }
-            }
-        }
-        app::redraw();
+        result.modifier_peer_released = peer;
     } else {
-        // Regular key: insert text into the buffer.
+        // Non-modifier key: apply text edit and auto-release sticky modifiers.
         if update_display {
-            match action {
+            let edit = match action {
                 Action::Regular(_) => {
-                    buf.append(regular_text.as_deref().unwrap_or(""));
+                    let text = regular_text.as_deref().unwrap_or("").to_string();
+                    text_buf.push_str(&text);
+                    Some(TextEdit::Append(text))
                 }
                 Action::Backspace => {
-                    let text = buf.text();
-                    let n    = text.chars().count();
-                    if n > 0 {
-                        buf.set_text(&text.chars().take(n - 1).collect::<String>());
+                    if !text_buf.is_empty() {
+                        text_buf.pop();
                     }
+                    Some(TextEdit::DeleteLast)
                 }
-                Action::Tab   => buf.append("\t"),
-                Action::Enter => buf.set_text(""),
-                Action::Space => buf.append(" "),
-                _ => {}
-            }
-            // Scroll the display to keep the newest text visible.
-            let len   = buf.length();
-            let lines = disp.count_lines(0, len, false);
-            disp.scroll(lines, 0);
+                Action::Tab   => { text_buf.push('\t'); Some(TextEdit::Append("\t".to_string())) }
+                Action::Enter => { text_buf.clear();    Some(TextEdit::Clear) }
+                Action::Space => { text_buf.push(' ');  Some(TextEdit::Append(" ".to_string())) }
+                _ => None,
+            };
+            result.text_edit = edit;
         }
 
-        // Auto-release sticky modifiers and reset their button colours.
-        {
-            let mut ms = mod_state.borrow_mut();
-            for m in mod_btns {
-                if is_sticky(m.action) && ms.is_active(m.action) {
-                    m.btn.clone().set_color(m.base_col);
-                    if let Some(mut sf) = m.status.clone() {
-                        sf.set_color(colors.status_ind_bg);
-                        sf.set_label_color(colors.status_ind_text);
-                    }
-                }
-            }
-            ms.release_sticky();
-        }
-        app::redraw();
+        mod_state.release_sticky();
     }
 
     hook.on_key_action(scancode, key_str, modifier_bits);
-    key_str.to_string()
+    result
 }
 
 // =============================================================================
@@ -742,11 +633,6 @@ pub fn label_to_audio_slug(label: &str) -> String {
 ///
 /// When `shifted` is `true` and the key has a non-empty `insert_shifted`,
 /// the slug is computed from `insert_shifted` instead of `label_unshifted`.
-/// `insert_shifted` is used in preference to `label_shifted` because some
-/// keymaps use FLTK escape sequences in `label_shifted` (e.g. `"@@"` for `@`
-/// or `"&&"` for `&`), while `insert_shifted` always holds the plain character.
-/// Letter keys (whose `insert_shifted` is empty) always use the unshifted slug
-/// regardless of `shifted`.
 pub fn action_audio_slug(action: Action, layout_idx: usize, shifted: bool) -> String {
     match action {
         Action::Regular(slot) => {
@@ -805,14 +691,14 @@ pub fn action_audio_slug(action: Action, layout_idx: usize, shifted: bool) -> St
 pub fn nav_audio_slug(
     sel: NavSel,
     layout_idx: usize,
-    all_btns: &[Vec<(Button, Action, u16, Color)>],
+    all_btns: &[Vec<BtnData>],
     shifted: bool,
 ) -> String {
     match sel {
         NavSel::Lang(li) => {
             format!("lang_{}", keyboards::get_layouts()[li].name.to_lowercase())
         }
-        NavSel::Key(row, col) => action_audio_slug(all_btns[row][col].1, layout_idx, shifted),
+        NavSel::Key(row, col) => action_audio_slug(all_btns[row][col].action, layout_idx, shifted),
     }
 }
 
@@ -833,10 +719,7 @@ pub fn nav_audio_slug(
 /// Returns `0.0` for [`Action::Noop`] (no tone should be played).
 pub fn tone_freq_for_action(action: Action) -> f32 {
     match action {
-        // --- Regular keys ---
         Action::Regular(slot) => match slot {
-            // Digit row: slots 1-10 -> 1,2,3,4,5,6,7,8,9,0
-            // Ascending C-major scale C4..E5 (pitch rises from 1 to 0).
             1  => 261.63,  // C4
             2  => 293.66,  // D4
             3  => 329.63,  // E4
@@ -847,46 +730,42 @@ pub fn tone_freq_for_action(action: Action) -> f32 {
             8  => 523.25,  // C5
             9  => 587.33,  // D5
             10 => 659.26,  // E5  (key "0")
-            // F and J - physical home-row bump keys
-            29 | 32 => 987.77,  // B5
-            // All other letter / punctuation keys
+            29 | 32 => 987.77,  // B5 (F and J)
             _ => 880.00,        // A5
         },
-        // --- Function keys: ascending A-minor pentatonic A1..B3 ---
-        Action::F1  =>  55.00,   // A1
-        Action::F2  =>  65.41,   // C2
-        Action::F3  =>  73.42,   // D2
-        Action::F4  =>  82.41,   // E2
-        Action::F5  =>  98.00,   // G2
-        Action::F6  => 110.00,   // A2
-        Action::F7  => 130.81,   // C3
-        Action::F8  => 146.83,   // D3
-        Action::F9  => 164.81,   // E3
-        Action::F10 => 196.00,   // G3
-        Action::F11 => 220.00,   // A3
-        Action::F12 => 246.94,   // B3
-        // --- Special keys ---
-        Action::Esc        => 1760.00,  // A6 - high/urgent
-        Action::Backspace  =>  415.30,  // Ab4
-        Action::Tab        =>  369.99,  // F#4
-        Action::CapsLock   =>  932.33,  // Bb5
-        Action::Enter      =>  554.37,  // C#5
-        Action::LShift | Action::RShift => 311.13,  // Eb4
-        Action::Ctrl       =>  277.18,  // Db4
-        Action::Win        =>  174.61,  // F3
-        Action::Alt        =>  233.08,  // Bb3
-        Action::AltGr      =>  207.65,  // Ab3
-        Action::Space      => 1046.50,  // C6
-        Action::Insert     => 1318.51,  // E6
-        Action::Delete     => 1244.51,  // Eb6
-        Action::Home       => 1174.66,  // D6
-        Action::End        => 1108.73,  // Db6
-        Action::PageUp     => 1396.91,  // F6
-        Action::PageDown   => 1567.98,  // G6
-        Action::ArrowUp    =>  783.99,  // G5
-        Action::ArrowDown  =>  739.99,  // F#5
-        Action::ArrowLeft  =>  698.46,  // F5
-        Action::ArrowRight =>  622.25,  // Eb5
+        Action::F1  =>  55.00,
+        Action::F2  =>  65.41,
+        Action::F3  =>  73.42,
+        Action::F4  =>  82.41,
+        Action::F5  =>  98.00,
+        Action::F6  => 110.00,
+        Action::F7  => 130.81,
+        Action::F8  => 146.83,
+        Action::F9  => 164.81,
+        Action::F10 => 196.00,
+        Action::F11 => 220.00,
+        Action::F12 => 246.94,
+        Action::Esc        => 1760.00,
+        Action::Backspace  =>  415.30,
+        Action::Tab        =>  369.99,
+        Action::CapsLock   =>  932.33,
+        Action::Enter      =>  554.37,
+        Action::LShift | Action::RShift => 311.13,
+        Action::Ctrl       =>  277.18,
+        Action::Win        =>  174.61,
+        Action::Alt        =>  233.08,
+        Action::AltGr      =>  207.65,
+        Action::Space      => 1046.50,
+        Action::Insert     => 1318.51,
+        Action::Delete     => 1244.51,
+        Action::Home       => 1174.66,
+        Action::End        => 1108.73,
+        Action::PageUp     => 1396.91,
+        Action::PageDown   => 1567.98,
+        Action::ArrowUp    =>  783.99,
+        Action::ArrowDown  =>  739.99,
+        Action::ArrowLeft  =>  698.46,
+        Action::ArrowRight =>  622.25,
         Action::Noop       =>    0.00,
     }
 }
@@ -901,14 +780,10 @@ pub fn tone_freq_for_action(action: Action) -> f32 {
 pub fn tone_hint_freq_for_action(action: Action) -> f32 {
     match action {
         Action::Regular(slot) => match slot {
-            // Digit keys: same ascending scale as in tone mode.
             1..=10 => tone_freq_for_action(action),
-            // F and J - home-row bump keys: play a distinctive tone.
             29 | 32 => 987.77,  // B5
-            // All other letter / punctuation keys: silent.
             _ => 0.0,
         },
-        // Function keys and all special keys: unchanged from tone mode.
         _ => tone_freq_for_action(action),
     }
 }
@@ -933,12 +808,12 @@ pub const LANG_BTN_TONE_HZ: f32 = 329.63;
 /// Language-toggle buttons use [`LANG_BTN_TONE_HZ`] as a neutral, distinctive tone.
 pub fn nav_tone_freq(
     sel: NavSel,
-    all_btns: &[Vec<(Button, Action, u16, Color)>],
+    all_btns: &[Vec<BtnData>],
     mode: &config::AudioMode,
 ) -> f32 {
     match sel {
         NavSel::Lang(_) => LANG_BTN_TONE_HZ,
-        NavSel::Key(row, col) => action_tone_hz(all_btns[row][col].1, mode),
+        NavSel::Key(row, col) => action_tone_hz(all_btns[row][col].action, mode),
     }
 }
 
@@ -955,791 +830,180 @@ pub fn nav_tone_freq(
 pub fn on_nav_changed(
     changed:    bool,
     do_rumble:  bool,
-    gp_cell:    &Rc<RefCell<Option<Gamepad>>>,
-    sel:        &Rc<RefCell<NavSel>>,
-    all_btns:   &Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>>,
+    gp:         &mut Option<Gamepad>,
+    sel:        NavSel,
+    all_btns:   &[Vec<BtnData>],
     layout_idx: usize,
-    narrator:   &Rc<RefCell<Narrator>>,
+    narrator:   &mut Narrator,
     audio_mode: &config::AudioMode,
     shifted:    bool,
 ) {
     if !changed { return; }
     if do_rumble {
-        if let Some(ref mut gp) = *gp_cell.borrow_mut() {
-            gp.rumble();
+        if let Some(ref mut g) = *gp {
+            g.rumble();
         }
     }
-    let cur_sel = *sel.borrow();
-    let ab = all_btns.borrow();
-    let slug     = nav_audio_slug(cur_sel, layout_idx, &ab, shifted);
-    let fallback = if shifted { nav_audio_slug(cur_sel, layout_idx, &ab, false) } else { String::new() };
-    narrator.borrow_mut().play_with_fallback(
+    let slug     = nav_audio_slug(sel, layout_idx, all_btns, shifted);
+    let fallback = if shifted { nav_audio_slug(sel, layout_idx, all_btns, false) } else { String::new() };
+    narrator.play_with_fallback(
         &slug,
         &fallback,
-        nav_tone_freq(cur_sel, &ab, audio_mode),
+        nav_tone_freq(sel, all_btns, audio_mode),
     );
 }
+
 // =============================================================================
-// Build UI
+// Layout metrics
 // =============================================================================
 
-/// Parameters passed to [`build_ui`].
-pub struct BuildUiParams<'a> {
-    pub cfg:              &'a config::Config,
-    pub hook:             Rc<dyn KeyHook>,
-    pub narrator:         Rc<RefCell<Narrator>>,
-    pub audio_mode:       config::AudioMode,
-    pub switch_scancodes: Rc<Vec<Vec<u8>>>,
-    pub ble_conn_opt:     Option<Rc<RefCell<output::BleConnection>>>,
+/// Pre-computed layout dimensions and positions derived from screen size and
+/// configuration.  Mirrors the layout computation that was previously embedded
+/// in the FLTK `build_ui` function.
+pub struct LayoutMetrics {
+    pub sw: i32,
+    pub sh: i32,
+    pub key_w: i32,
+    pub key_h: i32,
+    pub space_w: i32,
+    pub pad_left: i32,
+    pub pad_top: i32,
+    pub kbd_y: i32,
+    pub gap: i32,
+    pub pad: i32,
+    pub lbl_size: i32,
+    pub big_lbl_size: i32,
+    pub disp_size: i32,
+    pub btn_size: i32,
+    pub status_h: i32,
+    pub status_lbl_size: i32,
+    pub ind_w: i32,
+    pub ind_h: i32,
+    pub ind_gap: i32,
+    pub ind_pad: i32,
+    pub display_h: i32,
+    pub lang_btn_h: i32,
+    pub lang_w: i32,
+    pub lang_y: i32,
 }
 
-/// Handles to shared UI state returned by [`build_ui`].
-pub struct UiHandles {
-    pub all_btns:          Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>>,
-    pub lang_btns:         Rc<RefCell<Vec<Button>>>,
-    pub sel:               Rc<RefCell<NavSel>>,
-    pub layout_idx:        Rc<RefCell<usize>>,
-    pub mod_state:         Rc<RefCell<ModState>>,
-    pub mod_btns:          Rc<RefCell<Vec<ModBtn>>>,
-    pub active_nav_key:    Rc<RefCell<Option<(u16, String)>>>,
-    /// Position `(row, col)` of a button that has been temporarily highlighted
-    /// because a gamepad / GPIO activate-action button is currently pressed.
-    /// Set on press, cleared on release.  `None` for the regular `Activate`
-    /// action (the nav-selection button is already highlighted by navigation).
-    pub active_btn_pressed: Rc<RefCell<Option<(usize, usize)>>>,
-    pub preferred_cx:      Rc<RefCell<i32>>,
-    pub buf:               TextBuffer,
-    pub disp:              TextDisplay,
-    pub gamepad_status:    Option<Frame>,
-    pub gpio_status:       Option<Frame>,
-    pub gp_cell:           Rc<RefCell<Option<Gamepad>>>,
-    pub colors:            Colors,
-    pub show_text_display: bool,
-    /// Whether mouse mode is currently active.
-    pub mouse_mode:        Rc<RefCell<bool>>,
-    /// Status-bar indicator frame for mouse mode ("MOUSE" pill).
-    pub mouse_mode_ind:    Frame,
-    /// Currently held mouse-button bitmask (bit 0 (0x01) = left,
-    /// bit 1 (0x02) = right).  Shared across all input sources.
-    pub mouse_buttons:     Rc<RefCell<u8>>,
-    /// The main application window, returned so callers can register
-    /// additional event handlers (e.g., the physical keyboard handler).
-    pub win: Window,
-}
-
-/// Check whether a keyboard event (Space / Enter) should be intercepted in
-/// mouse mode.  If so, update the shared `mouse_buttons` bitmask and send a
-/// mouse-click report via `hook`, then return `true` (event consumed).
-///
-/// This prevents FLTK's built-in Button keyboard activation from firing a
-/// button callback (which would produce a letter instead of a mouse click).
-fn handle_mouse_mode_key(
-    ev:            Event,
-    mouse_mode:    &RefCell<bool>,
-    mouse_buttons: &RefCell<u8>,
-    hook:          &dyn crate::KeyHook,
-) -> bool {
-    if !*mouse_mode.borrow() {
-        return false;
-    }
-    match ev {
-        Event::KeyDown | Event::KeyUp => {
-            let k = app::event_key();
-            if k == Key::from_char(' ') || k == Key::Enter {
-                let pressed = ev == Event::KeyDown;
-                let btns = {
-                    let mut mb = mouse_buttons.borrow_mut();
-                    if pressed { *mb |= 0x01; } else { *mb &= !0x01; }
-                    *mb
-                };
-                hook.on_mouse_report(btns, 0, 0);
-                return true;
-            }
-        }
-        _ => {}
-    }
-    false
-}
-
-/// Build the full keyboard UI: window, widgets, event handlers.
-/// Calls `win.end()` and `win.show()` before returning.
-pub fn build_ui(p: BuildUiParams) -> UiHandles {
-    let cfg              = p.cfg;
-    let hook             = p.hook;
-    let narrator         = p.narrator;
-    let audio_mode       = p.audio_mode;
-    let switch_scancodes = p.switch_scancodes;
-    let ble_conn_opt     = p.ble_conn_opt;
-
+/// Compute layout positions and sizes from screen dimensions and configuration.
+pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
     let layouts = keyboards::get_layouts();
 
-    let colors = Colors::from_config(&cfg.ui.colors);
-    let show_text_display = cfg.ui.show_text_display;
-
-    let (sw, sh) = app::screen_size();
-
-    let mut win = Window::new(0, 0, sw, sh, "Smart Keyboard");
-    win.set_color(colors.win_bg);
-    win.set_border(false); // remove title bar / window decorations
-    win.fullscreen(true);
-
-    let pad  = 3i32;
-    let gap  =  1i32;
+    let pad = 3i32;
+    let gap = 1i32;
 
     let avail_w = sw - 2 * pad;
 
-    let display_h  = if cfg.ui.show_text_display { ((sh as f32 / 12.0) as i32).max(10) } else { 0 };
-    let lang_btn_h = if layouts.len() <= 1 { 0 } else { ((sh as f32 / 12.0) as i32).max(10) };
+    let display_h = if cfg.ui.show_text_display {
+        ((sh as f32 / 12.0) as i32).max(10)
+    } else {
+        0
+    };
+    let lang_btn_h = if layouts.len() <= 1 {
+        0
+    } else {
+        ((sh as f32 / 12.0) as i32).max(10)
+    };
 
-    // Status bar occupies a thin strip at the very top of the window.
     let status_h = (sh / 24).max(18).min(32);
 
     let kbd_h = (sh - status_h - display_h - lang_btn_h - 2 * pad - gap).min(avail_w / 3);
-    // 6 rows (F-keys + 5 QWERTY rows), 5 inter-row gaps
     let key_h = (kbd_h - 5 * gap) / 6;
 
     let pad_top = status_h + pad + (sh - status_h - display_h - lang_btn_h - 6 * key_h - 7 * gap) / 2;
     let kbd_y = pad_top + display_h + lang_btn_h + 2 * gap;
 
-    // Ortholinear: every key is key_w wide.
-    // The widest rows (number row and QWERTY row) are 18 slots wide:
-    //   14 main keys + 1 Spacer + 3 nav keys -> 17*(key_w+gap) - gap = avail_w
-    //   key_w = (avail_w - 17*gap) / 17
-    // Bottom row: Ctrl Win Alt [Space] AltGr Ctrl Spacer <- v -> = 9 non-Space slots
-    //   Space spans exactly 6 grid columns: space_w = 6*key_w + 5*gap
-    //   (Pinning to exact grid avoids integer-division remainder bleeding into the
-    //   spacebar width; the row may be a few pixels narrower than avail_w.)
     let key_w   = ((avail_w - 16 * gap) / 17).max(10);
     let space_w = 6 * key_w + 5 * gap;
-    let pad_left = pad + (avail_w - 17 * key_w - 16 * gap)/2;
+    let pad_left = pad + (avail_w - 17 * key_w - 16 * gap) / 2;
 
-    let px = |kw: KW| match kw {
-        KW::Space            => space_w,
-        KW::Std | KW::Spacer => key_w,
-    };
-
-    // --- Font sizes ---
-    // Drive label size from key width so the longest labels ("AltGr", "Enter",
-    // "Shift") stay within the button boundary.  key_w/4 gives ~25% horizontal
-    // margin for a 5-character label in a proportional font.
-    let lbl_size  = (key_w / 4).max(10);
-    // Buttons that show only a single character get a larger font so they are
-    // easier to read at a glance (single letters / digits / symbols).
+    let lbl_size     = (key_w / 4).max(10);
     let big_lbl_size = lbl_size * 2;
-    let disp_size = ((display_h * 2 / 5) as i32).max(12).min(28);
-    // Lang buttons are one grid column wide (key_w); reuse lbl_size so their
-    // text labels fit with the same margin as keyboard-key labels.
-    let btn_size  = lbl_size;
+    let disp_size    = (display_h * 2 / 5).max(12).min(28);
+    let btn_size     = lbl_size;
 
-    // --- Status bar (top strip) ---
-    // Label size: 3/4 of key label size, at least 8 px.
     let status_lbl_size = (lbl_size * 3 / 4).max(8);
-    // Each indicator is wide enough for a 5-character label ("ALTGR") plus margin.
     let ind_gap = 4i32;
-    let ind_pad = 2i32;   // top/bottom padding inside the status bar strip
+    let ind_pad = 2i32;
     let ind_h   = status_h - 2 * ind_pad;
     let ind_w   = status_lbl_size * 4;
 
-    let mut _status_bar_bg = Frame::new(0, 0, sw, status_h, "");
-    _status_bar_bg.set_color(colors.status_bar_bg);
-    _status_bar_bg.set_frame(FrameType::FlatBox);
-
-    // Helper: build one status-bar indicator frame.
-    let make_ind = |x: i32, label: &'static str| {
-        let mut f = Frame::new(x, ind_pad, ind_w, ind_h, label);
-        f.set_color(colors.status_ind_bg);
-        f.set_label_color(colors.status_ind_text);
-        f.set_frame(FrameType::FlatBox);
-        f.set_label_size(status_lbl_size);
-        f
-    };
-
-    let mut ind_x = ind_gap;
-    let caps_status  = make_ind(ind_x, "CAPS");  ind_x += ind_w + ind_gap;
-    let shift_status = make_ind(ind_x, "SHIFT"); ind_x += ind_w + ind_gap;
-    let ctrl_status  = make_ind(ind_x, "CTRL");  ind_x += ind_w + ind_gap;
-    let alt_status   = make_ind(ind_x, "ALT");   ind_x += ind_w + ind_gap;
-    let altgr_status = make_ind(ind_x, "ALTGR"); ind_x += ind_w + ind_gap;
-    let mouse_mode_ind = make_ind(ind_x, "MOUSE");
-
-    // Right-side status icons, built right-to-left:
-    //   [gamepad icon (if enabled)] [BLE icon (if ble mode)]
-    //
-    // BLE icon colours:
-    //   Green  = BLE dongle found and port open.
-    //   Yellow = BLE mode configured but dongle not found.
-    // Gamepad icon colours:
-    //   Green "G" = gamepad device connected.
-    //   Red   "G" = gamepad device not found / disconnected.
-    let ble_mode = matches!(cfg.output.mode, config::OutputMode::Ble);
-
-    // BLE connectivity icon - rightmost, only shown when output mode is BLE.
-    let conn_x = sw - ind_gap - ind_w;
-    let mut conn_status = Frame::new(conn_x, ind_pad, ind_w, ind_h, "\u{25CF}");
-    conn_status.set_color(colors.status_ind_bg);
-    conn_status.set_label_color(colors.conn_disconnected); // initial: disconnected
-    conn_status.set_frame(FrameType::FlatBox);
-    conn_status.set_label_size(status_lbl_size);
-    if !ble_mode {
-        conn_status.hide();
-    }
-
-    // Gamepad icon - left of BLE icon when BLE is shown, otherwise rightmost.
-    // Only created when gamepad input is enabled in config.
-    let gp_icon_x = if ble_mode { conn_x - ind_gap - ind_w } else { conn_x };
-    let gamepad_status: Option<Frame> = if cfg.input.gamepad.enabled {
-        let mut f = Frame::new(gp_icon_x, ind_pad, ind_w, ind_h, "G");
-        f.set_color(colors.status_ind_bg);
-        f.set_label_color(colors.conn_disconnected); // initial: disconnected (red G)
-        f.set_frame(FrameType::FlatBox);
-        f.set_label_size(status_lbl_size);
-        Some(f)
-    } else {
-        None
-    };
-
-    // GPIO icon - left of gamepad icon (if enabled) or left of BLE icon,
-    // otherwise at the rightmost right-side position.
-    // Only created when GPIO input is enabled in config.
-    let gpio_icon_x = if cfg.input.gamepad.enabled {
-        gp_icon_x - ind_gap - ind_w
-    } else {
-        gp_icon_x
-    };
-    let gpio_status: Option<Frame> = if cfg.input.gpio.enabled {
-        let mut f = Frame::new(gpio_icon_x, ind_pad, ind_w, ind_h, "P");
-        f.set_color(colors.status_ind_bg);
-        f.set_label_color(colors.conn_disconnected); // initial: not yet opened (red P)
-        f.set_frame(FrameType::FlatBox);
-        f.set_label_size(status_lbl_size);
-        Some(f)
-    } else {
-        None
-    };
-
-    // --- BLE connection-management timer (moved from hook creation) ---
-    if let Some(ref ble_conn) = ble_conn_opt {
-        #[derive(PartialEq, Clone, Copy)]
-        enum BleState { Disconnected, Connecting, Connected }
-
-        const BLE_RETRY_INTERVAL_S:  f64 = 1.0;
-        const BLE_STATUS_INTERVAL_S: f64 = 1.0;
-
-        let mut conn_status_t = conn_status.clone();
-        let ble_conn_t = ble_conn.clone();
-        let ble_state = Rc::new(RefCell::new(BleState::Disconnected));
-            app::add_timeout(0.0, move |handle| {
-                if !ble_conn_t.borrow().is_connected() {
-                    if ble_conn_t.borrow_mut().try_connect() {
-                        *ble_state.borrow_mut() = BleState::Connecting;
-                        conn_status_t.set_label_color(colors.conn_connecting);
-                        app::redraw();
-                        app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
-                    } else {
-                        if *ble_state.borrow() != BleState::Disconnected {
-                            println!("BLE disconnected");
-                        }
-                        *ble_state.borrow_mut() = BleState::Disconnected;
-                        conn_status_t.set_label_color(colors.conn_disconnected);
-                        app::redraw();
-                        app::repeat_timeout(BLE_RETRY_INTERVAL_S, handle);
-                    }
-                } else {
-                    match ble_conn_t.borrow_mut().check_status() {
-                        Err(()) => {
-                            // Write failed -> connection lost.
-                            if *ble_state.borrow() != BleState::Disconnected {
-                                println!("BLE disconnected");
-                            }
-                            *ble_state.borrow_mut() = BleState::Disconnected;
-                            conn_status_t.set_label_color(colors.conn_disconnected);
-                            app::redraw();
-                            app::repeat_timeout(BLE_RETRY_INTERVAL_S, handle);
-                        }
-                        Ok(Some(ref s)) if s.starts_with("STATUS:CONNECTED:") => {
-                            if *ble_state.borrow() != BleState::Connected {
-                                let mac = s.trim_start_matches("STATUS:CONNECTED:").trim();
-                                println!("BLE connected: {}", mac);
-                            }
-                            *ble_state.borrow_mut() = BleState::Connected;
-                            conn_status_t.set_label_color(colors.conn_connected);
-                            app::redraw();
-                            app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
-                        }
-                        Ok(Some(ref s)) if s.starts_with("STATUS:NOTCONNECTED") => {
-                            // The dongle is reachable but the BLE link to the
-                            // remote host has been lost.
-                            if *ble_state.borrow() == BleState::Connected {
-                                println!("BLE disconnected");
-                            }
-                            *ble_state.borrow_mut() = BleState::Connecting;
-                            conn_status_t.set_label_color(colors.conn_connecting);
-                            app::redraw();
-                            app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
-                        }
-                        Ok(_) => {
-                            // Connected but remote host not paired / not ready.
-                            *ble_state.borrow_mut() = BleState::Connecting;
-                            conn_status_t.set_label_color(colors.conn_connecting);
-                            app::redraw();
-                            app::repeat_timeout(BLE_STATUS_INTERVAL_S, handle);
-                        }
-                    }
-                }
-            });
-    }
-
-    // --- Shared state ---
-    let layout_idx: Rc<RefCell<usize>>    = Rc::new(RefCell::new(0));
-    let mod_state:  Rc<RefCell<ModState>> = Rc::new(RefCell::new(ModState::default()));
-    // mod_btns is populated during the key loop; closures borrow it at call time.
-    let mod_btns: Rc<RefCell<Vec<ModBtn>>> = Rc::new(RefCell::new(Vec::new()));
-    // Tracks the (scancode, key_str) of the key currently "held" by the keyboard
-    // activation key or gamepad action button.  Set on press, cleared on release.
-    let active_nav_key: Rc<RefCell<Option<(u16, String)>>> = Rc::new(RefCell::new(None));
-    // Tracks the (row, col) of a button that has been temporarily highlighted
-    // because a gamepad / GPIO non-selection activate action is pressed (e.g.
-    // ActivateEnter highlights the Enter button).  Cleared and restored on release.
-    let active_btn_pressed: Rc<RefCell<Option<(usize, usize)>>> = Rc::new(RefCell::new(None));
-    let buf  = TextBuffer::default();
-    // --- Text display (read-only) ---
-    let mut disp = TextDisplay::new(pad_left, pad_top, sw - 2 * pad_left, display_h, "");
-    disp.set_buffer(buf.clone());
-    disp.set_color(colors.disp_bg);
-    disp.set_text_color(colors.disp_text);
-    disp.set_frame(FrameType::DownBox);
-    disp.set_text_size(disp_size);
-    if !show_text_display {
-        disp.hide();
-    }
-
-    // --- Language toggle buttons (one per entry in LAYOUTS) ---
-    let active_col   = colors.mod_active;
-    let inactive_col = colors.lang_btn_inactive;
-
     let lang_y = pad_top + display_h + gap;
-    // Language buttons snap to the keyboard grid: each button is exactly one
-    // grid column wide (key_w) and placed at pad + li*(key_w+gap), aligning
-    // with grid columns 0, 1, 2 ...
     let lang_w = key_w;
 
-    let lang_btns:   Rc<RefCell<Vec<Button>>>          = Rc::new(RefCell::new(Vec::new()));
-    let switch_btns: Rc<RefCell<Vec<(Button, usize)>>> = Rc::new(RefCell::new(Vec::new()));
-
-    // Declared here (before the lang-button loop) so that lang-button click
-    // callbacks can share them with keyboard-key callbacks.
-    // all_btns[row][col] = (Button, Action, scancode, base_color)
-    let all_btns: Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>> =
-        Rc::new(RefCell::new(Vec::new()));
-    // Navigation cursor: starts on the first keyboard key.
-    let sel: Rc<RefCell<NavSel>> = Rc::new(RefCell::new(NavSel::Key(0, 0)));
-    // Preferred horizontal pixel position for vertical navigation.
-    // Updated whenever the cursor moves to a regular (non-Spacebar) key, or
-    // horizontally to any key.  Used as the column reference when navigating
-    // away from the Spacebar, whose wide centre would otherwise cause the
-    // selection to drift from the column the user came from.
-    let preferred_cx: Rc<RefCell<i32>> = Rc::new(RefCell::new(0));
-
-    // Mouse mode: when true, directional inputs move the mouse pointer rather
-    // than navigating the on-screen keyboard.  Created here (before the button
-    // loops) so that button handle closures can capture it.
-    let mouse_mode: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
-
-    // Currently held mouse-button bitmask (bit 0 (0x01) = left, bit 1 (0x02)
-    // = right).  Shared across all input sources so that a button held by one
-    // source is included in movement reports generated by any source.
-    let mouse_buttons: Rc<RefCell<u8>> = Rc::new(RefCell::new(0u8));
-
-    if layouts.len() > 1 {
-        for (li, def) in layouts.iter().enumerate() {
-            let btn_x = pad_left + li as i32 * (lang_w + gap);
-            let mut btn = Button::new(btn_x, lang_y, lang_w, lang_btn_h, def.name.as_str());
-            btn.set_color(if li == 0 { active_col } else { inactive_col });
-            btn.set_label_color(colors.lang_btn_label);
-            btn.set_label_size(btn_size);
-
-            let layout_idx_c  = layout_idx.clone();
-            let lang_btns_c   = lang_btns.clone();
-            let switch_btns_c = switch_btns.clone();
-            let all_btns_c    = all_btns.clone();
-            let sel_c         = sel.clone();
-            let mod_state_c   = mod_state.clone();
-            let narrator_c    = narrator.clone();
-            let switch_scancodes_c = switch_scancodes.clone();
-            let hook_lang_c   = Rc::clone(&hook);
-
-            // In mouse mode, intercept keyboard activation (Space / Enter) so
-            // that the lang button does not fire its callback from a physical
-            // keyboard press.  A mouse click on the lang button is still
-            // allowed (Push / Released events are not intercepted).
-            {
-                let mouse_mode_h    = mouse_mode.clone();
-                let mouse_buttons_h = mouse_buttons.clone();
-                let hook_h          = Rc::clone(&hook);
-                btn.handle(move |_b, ev| {
-                    handle_mouse_mode_key(ev, &mouse_mode_h, &mouse_buttons_h, &*hook_h)
-                });
-            }
-
-            let mouse_mode_cb = mouse_mode.clone();
-            btn.set_callback(move |_| {
-                // In mouse mode, suppress all keyboard actions from the
-                // callback — mouse-click events are already handled by
-                // handle_mouse_mode_key in the handle() closure above.
-                if *mouse_mode_cb.borrow() { return; }
-                // Execute the language switch.
-                *layout_idx_c.borrow_mut() = li;
-                for (j, lb) in lang_btns_c.borrow_mut().iter_mut().enumerate() {
-                    lb.set_color(if j == li { active_col } else { inactive_col });
-                }
-                let def = &keyboards::get_layouts()[li];
-                for (kb, slot) in switch_btns_c.borrow_mut().iter_mut() {
-                    let key = &def.keys[*slot];
-                    if key.label_shifted.is_empty() {
-                        kb.set_label(key.label_unshifted.as_str());
-                        let sz = if key.label_unshifted.chars().count() == 1 { big_lbl_size } else { lbl_size };
-                        kb.set_label_size(sz);
-                    } else {
-                        let lbl = format!("{}\n{}", key.label_shifted, key.label_unshifted);
-                        kb.set_label(&lbl);
-                        kb.set_label_size(lbl_size);
-                    }
-                }
-                // Move the amber highlight to this lang button.
-                // Copy sel (it is Copy) so the borrow is released before we mutate below.
-                let old_sel = *sel_c.borrow();
-                if let NavSel::Key(old_r, old_c) = old_sel {
-                    let mut ab = all_btns_c.borrow_mut();
-                    let old_action = ab[old_r][old_c].1;
-                    let old_base   = ab[old_r][old_c].3;
-                    let restore = if is_modifier(old_action)
-                        && mod_state_c.borrow().is_active(old_action)
-                    {
-                        colors.mod_active
-                    } else {
-                        old_base
-                    };
-                    ab[old_r][old_c].0.set_color(restore);
-                }
-                // (If old_sel was Lang(_), the colour loop above already restored it.)
-                lang_btns_c.borrow_mut()[li].set_color(colors.nav_sel);
-                let _ = lang_btns_c.borrow_mut()[li].take_focus();
-                *sel_c.borrow_mut() = NavSel::Lang(li);
-                narrator_c.borrow_mut().play(
-                    &format!("lang_{}", keyboards::get_layouts()[li].name.to_lowercase()),
-                    LANG_BTN_TONE_HZ,
-                );
-                debug_assert!(
-                    li < switch_scancodes_c.len(),
-                    "switch_scancodes and layouts are out of sync at index {}",
-                    li,
-                );
-                if li < switch_scancodes_c.len() {
-                    hook_lang_c.on_lang_switch(&switch_scancodes_c[li]);
-                }
-                app::redraw();
-            });
-            lang_btns.borrow_mut().push(btn);
-        }
+    LayoutMetrics {
+        sw, sh,
+        key_w, key_h, space_w,
+        pad_left, pad_top, kbd_y,
+        gap, pad,
+        lbl_size, big_lbl_size, disp_size, btn_size,
+        status_h, status_lbl_size,
+        ind_w, ind_h, ind_gap, ind_pad,
+        display_h, lang_btn_h, lang_w,
+        lang_y,
     }
+}
 
-    // --- Keyboard key grid ---
-    // (all_btns and sel were declared before the lang-button loop above)
+// =============================================================================
+// Grid / button builders
+// =============================================================================
 
-    for (row_i, row) in KEYS.iter().enumerate() {
-        let row_y = kbd_y + row_i as i32 * (key_h + gap);
-        let mut x = pad_left;
-        let mut btn_row: Vec<(Button, Action, u16, Color)> = Vec::new();
+/// Build the 2D grid of [`BtnData`] from the physical [`KEYS`] layout,
+/// computing x positions for each button.
+pub fn build_btn_grid(metrics: &LayoutMetrics, colors: &Colors) -> Vec<Vec<BtnData>> {
+    let px = |kw: KW| match kw {
+        KW::Space            => metrics.space_w,
+        KW::Std | KW::Spacer => metrics.key_w,
+    };
 
-        // btn_col tracks the index within btn_row (skips Spacer slots).
-        let mut btn_col = 0usize;
+    let mut grid: Vec<Vec<BtnData>> = Vec::new();
+
+    for row in KEYS.iter() {
+        let mut x = metrics.pad_left;
+        let mut btn_row: Vec<BtnData> = Vec::new();
 
         for phys in row.iter() {
             let w = px(phys.kw);
 
-            // Spacer: advance x but create no button.
             if matches!(phys.kw, KW::Spacer) {
-                x += w + gap;
+                x += w + metrics.gap;
                 continue;
             }
 
-            let col_i    = btn_col;
-            btn_col     += 1;
-            let is_mod   = is_modifier(phys.action);
-            // Regular letter/symbol keys and the Space bar are light;
-            // every other key (modifiers, F-keys, nav, arrows) is dark.
-            let base_col = match phys.action {
+            let base_color = match phys.action {
                 Action::Regular(_) | Action::Space => colors.key_normal,
                 _                                  => colors.key_mod,
             };
 
-            let init_label: String = match phys.action {
-                Action::Regular(slot) => {
-                    let key = &keyboards::get_layouts()[0].keys[slot];
-                    if key.label_shifted.is_empty() {
-                        key.label_unshifted.clone()
-                    } else {
-                        format!("{}\n{}", key.label_shifted, key.label_unshifted)
-                    }
-                }
-                other => special_label(other).to_string(),
-            };
-
-            let mut btn = Button::new(x, row_y, w, key_h, None);
-            btn.set_label(&init_label);
-            let this_lbl_size = if init_label.chars().count() == 1 { big_lbl_size } else { lbl_size };
-            btn.set_label_size(this_lbl_size);
-            btn.set_color(base_col);
-            if matches!(phys.action, Action::Regular(_) | Action::Space) {
-                btn.set_label_color(colors.key_label_normal);
-            } else {
-                btn.set_label_color(colors.key_label_mod);
-            }
-
-            // --- Press / release hook (fires before default C++ button handling) ---
-            {
-                let hook_c         = Rc::clone(&hook);
-                let layout_idx_h   = layout_idx.clone();
-                let mouse_mode_h   = mouse_mode.clone();
-                let mouse_buttons_h = mouse_buttons.clone();
-                let action       = phys.action;
-                let scancode     = phys.scancode;
-                btn.handle(move |_b, ev| {
-                    // In mouse mode, intercept keyboard activation (Space /
-                    // Enter) so that the button does not fire its callback
-                    // (which would produce a letter).  Instead, send a mouse
-                    // click report.  Mouse/touch Push/Released events still
-                    // pass through normally.
-                    if handle_mouse_mode_key(ev, &mouse_mode_h, &mouse_buttons_h, &*hook_c) {
-                        return true;
-                    }
-                    let key_str: &str = match action {
-                        Action::Regular(slot) => {
-                            keyboards::get_layouts()[*layout_idx_h.borrow()].keys[slot].insert_unshifted.as_str()
-                        }
-                        other => special_hook_str(other),
-                    };
-                    match ev {
-                        Event::Push     => { hook_c.on_key_press(scancode, key_str);   false }
-                        Event::Released => { hook_c.on_key_release(scancode, key_str); false }
-                        _               => false,
-                    }
-                });
-            }
-
-            // --- Click callback: text insertion + modifier toggling ---
-            {
-                let layout_idx_c          = layout_idx.clone();
-                let mod_state_c           = mod_state.clone();
-                let mod_btns_c            = mod_btns.clone();
-                let all_btns_c            = all_btns.clone();
-                let lang_btns_c           = lang_btns.clone();
-                let sel_c                 = sel.clone();
-                let mut buf_c             = buf.clone();
-                let mut disp_c            = disp.clone();
-                let hook_c                = Rc::clone(&hook);
-                let narrator_c            = narrator.clone();
-                let audio_mode_c          = audio_mode.clone();
-                let center_after_activate = cfg.navigate.center_after_activate;
-                let center_key_c          = cfg.navigate.center_key.clone();
-                let action                = phys.action;
-                let scancode              = phys.scancode;
-                let mouse_mode_cb         = mouse_mode.clone();
-                btn.set_callback(move |_| {
-                    // In mouse mode, suppress all keyboard actions from the
-                    // callback — mouse-click events are already handled by
-                    // handle_mouse_mode_key in the handle() closure above.
-                    if *mouse_mode_cb.borrow() { return; }
-                    // Capture shift state BEFORE execute_action, which releases
-                    // sticky modifiers (including Shift) for non-modifier keys.
-                    let shifted_pre = mod_state_c.borrow().is_shifted();
-                    let key_str = execute_action(
-                        action, scancode,
-                        *layout_idx_c.borrow(),
-                        &mut buf_c, &mut disp_c, &hook_c,
-                        &mod_state_c,
-                        &mod_btns_c.borrow(),
-                        colors,
-                        show_text_display,
-                    );
-                    // For mouse/touch clicks the Released event fires before this
-                    // callback, so the key press command was sent in execute_action ->
-                    // on_key_action.  Send the release immediately so the BLE dongle
-                    // receives K0000 right after the press.
-                    hook_c.on_key_release(scancode, &key_str);
-                    // Move the amber highlight to the clicked button.
-                    {
-                        let mut ab = all_btns_c.borrow_mut();
-                        let mut s  = sel_c.borrow_mut();
-                        // Restore the previously highlighted button's colour.
-                        match *s {
-                            NavSel::Key(old_r, old_c) => {
-                                let old_action = ab[old_r][old_c].1;
-                                let old_base   = ab[old_r][old_c].3;
-                                let restore = if is_modifier(old_action)
-                                    && mod_state_c.borrow().is_active(old_action)
-                                {
-                                    colors.mod_active
-                                } else {
-                                    old_base
-                                };
-                                ab[old_r][old_c].0.set_color(restore);
-                            }
-                            NavSel::Lang(li) => {
-                                let restore = if li == *layout_idx_c.borrow() {
-                                    colors.mod_active
-                                } else {
-                                    colors.lang_btn_inactive
-                                };
-                                lang_btns_c.borrow_mut()[li].set_color(restore);
-                            }
-                        }
-                        ab[row_i][col_i].0.set_color(colors.nav_sel);
-                        let _ = ab[row_i][col_i].0.take_focus();
-                        *s = NavSel::Key(row_i, col_i);
-                    }
-                    // If center_after_activate is set, jump selection to center key
-                    // and narrate the new position.  Otherwise narrate the activated
-                    // button itself (existing behaviour).
-                    let jumped = if center_after_activate {
-                        if let Some(center) = {
-                            let ab = all_btns_c.borrow();
-                            find_center_key(&ab, *layout_idx_c.borrow(), &center_key_c)
-                        } {
-                            let changed = {
-                                let mut ab = all_btns_c.borrow_mut();
-                                let mut lb = lang_btns_c.borrow_mut();
-                                let mut s  = sel_c.borrow_mut();
-                                nav_set(&mut ab, &mut lb, *layout_idx_c.borrow(), &mut s, &mod_state_c, center, colors)
-                            };
-                            if changed {
-                                let sel = *sel_c.borrow();
-                                let ab  = all_btns_c.borrow();
-                                let shifted_c = mod_state_c.borrow().is_shifted();
-                                let slug = nav_audio_slug(sel, *layout_idx_c.borrow(), &ab, shifted_c);
-                                let fallback = if shifted_c { nav_audio_slug(sel, *layout_idx_c.borrow(), &ab, false) } else { String::new() };
-                                narrator_c.borrow_mut().play_with_fallback(
-                                    &slug,
-                                    &fallback,
-                                    nav_tone_freq(sel, &ab, &audio_mode_c),
-                                );
-                            }
-                            changed
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
-                    if !jumped {
-                        let slug = action_audio_slug(action, *layout_idx_c.borrow(), shifted_pre);
-                        let fallback = if shifted_pre { action_audio_slug(action, *layout_idx_c.borrow(), false) } else { String::new() };
-                        narrator_c.borrow_mut().play_with_fallback(
-                            &slug,
-                            &fallback,
-                            action_tone_hz(action, &audio_mode_c),
-                        );
-                    }
-                    app::redraw();
-                });
-            }
-
-            // Track substitutable keys for layout switching.
-            if let Action::Regular(slot) = phys.action {
-                switch_btns.borrow_mut().push((btn.clone(), slot));
-            }
-
-            // Track modifier keys for toggle color updates.
-            if is_mod {
-                let status = match phys.action {
-                    Action::CapsLock                => Some(caps_status.clone()),
-                    Action::LShift | Action::RShift => Some(shift_status.clone()),
-                    Action::Ctrl                    => Some(ctrl_status.clone()),
-                    Action::Alt                     => Some(alt_status.clone()),
-                    Action::AltGr                   => Some(altgr_status.clone()),
-                    _                               => None,
-                };
-                mod_btns.borrow_mut().push(ModBtn {
-                    btn:      btn.clone(),
-                    action:   phys.action,
-                    base_col,
-                    status,
-                });
-            }
-
-            btn_row.push((btn, phys.action, phys.scancode, base_col));
-            x += w + gap;
+            btn_row.push(BtnData {
+                action:   phys.action,
+                scancode: phys.scancode,
+                base_color,
+                x,
+                w,
+            });
+            x += w + metrics.gap;
         }
-        all_btns.borrow_mut().push(btn_row);
+        grid.push(btn_row);
     }
+    grid
+}
 
-    // --- Initial navigation highlight ---
-    // Start at the configured center key when:
-    //   * absolute_axes is enabled (joystick covers the full axis range and
-    //     must start at the physical centre of the grid), or
-    //   * center_after_activate is enabled (every activation returns to center,
-    //     so it is natural to also begin there).
-    // Otherwise start at the top-left key (row 0, col 0).
-    let (init_row, init_col) = {
-        let ab = all_btns.borrow();
-        if (cfg.input.gamepad.absolute_axes || cfg.navigate.center_after_activate)
-            && !ab.is_empty()
-        {
-            if let Some(NavSel::Key(r, c)) =
-                find_center_key(&ab, *layout_idx.borrow(), &cfg.navigate.center_key)
-            {
-                (r, c)
-            } else {
-                // fallback: midpoint of the grid
-                let mid_row = ab.len() / 2;
-                (mid_row, ab[mid_row].len() / 2)
-            }
-        } else {
-            (0, 0)
-        }
-    };
-    {
-        let mut ab = all_btns.borrow_mut();
-        ab[init_row][init_col].0.set_color(colors.nav_sel);
-        let _ = ab[init_row][init_col].0.take_focus();
+/// Build the language-toggle button data from the active layouts.
+pub fn build_lang_btns(metrics: &LayoutMetrics) -> Vec<LangBtnData> {
+    let layouts = keyboards::get_layouts();
+    if layouts.len() <= 1 {
+        return Vec::new();
     }
-    *sel.borrow_mut() = NavSel::Key(init_row, init_col);
-    {
-        let ab = all_btns.borrow();
-        narrator.borrow_mut().play(
-            &nav_audio_slug(NavSel::Key(init_row, init_col), *layout_idx.borrow(), &ab, false),
-            nav_tone_freq(NavSel::Key(init_row, init_col), &ab, &audio_mode),
-        );
-    }
-
-    // --- Shared gamepad cell (also used by the keyboard handler for rumble) ---
-    // Created here (before the keyboard handler closure) so both the keyboard
-    // handler and the gamepad polling timer can share the same instance.
-    let gp_cell: Rc<RefCell<Option<Gamepad>>> = Rc::new(RefCell::new(None));
-
-    win.end();
-    win.show();
-
-    UiHandles {
-        all_btns,
-        lang_btns,
-        sel,
-        layout_idx,
-        mod_state,
-        mod_btns,
-        active_nav_key,
-        active_btn_pressed,
-        preferred_cx,
-        buf,
-        disp,
-        gamepad_status,
-        gpio_status,
-        gp_cell,
-        colors,
-        show_text_display,
-        mouse_mode,
-        mouse_mode_ind,
-        mouse_buttons,
-        win,
-    }
+    layouts
+        .iter()
+        .enumerate()
+        .map(|(li, def)| LangBtnData {
+            name: def.name.clone(),
+            x: metrics.pad_left + li as i32 * (metrics.lang_w + metrics.gap),
+            w: metrics.lang_w,
+        })
+        .collect()
 }
