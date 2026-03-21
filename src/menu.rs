@@ -198,8 +198,9 @@ pub fn restart_application() {
 
 /// Read config.toml and return a flat list of `(dotted.key, value)` pairs.
 ///
-/// Only uncommented, active settings are returned.  The order follows the
-/// order in which sections and keys appear in the TOML file.
+/// Both active (uncommented) and commented-out `# key = value` lines are
+/// included, so the configuration editor shows every available option.
+/// The order follows the file's section and line order.
 pub fn load_config_pairs() -> Vec<(String, String)> {
     let dir = std::env::var("SMART_KBD_CONFIG_PATH").unwrap_or_else(|_| ".".into());
     let path = std::path::Path::new(&dir).join("config.toml");
@@ -209,45 +210,126 @@ pub fn load_config_pairs() -> Vec<(String, String)> {
         Err(_) => return Vec::new(),
     };
 
-    let table: toml::map::Map<String, toml::Value> = match content.parse() {
-        Ok(t) => t,
-        Err(_) => return Vec::new(),
-    };
-
     let mut pairs = Vec::new();
-    flatten_toml("", &toml::Value::Table(table), &mut pairs);
-    pairs
-}
+    let mut current_section = String::new();
+    let mut seen = std::collections::HashSet::new();
 
-fn flatten_toml(prefix: &str, val: &toml::Value, out: &mut Vec<(String, String)>) {
-    if let toml::Value::Table(table) = val {
-        for (k, v) in table {
-            let key = if prefix.is_empty() {
-                k.clone()
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Section header: [section.name]
+        if trimmed.starts_with('[') && !trimmed.starts_with("[[") {
+            current_section = trimmed
+                .trim_start_matches('[')
+                .split(']')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            continue;
+        }
+
+        // Try to parse as `key = value` (active line).
+        if let Some((key, val)) = parse_kv_line(trimmed) {
+            let dotted = if current_section.is_empty() {
+                key.to_string()
             } else {
-                format!("{}.{}", prefix, k)
+                format!("{}.{}", current_section, key)
             };
-            if v.is_table() {
-                flatten_toml(&key, v, out);
+            if seen.insert(dotted.clone()) {
+                pairs.push((dotted, val));
+            }
+            continue;
+        }
+
+        // Try to parse as `# key = value` (commented-out line).
+        let stripped = trimmed.trim_start_matches('#').trim();
+        if let Some((key, val)) = parse_kv_line(stripped) {
+            let dotted = if current_section.is_empty() {
+                key.to_string()
             } else {
-                out.push((key, toml_value_to_display(v)));
+                format!("{}.{}", current_section, key)
+            };
+            // Only add if not already set by an active line.
+            if seen.insert(dotted.clone()) {
+                pairs.push((dotted, val));
             }
         }
     }
+
+    pairs
 }
 
-fn toml_value_to_display(val: &toml::Value) -> String {
-    match val {
-        toml::Value::String(s) => s.clone(),
-        toml::Value::Integer(i) => format!("{}", i),
-        toml::Value::Float(f) => format!("{}", f),
-        toml::Value::Boolean(b) => format!("{}", b),
-        toml::Value::Array(arr) => {
-            let items: Vec<String> = arr.iter().map(toml_value_to_display).collect();
-            items.join(", ")
-        }
-        _ => format!("{}", val),
+/// Parse a `key = value` line, returning `(key, display_value)`.
+fn parse_kv_line(s: &str) -> Option<(&str, String)> {
+    let eq_pos = s.find('=')?;
+    let raw_key = s[..eq_pos].trim();
+    // Reject keys that look like comments or section headers.
+    if raw_key.is_empty()
+        || raw_key.starts_with('#')
+        || raw_key.starts_with('[')
+        || raw_key.contains(' ')
+    {
+        return None;
     }
+    let raw_val = s[eq_pos + 1..].trim();
+    // Strip inline comments: `value  # comment`
+    let val_str = strip_inline_comment(raw_val);
+    let display = toml_display_value(val_str);
+    Some((raw_key, display))
+}
+
+/// Strip an inline `# comment` from a TOML value string, respecting quoted
+/// strings.
+fn strip_inline_comment(s: &str) -> &str {
+    let mut in_str = false;
+    let mut in_arr = 0u32;
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if ch == b'"' && (i == 0 || bytes[i - 1] != b'\\') {
+            in_str = !in_str;
+        }
+        if !in_str {
+            if ch == b'[' { in_arr += 1; }
+            if ch == b']' { in_arr = in_arr.saturating_sub(1); }
+            if ch == b'#' && in_arr == 0 {
+                return s[..i].trim_end();
+            }
+        }
+        i += 1;
+    }
+    s.trim_end()
+}
+
+/// Convert a raw TOML value string to a user-friendly display string.
+///
+/// Quoted strings have their quotes removed; arrays are flattened to a
+/// comma-separated list of unquoted items; everything else is kept as-is.
+fn toml_display_value(s: &str) -> String {
+    // Quoted string
+    if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+        return s[1..s.len() - 1].to_string();
+    }
+    // Array: [item, item, ...]
+    if s.starts_with('[') && s.ends_with(']') {
+        let inner = s[1..s.len() - 1].trim();
+        let items: Vec<&str> = inner.split(',').map(|i| {
+            let i = i.trim();
+            if i.starts_with('"') && i.ends_with('"') && i.len() >= 2 {
+                &i[1..i.len() - 1]
+            } else {
+                i
+            }
+        }).collect();
+        return items.join(", ");
+    }
+    // "null" sentinel from commented lines
+    if s == "null" {
+        return String::new();
+    }
+    s.to_string()
 }
 
 // =============================================================================

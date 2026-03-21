@@ -165,6 +165,9 @@ const SC_ENTER: u32 = 28;
 const SC_ESC: u32 = 1;
 const SC_ARROW_UP: u32 = 103;
 const SC_ARROW_DOWN: u32 = 108;
+const SC_LCTRL: u32 = 29;
+const SC_RCTRL: u32 = 97;
+const SC_S: u32 = 31;
 
 // =============================================================================
 // Configuration editor state
@@ -481,6 +484,12 @@ impl SmartKeyboard {
                         if let Some(ref mut ce) = self.config_editor {
                             ce.editing = false;
                         }
+                    }
+                    // Ctrl+S → Save & Restart even while editing.
+                    let ctrl_held = self.pressed_keys.contains(&SC_LCTRL)
+                        || self.pressed_keys.contains(&SC_RCTRL);
+                    if ctrl_held && sc == SC_S {
+                        return self.update(Message::ConfigSave);
                     }
                     return Task::none();
                 }
@@ -1140,9 +1149,21 @@ impl SmartKeyboard {
                 if !current_section.is_empty() {
                     let header = text(format!("[{}]", current_section))
                         .size(14)
-                        .color(Color::from_rgb(0.6, 0.6, 0.65));
+                        .color(Color::from_rgb(0.85, 0.85, 0.95));
                     list_col = list_col.push(
-                        container(header).padding(4)
+                        container(header)
+                            .padding([6, 8])
+                            .width(Length::Fill)
+                            .style(|_theme: &iced::Theme| container::Style {
+                                background: Some(iced::Background::Color(
+                                    Color::from_rgb(0.08, 0.08, 0.10),
+                                )),
+                                border: iced::Border {
+                                    radius: 2.0.into(),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            })
                     );
                 }
             }
@@ -1189,6 +1210,7 @@ impl SmartKeyboard {
         }
 
         let scroll = scrollable(list_col)
+            .id(widget::Id::from("cfg-scroll"))
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -1311,6 +1333,13 @@ impl SmartKeyboard {
         let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
         let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
 
+        // Ctrl+S → Save & Restart.
+        let ctrl_held = self.pressed_keys.contains(&SC_LCTRL)
+            || self.pressed_keys.contains(&SC_RCTRL);
+        if ctrl_held && sc == SC_S {
+            return self.update(Message::ConfigSave);
+        }
+
         if let Some(ref mut ce) = self.config_editor {
             if is_up && ce.sel > 0 {
                 ce.sel -= 1;
@@ -1327,6 +1356,24 @@ impl SmartKeyboard {
                 self.config_editor = None;
                 return Task::none();
             }
+            // Auto-scroll the list to keep the selected item visible.
+            if is_up || is_down {
+                return self.config_scroll_to_sel();
+            }
+        }
+        Task::none()
+    }
+
+    /// Return a `snap_to` Task that scrolls the config list so the currently
+    /// selected item is visible.
+    fn config_scroll_to_sel(&self) -> Task<Message> {
+        if let Some(ref ce) = self.config_editor {
+            let total = ce.pairs.len().max(1);
+            let frac = ce.sel as f32 / total as f32;
+            return widget::operation::snap_to(
+                widget::Id::from("cfg-scroll"),
+                scrollable::RelativeOffset { x: 0.0, y: frac },
+            );
         }
         Task::none()
     }
@@ -1343,22 +1390,32 @@ impl SmartKeyboard {
             if !evt.pressed { continue; }
 
             if self.config_editor.is_some() {
+                let mut moved = false;
                 match evt.action {
                     UserInputAction::Up => {
                         if let Some(ref mut ce) = self.config_editor {
-                            ce.sel = ce.sel.saturating_sub(1);
+                            if ce.sel > 0 {
+                                ce.sel -= 1;
+                                moved = true;
+                            }
                         }
                     }
                     UserInputAction::Down => {
                         if let Some(ref mut ce) = self.config_editor {
                             let max = ce.pairs.len().saturating_sub(1);
-                            if ce.sel < max { ce.sel += 1; }
+                            if ce.sel < max {
+                                ce.sel += 1;
+                                moved = true;
+                            }
                         }
                     }
                     UserInputAction::Menu => {
                         self.config_editor = None;
                     }
                     _ => {}
+                }
+                if moved {
+                    return self.config_scroll_to_sel();
                 }
             } else {
                 // Main menu
