@@ -931,8 +931,8 @@ pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
     // Font sizes: scale to fill the button surface efficiently.
     // big_lbl_size — single-row labels (letters, modifiers, arrows)
     // lbl_size     — two-row labels (number / punctuation with shifted variant)
-    let big_lbl_size = (key_h * 2 / 3).max(12);
-    let lbl_size     = (key_h * 2 / 5).max(10);
+    let big_lbl_size = (key_h * 3 / 4).max(12);
+    let lbl_size     = (key_h / 2).max(10);
     let disp_size    = (display_h * 2 / 5).max(12).min(28);
     let btn_size     = lbl_size;
 

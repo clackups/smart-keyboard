@@ -834,7 +834,7 @@ impl SmartKeyboard {
 
                 let btn = button(btn_content)
                 .width(Length::FillPortion(portion))
-                .height(Length::Fill)
+                .height(Length::Fixed(metrics.key_h as f32))
                 .on_press(Message::ButtonClicked(ri, ci))
                 .style(move |_theme: &iced::Theme, _status| button::Style {
                     background: Some(iced::Background::Color(bg)),
