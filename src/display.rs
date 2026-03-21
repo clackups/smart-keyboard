@@ -92,6 +92,7 @@ pub struct LangBtnData {
 // =============================================================================
 
 /// A modifier-key entry together with its grid position and base colour.
+#[allow(dead_code)]
 pub struct ModBtn {
     pub row:        usize,
     pub col:        usize,
@@ -485,6 +486,7 @@ pub fn find_btn_by_action(
 // =============================================================================
 
 /// Describes a text-buffer edit returned by [`execute_action`].
+#[allow(dead_code)]
 pub enum TextEdit {
     Append(String),
     Clear,
@@ -860,6 +862,7 @@ pub fn on_nav_changed(
 /// Pre-computed layout dimensions and positions derived from screen size and
 /// configuration.  Mirrors the layout computation that was previously embedded
 /// in the FLTK `build_ui` function.
+#[allow(dead_code)]
 pub struct LayoutMetrics {
     pub sw: i32,
     pub sh: i32,

@@ -167,6 +167,7 @@ impl BleConnection {
     /// This requests the dongle to drop the active BLE connection to the remote
     /// host.  Returns `true` if the command was sent successfully, `false` if
     /// the port is not open or the write failed.
+    #[allow(dead_code)]
     pub fn send_disconnect(&mut self) -> bool {
         self.send("Z\n")
     }

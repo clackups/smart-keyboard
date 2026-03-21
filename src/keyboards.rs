@@ -148,6 +148,7 @@ pub fn is_modifier(action: Action) -> bool {
 }
 
 /// Returns true if this modifier is sticky (auto-releases after next regular key).
+#[allow(dead_code)]
 pub fn is_sticky(action: Action) -> bool {
     matches!(
         action,

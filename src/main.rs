@@ -153,6 +153,7 @@ enum BleState {
 // =============================================================================
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum Message {
     KeyPressed(u32),
     KeyReleased(u32),
@@ -174,6 +175,7 @@ struct SmartKeyboard {
     lang_btns: Vec<LangBtnData>,
     layout_idx: usize,
     mod_state: ModState,
+    #[allow(dead_code)]
     mod_btns: Vec<ModBtn>,
     sel: NavSel,
     text_buffer: String,
@@ -491,7 +493,7 @@ impl SmartKeyboard {
     // View
     // =========================================================================
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         if self.showing_menu {
             return self.view_menu();
         }
@@ -589,7 +591,7 @@ impl SmartKeyboard {
     // View helpers
     // =========================================================================
 
-    fn view_status_bar(&self) -> Element<Message> {
+    fn view_status_bar(&self) -> Element<'_, Message> {
         let colors = self.colors;
         let metrics = &self.metrics;
         let lbl_size = metrics.status_lbl_size as f32;
@@ -731,11 +733,12 @@ impl SmartKeyboard {
             .into()
     }
 
-    fn view_keyboard_grid(&self) -> Element<Message> {
+    fn view_keyboard_grid(&self) -> Element<'_, Message> {
         let colors = self.colors;
         let metrics = &self.metrics;
         let key_h = metrics.key_h as f32;
         let lbl_size = metrics.lbl_size as f32;
+        let big_lbl_size = metrics.big_lbl_size as f32;
         let layouts = keyboards::get_layouts();
 
         let mut grid = column![].spacing(metrics.gap as f32);
@@ -759,42 +762,63 @@ impl SmartKeyboard {
                     btn_data.base_color
                 };
 
-                // Determine label text and color
-                let label = match action {
-                    Action::Regular(n) => {
-                        if self.layout_idx < layouts.len() {
-                            let key = &layouts[self.layout_idx].keys[n];
-                            let shifted = self.mod_state.is_shifted();
-                            if shifted && !key.label_shifted.is_empty() {
-                                key.label_shifted.clone()
-                            } else if !shifted || key.label_shifted.is_empty() {
-                                if self.mod_state.caps && key.label_shifted.is_empty() {
-                                    key.label_unshifted.to_uppercase()
-                                } else {
-                                    key.label_unshifted.clone()
-                                }
-                            } else {
-                                key.label_unshifted.clone()
-                            }
-                        } else {
-                            String::new()
-                        }
-                    }
-                    Action::Space => String::new(),
-                    other => keyboards::special_label(other).to_string(),
-                };
-
                 let label_color = match action {
                     Action::Regular(_) | Action::Space => colors.key_label_normal,
                     _ => colors.key_label_mod,
                 };
 
-                let btn = button(
-                    text(label)
-                        .size(lbl_size)
-                        .color(label_color)
-                        .align_x(iced::alignment::Horizontal::Center)
-                )
+                // Build button content: for number/punctuation keys that have a
+                // shifted variant (label_shifted non-empty), show both symbols
+                // stacked vertically ("!\n1").  For single-char letter keys, use
+                // the bigger font size.
+                let btn_content: Element<'_, Message> = match action {
+                    Action::Regular(n) if self.layout_idx < layouts.len() => {
+                        let key = &layouts[self.layout_idx].keys[n];
+                        if !key.label_shifted.is_empty() {
+                            // Number / punctuation key: two-line label
+                            let top = text(key.label_shifted.clone())
+                                .size(lbl_size)
+                                .color(label_color)
+                                .align_x(iced::alignment::Horizontal::Center);
+                            let bottom = text(key.label_unshifted.clone())
+                                .size(lbl_size)
+                                .color(label_color)
+                                .align_x(iced::alignment::Horizontal::Center);
+                            column![top, bottom]
+                                .align_x(iced::alignment::Horizontal::Center)
+                                .width(Length::Fill)
+                                .into()
+                        } else {
+                            // Letter key: single char, big label
+                            let lbl = if self.mod_state.caps {
+                                key.label_unshifted.to_uppercase()
+                            } else {
+                                key.label_unshifted.clone()
+                            };
+                            let sz = if lbl.chars().count() == 1 { big_lbl_size } else { lbl_size };
+                            text(lbl)
+                                .size(sz)
+                                .color(label_color)
+                                .align_x(iced::alignment::Horizontal::Center)
+                                .width(Length::Fill)
+                                .into()
+                        }
+                    }
+                    Action::Space => {
+                        Space::new().into()
+                    }
+                    other => {
+                        let lbl = keyboards::special_label(other).to_string();
+                        text(lbl)
+                            .size(lbl_size)
+                            .color(label_color)
+                            .align_x(iced::alignment::Horizontal::Center)
+                            .width(Length::Fill)
+                            .into()
+                    }
+                };
+
+                let btn = button(btn_content)
                 .width(Length::Fixed(w))
                 .height(Length::Fixed(key_h))
                 .on_press(Message::ButtonClicked(ri, ci))
@@ -821,7 +845,7 @@ impl SmartKeyboard {
             .into()
     }
 
-    fn view_menu(&self) -> Element<Message> {
+    fn view_menu(&self) -> Element<'_, Message> {
         let colors = self.colors;
 
         let title = text("Menu")

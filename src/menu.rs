@@ -6,6 +6,8 @@
 // view rendered in main.rs.  This module retains the TOML text-rewriting
 // logic (`build_toml_text`) and the `restart_application` helper.
 
+#![allow(dead_code)]
+
 // =============================================================================
 // Integer helper
 // =============================================================================
