@@ -224,7 +224,7 @@ fn format_axis_config(val: &str) -> String {
         return format!("[{}, \"{}\"]", axis, dir);
     }
     // Plain integer
-    if let Some(_) = parse_int_relaxed(val) {
+    if parse_int_relaxed(val).is_some() {
         return val.to_string();
     }
     format!("\"{}\"", val)
