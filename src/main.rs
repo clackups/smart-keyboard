@@ -165,6 +165,8 @@ const SC_ENTER: u32 = 28;
 const SC_ESC: u32 = 1;
 const SC_ARROW_UP: u32 = 103;
 const SC_ARROW_DOWN: u32 = 108;
+const SC_ARROW_LEFT: u32 = 105;
+const SC_ARROW_RIGHT: u32 = 106;
 const SC_LCTRL: u32 = 29;
 const SC_RCTRL: u32 = 97;
 const SC_S: u32 = 31;
@@ -621,6 +623,9 @@ impl SmartKeyboard {
             Message::ConfigValueChanged(idx, val) => {
                 if let Some(ref mut ce) = self.config_editor {
                     if idx < ce.pairs.len() {
+                        // Sync keyboard selection with the field the user
+                        // interacted with (e.g. mouse-click on a pick_list).
+                        ce.sel = idx;
                         let key = &ce.pairs[idx].0;
                         let err = menu::validate_field(key, &val).unwrap_or_default();
                         ce.pairs[idx].1 = val;
@@ -1467,6 +1472,8 @@ impl SmartKeyboard {
     fn handle_config_key_press(&mut self, sc: u32) -> Task<Message> {
         let is_up   = sc == self.nav_keys.up   || sc == SC_ARROW_UP;
         let is_down = sc == self.nav_keys.down  || sc == SC_ARROW_DOWN;
+        let is_left  = sc == self.nav_keys.left  || sc == SC_ARROW_LEFT;
+        let is_right = sc == self.nav_keys.right || sc == SC_ARROW_RIGHT;
         let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
         let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
 
@@ -1490,7 +1497,16 @@ impl SmartKeyboard {
             if (is_down || tab_down) && ce.sel < ce.pairs.len().saturating_sub(1) {
                 ce.sel += 1;
             }
+
+            // Left/Right or Activate on dropdown fields: cycle through options.
+            let is_dropdown = ce.sel < ce.pairs.len()
+                && menu::field_options(&ce.pairs[ce.sel].0).is_some();
+            if is_dropdown && (is_left || is_right || is_activate) {
+                return self.config_cycle_dropdown(is_left);
+            }
+
             if is_activate {
+                // For text/colour fields, enter editing mode.
                 ce.editing = true;
                 let id = widget::Id::from(format!("cfg-{}", ce.sel));
                 return widget::operation::focus(id);
@@ -1524,6 +1540,35 @@ impl SmartKeyboard {
         Task::none()
     }
 
+    /// Cycle the currently selected dropdown field to the next or previous
+    /// option.  `backward == true` means Left (previous), otherwise Right
+    /// / Activate (next).  Wraps around at the edges.
+    fn config_cycle_dropdown(&mut self, backward: bool) -> Task<Message> {
+        if let Some(ref mut ce) = self.config_editor {
+            let idx = ce.sel;
+            if idx >= ce.pairs.len() { return Task::none(); }
+            let key = ce.pairs[idx].0.clone();
+            if let Some(opts) = menu::field_options(&key) {
+                let cur = &ce.pairs[idx].1;
+                let cur_pos = opts.iter().position(|o| *o == cur);
+                let next = if backward {
+                    match cur_pos {
+                        Some(0) | None => opts.len().saturating_sub(1),
+                        Some(p) => p - 1,
+                    }
+                } else {
+                    match cur_pos {
+                        Some(p) if p + 1 < opts.len() => p + 1,
+                        _ => 0,
+                    }
+                };
+                let new_val = opts[next].to_string();
+                return self.update(Message::ConfigValueChanged(idx, new_val));
+            }
+        }
+        Task::none()
+    }
+
     // =========================================================================
     // Input event processing for overlays (menu / config editor)
     // =========================================================================
@@ -1553,6 +1598,21 @@ impl SmartKeyboard {
                                 ce.sel += 1;
                                 moved = true;
                             }
+                        }
+                    }
+                    UserInputAction::Left => {
+                        return self.config_cycle_dropdown(true);
+                    }
+                    UserInputAction::Right | UserInputAction::Activate => {
+                        // For dropdown fields, cycle to next option.
+                        // For text fields, Activate is a no-op from gamepad.
+                        let is_dropdown = self.config_editor.as_ref()
+                            .map_or(false, |ce| {
+                                ce.sel < ce.pairs.len()
+                                    && menu::field_options(&ce.pairs[ce.sel].0).is_some()
+                            });
+                        if is_dropdown {
+                            return self.config_cycle_dropdown(false);
                         }
                     }
                     UserInputAction::Menu => {

@@ -126,12 +126,19 @@ fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
                     format!("{}.{}", current_section, commented_key)
                 };
                 if let Some(new_val) = updates.get(dotted.as_str()) {
-                    written_keys.insert(
-                        updates.keys()
-                            .find(|k| **k == dotted.as_str())
-                            .copied()
-                            .unwrap_or("")
-                    );
+                    let key_ref = updates.keys()
+                        .find(|k| **k == dotted.as_str())
+                        .copied()
+                        .unwrap_or("");
+                    // If this key was already written (e.g. an earlier
+                    // commented or active line for the same field), keep
+                    // the original comment line and skip the duplicate.
+                    if written_keys.contains(key_ref) {
+                        out.push_str(line);
+                        out.push('\n');
+                        continue;
+                    }
+                    written_keys.insert(key_ref);
                     if new_val.is_empty() {
                         // Still empty/null -> keep original commented line.
                         out.push_str(line);
@@ -1011,5 +1018,52 @@ menu = 50
         assert!(validate_field("input.gamepad.activate", "5").is_none());
         assert!(validate_field("input.gamepad.activate", "a:2").is_none());
         assert!(validate_field("input.gamepad.activate", "foo").is_some());
+    }
+
+    /// Duplicate commented-out keys for the same field (e.g. two `# activate`
+    /// lines in `[input.gamepad]`) must not produce duplicate active lines on
+    /// save.  Regression test for the duplicate-key bug.
+    #[test]
+    fn duplicate_comment_lines_produce_single_active() {
+        let existing = "\
+[input.gamepad]
+enabled = true
+device = \"auto\"
+# activate       = null   # button or axis for Activate
+# activate_shift = null   # equivalent to activate when Shift is held
+# Examples using axis specifiers (analog triggers):
+# activate = \"a:2\"   # axis 2 positive -> Activate
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("input.gamepad.enabled",          "true".into()),
+            ("input.gamepad.device",           "auto".into()),
+            ("input.gamepad.activate",         "5".into()),
+            ("input.gamepad.activate_shift",   String::new()),
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        let activate_lines: Vec<&str> = result.lines()
+            .filter(|l| {
+                let t = l.trim();
+                // Match active (non-comment) lines `activate = ...` but NOT
+                // `activate_shift`, `activate_ctrl`, etc.
+                !t.starts_with('#')
+                    && t.starts_with("activate")
+                    && t[("activate".len())..].trim_start().starts_with('=')
+            })
+            .collect();
+
+        assert_eq!(
+            activate_lines.len(), 1,
+            "Expected exactly one active `activate = ...` line, got {}:\n{}\nFull output:\n{}",
+            activate_lines.len(),
+            activate_lines.join("\n"),
+            result,
+        );
+        assert!(
+            activate_lines[0].contains("5"),
+            "The activate line should contain the value 5: {}",
+            activate_lines[0],
+        );
     }
 }
