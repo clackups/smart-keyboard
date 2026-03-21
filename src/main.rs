@@ -9,23 +9,26 @@ mod output;
 mod phys_keyboard;
 mod user_input;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::time::Instant;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
-use fltk::{app, prelude::*};
+use iced::widget::{button, column, container, row, text, Space};
+use iced::{Color, Element, Length, Subscription, Task};
+use iced::keyboard;
+use iced::event;
+
 use keyboards::{Action, REGULAR_KEY_COUNT};
 use gamepad::Gamepad;
 use gpio::GpioInput;
 use narrator::Narrator;
 use user_input::{UserInputAction, UserInputEvent};
 use display::{
-    NavSel,
+    NavSel, BtnData, LangBtnData,
     nav_set, nav_move, find_center_key, find_btn_by_action,
     execute_action,
     on_nav_changed,
     action_audio_slug, action_tone_hz,
-    BuildUiParams, build_ui,
+    Colors, ModBtn, ModState, LayoutMetrics,
 };
 
 // =============================================================================
@@ -104,85 +107,9 @@ impl KeyHook for DummyKeyHook {
     }
 }
 
-
 // =============================================================================
-// Unified input event processing
+// Per-input-source mouse-movement auto-repeat state
 // =============================================================================
-
-use fltk::{button::Button, enums::Color, frame::Frame, text::{TextBuffer, TextDisplay}};
-use display::{Colors, ModBtn, ModState};
-
-/// All shared UI state needed to process a `UserInputEvent`.
-///
-/// Both the gamepad and the GPIO input sources share the same set of UI widgets
-/// and logical state (current selection, modifier state, ...).  Bundling
-/// them here lets [`process_input_events`] be called from any number of input
-/// source callbacks without repeating the context-dispatching logic.
-pub(crate) struct InputCtx {
-    all_btns:              Rc<RefCell<Vec<Vec<(Button, Action, u16, Color)>>>>,
-    lang_btns:             Rc<RefCell<Vec<Button>>>,
-    layout_idx:            Rc<RefCell<usize>>,
-    mod_state:             Rc<RefCell<ModState>>,
-    mod_btns:              Rc<RefCell<Vec<ModBtn>>>,
-    sel:                   Rc<RefCell<NavSel>>,
-    buf:                   TextBuffer,
-    disp:                  TextDisplay,
-    hook:                  Rc<dyn KeyHook>,
-    active_nav_key:        Rc<RefCell<Option<(u16, String)>>>,
-    active_btn_pressed:    Rc<RefCell<Option<(usize, usize)>>>,
-    /// Gamepad cell -- used for optional rumble feedback on navigation change.
-    gp_cell:               Rc<RefCell<Option<Gamepad>>>,
-    narrator:              Rc<RefCell<Narrator>>,
-    audio_mode:            config::AudioMode,
-    /// BLE connection (if output mode is "ble"), needed for menu.
-    ble_conn_opt:          Option<Rc<RefCell<output::BleConnection>>>,
-    rollover:              bool,
-    center_key:            String,
-    center_after_activate: bool,
-    preferred_cx:          Rc<RefCell<i32>>,
-    show_text_display:     bool,
-    mouse_mode:            Rc<RefCell<bool>>,
-    mouse_mode_ind:        Frame,
-    mouse_cfg:             config::MouseConfig,
-    /// Currently held mouse-button bitmask (bit 0 (0x01) = left,
-    /// bit 1 (0x02) = right).  Shared across all input sources so that a
-    /// button held by one source is included in movement reports generated
-    /// by any source.
-    mouse_buttons:         Rc<RefCell<u8>>,
-    colors:                Colors,
-}
-
-impl Clone for InputCtx {
-    fn clone(&self) -> Self {
-        InputCtx {
-            all_btns:              self.all_btns.clone(),
-            lang_btns:             self.lang_btns.clone(),
-            layout_idx:            self.layout_idx.clone(),
-            mod_state:             self.mod_state.clone(),
-            mod_btns:              self.mod_btns.clone(),
-            sel:                   self.sel.clone(),
-            buf:                   self.buf.clone(),
-            disp:                  self.disp.clone(),
-            hook:                  Rc::clone(&self.hook),
-            active_nav_key:        self.active_nav_key.clone(),
-            active_btn_pressed:    self.active_btn_pressed.clone(),
-            gp_cell:               self.gp_cell.clone(),
-            narrator:              self.narrator.clone(),
-            audio_mode:            self.audio_mode.clone(),
-            ble_conn_opt:          self.ble_conn_opt.clone(),
-            rollover:              self.rollover,
-            center_key:            self.center_key.clone(),
-            center_after_activate: self.center_after_activate,
-            preferred_cx:          self.preferred_cx.clone(),
-            show_text_display:     self.show_text_display,
-            mouse_mode:            self.mouse_mode.clone(),
-            mouse_mode_ind:        self.mouse_mode_ind.clone(),
-            mouse_cfg:             self.mouse_cfg.clone(),
-            mouse_buttons:         self.mouse_buttons.clone(),
-            colors:                self.colors,
-        }
-    }
-}
 
 /// Per-input-source mouse-movement auto-repeat state.
 ///
@@ -210,768 +137,1352 @@ impl MouseMoveState {
     }
 }
 
-/// Process a slice of `UserInputEvent`s against the current UI context.
-///
-/// This is the single place where context switching (virtual-keyboard mode,
-/// mouse mode, menu mode) is handled.  All physical input sources (gamepad,
-/// GPIO, physical keyboard) call this function after converting their
-/// hardware-specific events into `UserInputEvent` values.
-///
-/// `rumble` -- whether to trigger gamepad force-feedback on navigation changes.
-/// Pass `true` only for the gamepad source.
-pub(crate) fn process_input_events(
-    events:      &[UserInputEvent],
-    ctx:         &mut InputCtx,
-    mouse:       &mut MouseMoveState,
-    rumble:      bool,
-) {
-    let colors = ctx.colors;
+// =============================================================================
+// BLE connection state
+// =============================================================================
 
-    for evt in events {
-        match evt.action {
-            UserInputAction::Menu => {
-                if !evt.pressed { continue; }
-                // Release any held key before opening the menu window.
-                if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
-                    ctx.hook.on_key_release(sc, &ks);
-                }
-                // open_menu runs its own modal event loop and blocks
-                // until the menu window is closed.  While it runs,
-                // the main app's input handlers do not fire.
-                menu::open_menu(
-                    ctx.ble_conn_opt.clone(),
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BleState {
+    Disconnected,
+    Connecting,
+    Connected,
+}
+
+// =============================================================================
+// Message enum
+// =============================================================================
+
+#[derive(Debug, Clone)]
+enum Message {
+    KeyPressed(u32),
+    KeyReleased(u32),
+    PollTick,
+    BleTick,
+    ButtonClicked(usize, usize),
+    LangClicked(usize),
+    MenuOpen,
+    MenuClose,
+}
+
+// =============================================================================
+// SmartKeyboard state
+// =============================================================================
+
+struct SmartKeyboard {
+    // Button grid data
+    all_btns: Vec<Vec<BtnData>>,
+    lang_btns: Vec<LangBtnData>,
+    layout_idx: usize,
+    mod_state: ModState,
+    mod_btns: Vec<ModBtn>,
+    sel: NavSel,
+    text_buffer: String,
+    preferred_cx: i32,
+
+    // Output
+    hook: Box<dyn KeyHook>,
+
+    // Active key tracking
+    active_nav_key: Option<(u16, String)>,
+    active_btn_pressed: Option<(usize, usize)>,
+
+    // Gamepad
+    gp_cell: Option<Gamepad>,
+
+    // Audio
+    narrator: Narrator,
+    audio_mode: config::AudioMode,
+
+    // Config
+    nav_keys: config::NavKeys,
+    rollover: bool,
+    center_key: String,
+    center_after_activate: bool,
+    show_text_display: bool,
+    mouse_cfg: config::MouseConfig,
+
+    // Mouse mode
+    mouse_mode: bool,
+    mouse_buttons: u8,
+    mouse_state_kb: MouseMoveState,
+    mouse_state_gp: MouseMoveState,
+    mouse_state_gpio: MouseMoveState,
+
+    // Input sources
+    gp_cfg: Option<config::GamepadInputConfig>,
+    gpio_cell: Option<GpioInput>,
+    gpio_cfg: Option<config::GpioInputConfig>,
+
+    // BLE
+    ble_conn: Option<output::BleConnection>,
+    ble_state: BleState,
+
+    // Keyboard physical key tracking
+    pressed_keys: HashSet<u32>,
+
+    // UI
+    colors: Colors,
+    metrics: LayoutMetrics,
+    switch_scancodes: Vec<Vec<u8>>,
+
+    // Gamepad / GPIO connection tracking
+    gp_connected: bool,
+    gpio_connected: bool,
+    gp_rumble: bool,
+
+    // Menu
+    showing_menu: bool,
+}
+
+// SAFETY: All iced update/view/subscription callbacks run on the main GUI
+// thread.  The non-Send fields (BleKeyHook via Rc<RefCell<BleConnection>>)
+// are never accessed from another thread.
+unsafe impl Send for SmartKeyboard {}
+
+// =============================================================================
+// Application implementation
+// =============================================================================
+
+impl SmartKeyboard {
+    fn new() -> (Self, Task<Message>) {
+        let cfg = config::Config::load();
+
+        let config_dir = std::env::var("SMART_KBD_CONFIG_PATH")
+            .unwrap_or_else(|_| ".".into());
+
+        let active_keymaps = cfg.ui.active_keymaps.clone();
+        let loaded_layouts = keyboards::load_active_layouts(&active_keymaps, &config_dir);
+        keyboards::set_layouts(loaded_layouts);
+        let layouts = keyboards::get_layouts();
+
+        debug_assert!(
+            layouts.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
+            "every LayoutDef must have exactly REGULAR_KEY_COUNT entries"
+        );
+
+        let switch_scancodes: Vec<Vec<u8>> = active_keymaps
+            .iter()
+            .map(|name| match cfg.keymap.get(name) {
+                None     => keyboards::default_switch_scancode_for(name),
+                Some(kc) => kc.switch_scancode.clone(),
+            })
+            .collect();
+
+        let narrator = Narrator::new(cfg.output.audio.clone());
+        let audio_mode = cfg.output.audio.clone();
+
+        let mut ble_conn_opt: Option<output::BleConnection> = None;
+        let hook: Box<dyn KeyHook> = match cfg.output.mode {
+            config::OutputMode::Print => Box::new(output::PrintKeyHook),
+            config::OutputMode::Ble => {
+                let ble_cfg = &cfg.output.ble;
+                let (ble_hook, ble_conn) = output::BleKeyHook::new(
+                    ble_cfg.vid,
+                    ble_cfg.pid,
+                    ble_cfg.serial.clone(),
+                    ble_cfg.key_release_delay,
+                    ble_cfg.lang_switch_release_delay,
                 );
+                // Extract the BleConnection from the Rc<RefCell<>> for our state.
+                // We take it out here; the BleKeyHook keeps its own Rc clone.
+                ble_conn_opt = Some(
+                    std::rc::Rc::try_unwrap(ble_conn)
+                        .ok()
+                        .map(|rc| rc.into_inner())
+                        .unwrap_or_else(|| {
+                            output::BleConnection::new(
+                                ble_cfg.vid,
+                                ble_cfg.pid,
+                                ble_cfg.serial.clone(),
+                            )
+                        }),
+                );
+                Box::new(ble_hook)
+            }
+        };
+
+        let colors = Colors::from_config(&cfg.ui.colors);
+
+        // Use a reasonable default screen size for layout computation.
+        // iced will handle the actual window sizing.
+        let (sw, sh) = (800i32, 480i32);
+        let metrics = display::compute_layout(sw, sh, &cfg);
+
+        let all_btns = display::build_btn_grid(&metrics, &colors);
+        let lang_btns = display::build_lang_btns(&metrics);
+
+        let mod_btns = build_mod_btns(&all_btns, &colors);
+
+        // Set initial selection to center key or first key.
+        let initial_sel = find_center_key(&all_btns, 0, &cfg.navigate.center_key)
+            .unwrap_or(NavSel::Key(0, 0));
+
+        let nav_keys = config::NavKeys::from_config(&cfg.input.keyboard);
+
+        // Open gamepad if enabled.
+        let (gp_cell, gp_connected, gp_cfg, gp_rumble) = if cfg.input.gamepad.enabled {
+            let gp = Gamepad::open(&cfg.input.gamepad);
+            let connected = gp.is_some();
+            (gp, connected, Some(cfg.input.gamepad.clone()), cfg.input.gamepad.rumble)
+        } else {
+            (None, false, None, false)
+        };
+
+        // Open GPIO if enabled.
+        let (gpio_cell, gpio_connected, gpio_cfg) = if cfg.input.gpio.enabled {
+            let gpio = GpioInput::open(&cfg.input.gpio);
+            let connected = gpio.is_some();
+            (gpio, connected, Some(cfg.input.gpio.clone()))
+        } else {
+            (None, false, None)
+        };
+
+        let ble_state = if ble_conn_opt.is_some() {
+            BleState::Disconnected
+        } else {
+            BleState::Disconnected
+        };
+
+        let app = SmartKeyboard {
+            all_btns,
+            lang_btns,
+            layout_idx: 0,
+            mod_state: ModState::default(),
+            mod_btns,
+            sel: initial_sel,
+            text_buffer: String::new(),
+            preferred_cx: 0,
+            hook,
+            active_nav_key: None,
+            active_btn_pressed: None,
+            gp_cell,
+            narrator,
+            audio_mode,
+            nav_keys,
+            rollover: cfg.navigate.rollover,
+            center_key: cfg.navigate.center_key.clone(),
+            center_after_activate: cfg.navigate.center_after_activate,
+            show_text_display: cfg.ui.show_text_display,
+            mouse_cfg: cfg.mouse.clone(),
+            mouse_mode: false,
+            mouse_buttons: 0,
+            mouse_state_kb: MouseMoveState::new(),
+            mouse_state_gp: MouseMoveState::new(),
+            mouse_state_gpio: MouseMoveState::new(),
+            gp_cfg,
+            gpio_cell,
+            gpio_cfg,
+            ble_conn: ble_conn_opt,
+            ble_state,
+            pressed_keys: HashSet::new(),
+            colors,
+            metrics,
+            switch_scancodes,
+            gp_connected,
+            gpio_connected,
+            gp_rumble,
+            showing_menu: false,
+        };
+
+        (app, Task::none())
+    }
+
+    // =========================================================================
+    // Subscription
+    // =========================================================================
+
+    fn subscription(&self) -> Subscription<Message> {
+        let mut subs = vec![
+            // Keyboard events
+            event::listen_with(|evt, _status, _id| match evt {
+                iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                    physical_key,
+                    ..
+                }) => phys_keyboard::physical_to_scancode(physical_key)
+                    .map(Message::KeyPressed),
+                iced::Event::Keyboard(keyboard::Event::KeyReleased {
+                    physical_key,
+                    ..
+                }) => phys_keyboard::physical_to_scancode(physical_key)
+                    .map(Message::KeyReleased),
+                _ => None,
+            }),
+            // 16ms poll tick for gamepad/GPIO/mouse auto-repeat
+            iced::time::every(Duration::from_millis(16)).map(|_| Message::PollTick),
+        ];
+
+        // BLE management tick (1s)
+        if self.ble_conn.is_some() {
+            subs.push(
+                iced::time::every(Duration::from_secs(1)).map(|_| Message::BleTick),
+            );
+        }
+
+        Subscription::batch(subs)
+    }
+
+    // =========================================================================
+    // Update
+    // =========================================================================
+
+    fn update(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::KeyPressed(sc) => {
+                if !self.pressed_keys.insert(sc) {
+                    // Already pressed (key repeat); ignore.
+                    return Task::none();
+                }
+                let events =
+                    phys_keyboard::translate_key_event(sc, true, &self.nav_keys);
+                self.process_input_events(&events, InputSource::Keyboard);
             }
 
-            UserInputAction::Up
-            | UserInputAction::Down
-            | UserInputAction::Left
-            | UserInputAction::Right => {
-                if !evt.pressed {
-                    // Release: stop mouse movement in this direction.
-                    if *ctx.mouse_mode.borrow() {
+            Message::KeyReleased(sc) => {
+                self.pressed_keys.remove(&sc);
+                let events =
+                    phys_keyboard::translate_key_event(sc, false, &self.nav_keys);
+                self.process_input_events(&events, InputSource::Keyboard);
+            }
+
+            Message::PollTick => {
+                // Poll gamepad
+                if self.gp_cfg.is_some() {
+                    self.poll_gamepad();
+                }
+                // Poll GPIO
+                if self.gpio_cfg.is_some() {
+                    self.poll_gpio();
+                }
+                // Mouse auto-repeat for all sources
+                self.do_mouse_auto_repeat(InputSource::Keyboard);
+                self.do_mouse_auto_repeat(InputSource::Gamepad);
+                self.do_mouse_auto_repeat(InputSource::Gpio);
+            }
+
+            Message::BleTick => {
+                self.manage_ble_connection();
+            }
+
+            Message::ButtonClicked(row, col) => {
+                self.handle_button_click(row, col);
+            }
+
+            Message::LangClicked(li) => {
+                self.handle_lang_click(li);
+            }
+
+            Message::MenuOpen => {
+                // Release any held key before entering menu.
+                if let Some((sc, ks)) = self.active_nav_key.take() {
+                    self.hook.on_key_release(sc, &ks);
+                }
+                self.showing_menu = true;
+            }
+
+            Message::MenuClose => {
+                self.showing_menu = false;
+            }
+        }
+
+        Task::none()
+    }
+
+    // =========================================================================
+    // View
+    // =========================================================================
+
+    fn view(&self) -> Element<Message> {
+        if self.showing_menu {
+            return self.view_menu();
+        }
+
+        let colors = self.colors;
+        let metrics = &self.metrics;
+
+        // --- Status bar ---
+        let status_bar = self.view_status_bar();
+
+        // --- Text display (optional) ---
+        let text_display: Element<Message> = if self.show_text_display {
+            let display_text = text(&self.text_buffer)
+                .size(metrics.disp_size as f32)
+                .color(colors.disp_text);
+            container(display_text)
+                .width(Length::Fill)
+                .height(Length::Fixed(metrics.display_h as f32))
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(colors.disp_bg)),
+                    ..Default::default()
+                })
+                .padding(4)
+                .into()
+        } else {
+            Space::new().into()
+        };
+
+        // --- Language buttons ---
+        let lang_row: Element<Message> = if self.lang_btns.is_empty() {
+            Space::new().into()
+        } else {
+            let mut lr = row![].spacing(metrics.gap as f32);
+            for (li, lang) in self.lang_btns.iter().enumerate() {
+                let is_active = li == self.layout_idx;
+                let is_selected = self.sel == NavSel::Lang(li);
+
+                let bg = if is_selected {
+                    colors.nav_sel
+                } else if is_active {
+                    colors.mod_active
+                } else {
+                    colors.lang_btn_inactive
+                };
+
+                let label_color = colors.lang_btn_label;
+                let label = lang.name.clone();
+                let w = lang.w as f32;
+                let h = metrics.lang_btn_h as f32;
+                let lbl_size = metrics.lbl_size as f32;
+
+                let btn = button(
+                    text(label).size(lbl_size).color(label_color)
+                        .align_x(iced::alignment::Horizontal::Center)
+                )
+                .width(Length::Fixed(w))
+                .height(Length::Fixed(h))
+                .on_press(Message::LangClicked(li))
+                .style(move |_theme: &iced::Theme, _status| button::Style {
+                    background: Some(iced::Background::Color(bg)),
+                    text_color: label_color,
+                    border: iced::Border::default(),
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                });
+
+                lr = lr.push(btn);
+            }
+            container(lr)
+                .width(Length::Fill)
+                .padding([0, metrics.pad as u16])
+                .into()
+        };
+
+        // --- Keyboard grid ---
+        let keyboard_grid = self.view_keyboard_grid();
+
+        // --- Assemble main layout ---
+        let main_col = column![status_bar, text_display, lang_row, keyboard_grid]
+            .spacing(metrics.gap as f32)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        container(main_col)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.win_bg)),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    // =========================================================================
+    // View helpers
+    // =========================================================================
+
+    fn view_status_bar(&self) -> Element<Message> {
+        let colors = self.colors;
+        let metrics = &self.metrics;
+        let lbl_size = metrics.status_lbl_size as f32;
+        let ind_w = metrics.ind_w as f32;
+        let ind_h = metrics.ind_h as f32;
+
+        let mut pills = row![].spacing(metrics.ind_gap as f32);
+
+        // Modifier indicator pills
+        let mod_indicators = [
+            ("Caps", self.mod_state.caps),
+            ("Shift", self.mod_state.lshift || self.mod_state.rshift),
+            ("Ctrl", self.mod_state.ctrl),
+            ("Alt", self.mod_state.alt),
+            ("AltGr", self.mod_state.altgr),
+            ("Win", self.mod_state.win),
+            ("Mouse", self.mouse_mode),
+        ];
+
+        for (label, active) in mod_indicators {
+            let text_color = if active {
+                colors.status_ind_active_text
+            } else {
+                colors.status_ind_text
+            };
+
+            let pill = container(
+                text(label).size(lbl_size).color(text_color)
+                    .align_x(iced::alignment::Horizontal::Center)
+                    .align_y(iced::alignment::Vertical::Center)
+            )
+            .width(Length::Fixed(ind_w))
+            .height(Length::Fixed(ind_h))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.status_ind_bg)),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+            pills = pills.push(pill);
+        }
+
+        // Connection status icons
+        pills = pills.push(Space::new().width(Length::Fill));
+
+        // Gamepad connection icon
+        if self.gp_cfg.is_some() {
+            let gp_color = if self.gp_connected {
+                colors.conn_connected
+            } else {
+                colors.conn_disconnected
+            };
+            let gp_icon = container(
+                text("GP").size(lbl_size).color(gp_color)
+                    .align_x(iced::alignment::Horizontal::Center)
+                    .align_y(iced::alignment::Vertical::Center)
+            )
+            .width(Length::Fixed(ind_w))
+            .height(Length::Fixed(ind_h))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.status_ind_bg)),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            pills = pills.push(gp_icon);
+        }
+
+        // GPIO connection icon
+        if self.gpio_cfg.is_some() {
+            let gpio_color = if self.gpio_connected {
+                colors.conn_connected
+            } else {
+                colors.conn_disconnected
+            };
+            let gpio_icon = container(
+                text("IO").size(lbl_size).color(gpio_color)
+                    .align_x(iced::alignment::Horizontal::Center)
+                    .align_y(iced::alignment::Vertical::Center)
+            )
+            .width(Length::Fixed(ind_w))
+            .height(Length::Fixed(ind_h))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.status_ind_bg)),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            pills = pills.push(gpio_icon);
+        }
+
+        // BLE connection icon
+        if self.ble_conn.is_some() {
+            let ble_color = match self.ble_state {
+                BleState::Connected    => colors.conn_connected,
+                BleState::Connecting   => colors.conn_connecting,
+                BleState::Disconnected => colors.conn_disconnected,
+            };
+            let ble_icon = container(
+                text("BLE").size(lbl_size).color(ble_color)
+                    .align_x(iced::alignment::Horizontal::Center)
+                    .align_y(iced::alignment::Vertical::Center)
+            )
+            .width(Length::Fixed(ind_w))
+            .height(Length::Fixed(ind_h))
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.status_ind_bg)),
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            pills = pills.push(ble_icon);
+        }
+
+        container(pills.padding(metrics.ind_pad as u16))
+            .width(Length::Fill)
+            .height(Length::Fixed(metrics.status_h as f32))
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.status_bar_bg)),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    fn view_keyboard_grid(&self) -> Element<Message> {
+        let colors = self.colors;
+        let metrics = &self.metrics;
+        let key_h = metrics.key_h as f32;
+        let lbl_size = metrics.lbl_size as f32;
+        let layouts = keyboards::get_layouts();
+
+        let mut grid = column![].spacing(metrics.gap as f32);
+
+        for (ri, btn_row) in self.all_btns.iter().enumerate() {
+            let mut r = row![].spacing(metrics.gap as f32);
+
+            for (ci, btn_data) in btn_row.iter().enumerate() {
+                let w = btn_data.w as f32;
+                let action = btn_data.action;
+                let is_selected = self.sel == NavSel::Key(ri, ci);
+                let is_active_pressed =
+                    self.active_btn_pressed == Some((ri, ci));
+
+                // Determine background color
+                let bg = if is_selected || is_active_pressed {
+                    colors.nav_sel
+                } else if keyboards::is_modifier(action) && self.mod_state.is_active(action) {
+                    colors.mod_active
+                } else {
+                    btn_data.base_color
+                };
+
+                // Determine label text and color
+                let label = match action {
+                    Action::Regular(n) => {
+                        if self.layout_idx < layouts.len() {
+                            let key = &layouts[self.layout_idx].keys[n];
+                            let shifted = self.mod_state.is_shifted();
+                            if shifted && !key.label_shifted.is_empty() {
+                                key.label_shifted.clone()
+                            } else if !shifted || key.label_shifted.is_empty() {
+                                if self.mod_state.caps && key.label_shifted.is_empty() {
+                                    key.label_unshifted.to_uppercase()
+                                } else {
+                                    key.label_unshifted.clone()
+                                }
+                            } else {
+                                key.label_unshifted.clone()
+                            }
+                        } else {
+                            String::new()
+                        }
+                    }
+                    Action::Space => String::new(),
+                    other => keyboards::special_label(other).to_string(),
+                };
+
+                let label_color = match action {
+                    Action::Regular(_) | Action::Space => colors.key_label_normal,
+                    _ => colors.key_label_mod,
+                };
+
+                let btn = button(
+                    text(label)
+                        .size(lbl_size)
+                        .color(label_color)
+                        .align_x(iced::alignment::Horizontal::Center)
+                )
+                .width(Length::Fixed(w))
+                .height(Length::Fixed(key_h))
+                .on_press(Message::ButtonClicked(ri, ci))
+                .style(move |_theme: &iced::Theme, _status| button::Style {
+                    background: Some(iced::Background::Color(bg)),
+                    text_color: label_color,
+                    border: iced::Border {
+                        radius: 2.0.into(),
+                        ..Default::default()
+                    },
+                    shadow: iced::Shadow::default(),
+                    snap: true,
+                });
+
+                r = r.push(btn);
+            }
+
+            grid = grid.push(r);
+        }
+
+        container(grid)
+            .width(Length::Fill)
+            .padding([0, metrics.pad as u16])
+            .into()
+    }
+
+    fn view_menu(&self) -> Element<Message> {
+        let colors = self.colors;
+
+        let title = text("Menu")
+            .size(28)
+            .color(Color::WHITE);
+
+        let close_btn = button(
+            text("Close")
+                .size(20)
+                .color(Color::WHITE)
+                .align_x(iced::alignment::Horizontal::Center)
+        )
+        .width(Length::Fixed(300.0))
+        .height(Length::Fixed(50.0))
+        .on_press(Message::MenuClose)
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: Some(iced::Background::Color(Color::from_rgb(0.24, 0.24, 0.26))),
+            text_color: Color::WHITE,
+            border: iced::Border {
+                radius: 4.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow::default(),
+                    snap: true,
+        });
+
+        let ble_label = if self.ble_conn.is_some() {
+            "Disconnect BLE"
+        } else {
+            "Disconnect BLE (N/A)"
+        };
+
+        let ble_btn = button(
+            text(ble_label)
+                .size(20)
+                .color(if self.ble_conn.is_some() {
+                    Color::WHITE
+                } else {
+                    Color::from_rgb(0.35, 0.35, 0.35)
+                })
+                .align_x(iced::alignment::Horizontal::Center)
+        )
+        .width(Length::Fixed(300.0))
+        .height(Length::Fixed(50.0))
+        .on_press(Message::MenuClose)
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: Some(iced::Background::Color(Color::from_rgb(0.24, 0.24, 0.26))),
+            text_color: Color::WHITE,
+            border: iced::Border {
+                radius: 4.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow::default(),
+                    snap: true,
+        });
+
+        let menu_col = column![title, ble_btn, close_btn]
+            .spacing(12)
+            .align_x(iced::alignment::Horizontal::Center);
+
+        container(menu_col)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.win_bg)),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    // =========================================================================
+    // Input event processing (replaces old process_input_events + InputCtx)
+    // =========================================================================
+
+    fn process_input_events(&mut self, events: &[UserInputEvent], source: InputSource) {
+        let rumble = matches!(source, InputSource::Gamepad) && self.gp_rumble;
+
+        for evt in events {
+            match evt.action {
+                UserInputAction::Menu => {
+                    if !evt.pressed { continue; }
+                    if let Some((sc, ks)) = self.active_nav_key.take() {
+                        self.hook.on_key_release(sc, &ks);
+                    }
+                    self.showing_menu = true;
+                }
+
+                UserInputAction::Up
+                | UserInputAction::Down
+                | UserInputAction::Left
+                | UserInputAction::Right => {
+                    if !evt.pressed {
+                        if self.mouse_mode {
+                            let (ddx, ddy) = dir_to_mouse_delta(evt.action);
+                            let mouse = self.mouse_state_for(source);
+                            if ddx != 0 && mouse.dx == ddx { mouse.dx = 0; }
+                            if ddy != 0 && mouse.dy == ddy { mouse.dy = 0; }
+                            if mouse.dx == 0 && mouse.dy == 0 {
+                                mouse.start = None;
+                                mouse.next  = None;
+                            }
+                        }
+                        continue;
+                    }
+                    if self.mouse_mode {
                         let (ddx, ddy) = dir_to_mouse_delta(evt.action);
-                        if ddx != 0 && mouse.dx == ddx { mouse.dx = 0; }
-                        if ddy != 0 && mouse.dy == ddy { mouse.dy = 0; }
-                        if mouse.dx == 0 && mouse.dy == 0 {
-                            mouse.start = None;
-                            mouse.next  = None;
+                        let interval = Duration::from_millis(self.mouse_cfg.repeat_interval);
+                        let mouse_buttons = self.mouse_buttons;
+                        let mouse = self.mouse_state_for(source);
+                        if ddx != 0 { mouse.dx = ddx; }
+                        if ddy != 0 { mouse.dy = ddy; }
+                        let now = Instant::now();
+                        if mouse.start.is_none() {
+                            mouse.start = Some(now);
                         }
+                        mouse.next = Some(now + interval);
+                        self.hook.on_mouse_report(mouse_buttons, ddx, ddy);
+                        continue;
                     }
-                    continue;
-                }
-                // Mouse mode: send a mouse movement report.
-                if *ctx.mouse_mode.borrow() {
-                    let (ddx, ddy) = dir_to_mouse_delta(evt.action);
-                    if ddx != 0 { mouse.dx = ddx; }
-                    if ddy != 0 { mouse.dy = ddy; }
-                    let now = Instant::now();
-                    if mouse.start.is_none() {
-                        mouse.start = Some(now);
-                    }
-                    let interval = std::time::Duration::from_millis(ctx.mouse_cfg.repeat_interval);
-                    mouse.next = Some(now + interval);
-                    ctx.hook.on_mouse_report(*ctx.mouse_buttons.borrow(), ddx, ddy);
-                    continue;
-                }
-                let (dr, dc) = match evt.action {
-                    UserInputAction::Up    => (-1,  0),
-                    UserInputAction::Down  => ( 1,  0),
-                    UserInputAction::Left  => ( 0, -1),
-                    _                      => ( 0,  1), // Right
-                };
-                let changed = {
-                    let mut ab = ctx.all_btns.borrow_mut();
-                    let mut lb = ctx.lang_btns.borrow_mut();
-                    let mut s  = ctx.sel.borrow_mut();
-                    nav_move(
-                        &mut ab, &mut lb,
-                        *ctx.layout_idx.borrow(),
-                        &mut s, &ctx.mod_state,
-                        dr, dc,
-                        colors,
-                        ctx.rollover,
-                        &mut *ctx.preferred_cx.borrow_mut(),
-                    )
-                };
-                on_nav_changed(
-                    changed, rumble, &ctx.gp_cell, &ctx.sel,
-                    &ctx.all_btns, *ctx.layout_idx.borrow(),
-                    &ctx.narrator, &ctx.audio_mode,
-                    ctx.mod_state.borrow().is_shifted(),
-                );
-            }
-
-            UserInputAction::Activate => {
-                // Mouse mode: left button press/release.
-                if *ctx.mouse_mode.borrow() {
-                    let btns = update_mouse_buttons(ctx, 0x01, evt.pressed);
-                    ctx.hook.on_mouse_report(btns, 0, 0);
-                    continue;
-                }
-                if evt.pressed {
-                    let cur_sel = *ctx.sel.borrow();
-                    match cur_sel {
-                        NavSel::Lang(li) => {
-                            // Clone the button so the RefCell borrow is released
-                            // before do_callback runs (the callback borrows
-                            // lang_btns internally).
-                            let mut btn = ctx.lang_btns.borrow()[li].clone();
-                            btn.do_callback();
-                            *ctx.active_nav_key.borrow_mut() = None;
-                            // The lang callback already narrates the switch;
-                            // still honour center_after_activate if configured.
-                            maybe_center_after_activate(ctx, rumble);
-                        }
-                        NavSel::Key(row, col) => {
-                            let shifted_pre = ctx.mod_state.borrow().is_shifted();
-                            let (action, scancode) = {
-                                let ab = ctx.all_btns.borrow();
-                                (ab[row][col].1, ab[row][col].2)
-                            };
-                            let key_str = execute_action(
-                                action, scancode,
-                                *ctx.layout_idx.borrow(),
-                                &mut ctx.buf, &mut ctx.disp, &ctx.hook,
-                                &ctx.mod_state,
-                                &ctx.mod_btns.borrow(),
-                                colors,
-                                ctx.show_text_display,
-                            );
-                            *ctx.active_nav_key.borrow_mut() = Some((scancode, key_str));
-                            ctx.all_btns.borrow_mut()[row][col].0.set_color(colors.nav_sel);
-                            app::redraw();
-                            // Narrate the activated key (or the center key
-                            // when center_after_activate jumps).
-                            let jumped = maybe_center_after_activate(ctx, rumble);
-                            if !jumped {
-                                let slug = action_audio_slug(action, *ctx.layout_idx.borrow(), shifted_pre);
-                                let fallback = if shifted_pre { action_audio_slug(action, *ctx.layout_idx.borrow(), false) } else { String::new() };
-                                ctx.narrator.borrow_mut().play_with_fallback(
-                                    &slug, &fallback,
-                                    action_tone_hz(action, &ctx.audio_mode),
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
-                        ctx.hook.on_key_release(sc, &ks);
-                    }
-                }
-            }
-
-            UserInputAction::ActivateEnter => {
-                if *ctx.mouse_mode.borrow() { continue; }
-                activate_direct_key(
-                    evt.pressed, Action::Enter, 0x1c, ctx, rumble,
-                );
-            }
-
-            UserInputAction::ActivateSpace => {
-                if *ctx.mouse_mode.borrow() { continue; }
-                activate_direct_key(
-                    evt.pressed, Action::Space, 0x39, ctx, rumble,
-                );
-            }
-
-            UserInputAction::ActivateArrowLeft
-            | UserInputAction::ActivateArrowRight
-            | UserInputAction::ActivateArrowUp
-            | UserInputAction::ActivateArrowDown => {
-                if *ctx.mouse_mode.borrow() { continue; }
-                let (arrow_action, arrow_sc) = match evt.action {
-                    UserInputAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
-                    UserInputAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
-                    UserInputAction::ActivateArrowUp    => (Action::ArrowUp,    0x67u16),
-                    _                                   => (Action::ArrowDown,  0x6cu16),
-                };
-                activate_direct_key(evt.pressed, arrow_action, arrow_sc, ctx, rumble);
-            }
-
-            UserInputAction::ActivateBksp => {
-                if *ctx.mouse_mode.borrow() { continue; }
-                activate_direct_key(
-                    evt.pressed, Action::Backspace, 0x0e, ctx, rumble,
-                );
-            }
-
-            UserInputAction::ActivateShift
-            | UserInputAction::ActivateCtrl
-            | UserInputAction::ActivateAlt
-            | UserInputAction::ActivateAltGr => {
-                // Mouse mode: suppress all keyboard actions.
-                // ActivateShift = right mouse button; ActivateCtrl,
-                // ActivateAlt, and ActivateAltGr are suppressed.
-                if *ctx.mouse_mode.borrow() {
-                    if evt.action == UserInputAction::ActivateShift {
-                        let btns = update_mouse_buttons(ctx, 0x02, evt.pressed);
-                        ctx.hook.on_mouse_report(btns, 0, 0);
-                    }
-                    continue;
-                }
-                if evt.pressed {
-                    {
-                        let mut ms = ctx.mod_state.borrow_mut();
-                        match evt.action {
-                            UserInputAction::ActivateShift => ms.lshift = true,
-                            UserInputAction::ActivateCtrl  => ms.ctrl   = true,
-                            UserInputAction::ActivateAlt   => ms.alt    = true,
-                            _                              => ms.altgr  = true,
-                        }
-                    }
-                    let cur_sel = *ctx.sel.borrow();
-                    match cur_sel {
-                        NavSel::Lang(li) => {
-                            let mut btn = ctx.lang_btns.borrow()[li].clone();
-                            btn.do_callback();
-                            *ctx.active_nav_key.borrow_mut() = None;
-                            maybe_center_after_activate(ctx, rumble);
-                        }
-                        NavSel::Key(row, col) => {
-                            let shifted_pre = ctx.mod_state.borrow().is_shifted();
-                            let (action, scancode) = {
-                                let ab = ctx.all_btns.borrow();
-                                (ab[row][col].1, ab[row][col].2)
-                            };
-                            let key_str = execute_action(
-                                action, scancode,
-                                *ctx.layout_idx.borrow(),
-                                &mut ctx.buf, &mut ctx.disp, &ctx.hook,
-                                &ctx.mod_state,
-                                &ctx.mod_btns.borrow(),
-                                colors,
-                                ctx.show_text_display,
-                            );
-                            *ctx.active_nav_key.borrow_mut() = Some((scancode, key_str));
-                            ctx.all_btns.borrow_mut()[row][col].0.set_color(colors.nav_sel);
-                            app::redraw();
-                            let jumped = maybe_center_after_activate(ctx, rumble);
-                            if !jumped {
-                                let slug = action_audio_slug(action, *ctx.layout_idx.borrow(), shifted_pre);
-                                let fallback = if shifted_pre { action_audio_slug(action, *ctx.layout_idx.borrow(), false) } else { String::new() };
-                                ctx.narrator.borrow_mut().play_with_fallback(
-                                    &slug, &fallback,
-                                    action_tone_hz(action, &ctx.audio_mode),
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
-                        ctx.hook.on_key_release(sc, &ks);
-                    }
-                }
-            }
-
-            UserInputAction::NavigateCenter => {
-                if !evt.pressed { continue; }
-                if let Some(center) = {
-                    let ab = ctx.all_btns.borrow();
-                    find_center_key(&ab, *ctx.layout_idx.borrow(), &ctx.center_key)
-                } {
-                    let changed = {
-                        let mut ab = ctx.all_btns.borrow_mut();
-                        let mut lb = ctx.lang_btns.borrow_mut();
-                        let mut s  = ctx.sel.borrow_mut();
-                        nav_set(
-                            &mut ab, &mut lb,
-                            *ctx.layout_idx.borrow(),
-                            &mut s, &ctx.mod_state,
-                            center,
-                            colors,
-                        )
+                    let (dr, dc) = match evt.action {
+                        UserInputAction::Up    => (-1,  0),
+                        UserInputAction::Down  => ( 1,  0),
+                        UserInputAction::Left  => ( 0, -1),
+                        _                      => ( 0,  1),
                     };
+                    let changed = nav_move(
+                        &self.all_btns, &self.lang_btns,
+                        &mut self.sel,
+                        dr, dc,
+                        self.rollover,
+                        &mut self.preferred_cx,
+                    );
                     on_nav_changed(
-                        changed, rumble, &ctx.gp_cell, &ctx.sel,
-                        &ctx.all_btns, *ctx.layout_idx.borrow(),
-                        &ctx.narrator, &ctx.audio_mode,
-                        ctx.mod_state.borrow().is_shifted(),
+                        changed, rumble, &mut self.gp_cell,
+                        self.sel, &self.all_btns, self.layout_idx,
+                        &mut self.narrator, &self.audio_mode,
+                        self.mod_state.is_shifted(),
+                    );
+                }
+
+                UserInputAction::Activate => {
+                    if self.mouse_mode {
+                        let btns = self.update_mouse_buttons(0x01, evt.pressed);
+                        self.hook.on_mouse_report(btns, 0, 0);
+                        continue;
+                    }
+                    if evt.pressed {
+                        self.do_activate(rumble);
+                    } else {
+                        if let Some((sc, ks)) = self.active_nav_key.take() {
+                            self.hook.on_key_release(sc, &ks);
+                        }
+                    }
+                }
+
+                UserInputAction::ActivateEnter => {
+                    if self.mouse_mode { continue; }
+                    self.activate_direct_key(evt.pressed, Action::Enter, 0x1c, rumble);
+                }
+
+                UserInputAction::ActivateSpace => {
+                    if self.mouse_mode { continue; }
+                    self.activate_direct_key(evt.pressed, Action::Space, 0x39, rumble);
+                }
+
+                UserInputAction::ActivateArrowLeft
+                | UserInputAction::ActivateArrowRight
+                | UserInputAction::ActivateArrowUp
+                | UserInputAction::ActivateArrowDown => {
+                    if self.mouse_mode { continue; }
+                    let (arrow_action, arrow_sc) = match evt.action {
+                        UserInputAction::ActivateArrowLeft  => (Action::ArrowLeft,  0x69u16),
+                        UserInputAction::ActivateArrowRight => (Action::ArrowRight, 0x6au16),
+                        UserInputAction::ActivateArrowUp    => (Action::ArrowUp,    0x67u16),
+                        _                                   => (Action::ArrowDown,  0x6cu16),
+                    };
+                    self.activate_direct_key(evt.pressed, arrow_action, arrow_sc, rumble);
+                }
+
+                UserInputAction::ActivateBksp => {
+                    if self.mouse_mode { continue; }
+                    self.activate_direct_key(evt.pressed, Action::Backspace, 0x0e, rumble);
+                }
+
+                UserInputAction::ActivateShift
+                | UserInputAction::ActivateCtrl
+                | UserInputAction::ActivateAlt
+                | UserInputAction::ActivateAltGr => {
+                    if self.mouse_mode {
+                        if evt.action == UserInputAction::ActivateShift {
+                            let btns = self.update_mouse_buttons(0x02, evt.pressed);
+                            self.hook.on_mouse_report(btns, 0, 0);
+                        }
+                        continue;
+                    }
+                    if evt.pressed {
+                        match evt.action {
+                            UserInputAction::ActivateShift => self.mod_state.lshift = true,
+                            UserInputAction::ActivateCtrl  => self.mod_state.ctrl   = true,
+                            UserInputAction::ActivateAlt   => self.mod_state.alt    = true,
+                            _                              => self.mod_state.altgr  = true,
+                        }
+                        self.do_activate(rumble);
+                    } else {
+                        if let Some((sc, ks)) = self.active_nav_key.take() {
+                            self.hook.on_key_release(sc, &ks);
+                        }
+                    }
+                }
+
+                UserInputAction::NavigateCenter => {
+                    if !evt.pressed { continue; }
+                    if let Some(center) = find_center_key(
+                        &self.all_btns, self.layout_idx, &self.center_key,
+                    ) {
+                        let changed = nav_set(&mut self.sel, center);
+                        on_nav_changed(
+                            changed, rumble, &mut self.gp_cell,
+                            self.sel, &self.all_btns, self.layout_idx,
+                            &mut self.narrator, &self.audio_mode,
+                            self.mod_state.is_shifted(),
+                        );
+                    }
+                }
+
+                UserInputAction::MouseToggle => {
+                    if !evt.pressed { continue; }
+                    self.mouse_mode = !self.mouse_mode;
+                    if !self.mouse_mode {
+                        self.mouse_state_for(source).stop();
+                        self.mouse_buttons = 0;
+                    }
+                }
+
+                UserInputAction::AbsolutePos { horiz, vert } => {
+                    let new_sel = self.compute_absolute_sel(horiz, vert);
+                    #[cfg(debug_assertions)]
+                    if new_sel != self.sel {
+                        match new_sel {
+                            NavSel::Lang(li) =>
+                                eprintln!(
+                                    "[gamepad] abs_pos horiz={:.3} vert={:.3} -> lang={}",
+                                    horiz, vert, li
+                                ),
+                            NavSel::Key(r, c) =>
+                                eprintln!(
+                                    "[gamepad] abs_pos horiz={:.3} vert={:.3} -> row={} col={}",
+                                    horiz, vert, r, c
+                                ),
+                        }
+                    }
+                    let changed = nav_set(&mut self.sel, new_sel);
+                    on_nav_changed(
+                        changed, rumble, &mut self.gp_cell,
+                        self.sel, &self.all_btns, self.layout_idx,
+                        &mut self.narrator, &self.audio_mode,
+                        self.mod_state.is_shifted(),
                     );
                 }
             }
+        }
+    }
 
-            UserInputAction::MouseToggle => {
-                if !evt.pressed { continue; }
-                let new_val = !*ctx.mouse_mode.borrow();
-                *ctx.mouse_mode.borrow_mut() = new_val;
-                if !new_val {
-                    mouse.stop();
-                    *ctx.mouse_buttons.borrow_mut() = 0;
-                }
-                if new_val {
-                    ctx.mouse_mode_ind.set_label_color(colors.status_ind_active_text);
-                } else {
-                    ctx.mouse_mode_ind.set_label_color(colors.status_ind_text);
-                }
-                app::redraw();
+    // =========================================================================
+    // Activation helpers
+    // =========================================================================
+
+    /// Execute the action of the currently selected button.
+    fn do_activate(&mut self, rumble: bool) {
+        match self.sel {
+            NavSel::Lang(li) => {
+                self.handle_lang_click(li);
+                self.active_nav_key = None;
+                self.maybe_center_after_activate(rumble);
             }
+            NavSel::Key(row, col) => {
+                let shifted_pre = self.mod_state.is_shifted();
+                let action = self.all_btns[row][col].action;
+                let scancode = self.all_btns[row][col].scancode;
 
-            UserInputAction::AbsolutePos { horiz, vert } => {
-                let new_sel = {
-                    let ab  = ctx.all_btns.borrow();
-                    let lb  = ctx.lang_btns.borrow();
-                    let num_rows = ab.len();
-                    let num_lang = lb.len();
-                    if num_rows == 0 { continue; }
-                    let has_lang    = num_lang > 0;
-                    let total_bands = if has_lang { 1 + num_rows } else { num_rows };
+                let result = execute_action(
+                    action, scancode, self.layout_idx,
+                    &mut self.text_buffer, &*self.hook,
+                    &mut self.mod_state,
+                    self.show_text_display,
+                );
+                self.active_nav_key = Some((scancode, result.key_str.clone()));
 
-                    let (center_band, center_horiz_frac) =
-                        match find_center_key(&ab, *ctx.layout_idx.borrow(), &ctx.center_key) {
-                            Some(NavSel::Key(row, col)) => {
-                                let band = if has_lang { row + 1 } else { row };
-                                let frac = (col as f32 + 0.5) / ab[row].len() as f32;
-                                (band, frac)
-                            }
-                            _ => (total_bands / 2, 0.5f32),
-                        };
-
-                    let cv = (center_band as f32 + 0.5) / total_bands as f32;
-                    let mapped_vert = if vert <= 0.5 {
-                        vert * (cv / 0.5)
+                let jumped = self.maybe_center_after_activate(rumble);
+                if !jumped {
+                    let slug = action_audio_slug(
+                        action, self.layout_idx, shifted_pre,
+                    );
+                    let fallback = if shifted_pre {
+                        action_audio_slug(action, self.layout_idx, false)
                     } else {
-                        cv + (vert - 0.5) * ((1.0 - cv) / 0.5)
+                        String::new()
                     };
-                    let band = (mapped_vert * total_bands as f32)
-                        .floor()
-                        .clamp(0.0, total_bands as f32 - 1.0) as usize;
-
-                    let ch = center_horiz_frac;
-                    let mapped_horiz = if horiz <= 0.5 {
-                        horiz * (ch / 0.5)
-                    } else {
-                        ch + (horiz - 0.5) * ((1.0 - ch) / 0.5)
-                    };
-
-                    if has_lang && band == 0 {
-                        let li = (mapped_horiz * num_lang as f32)
-                            .floor()
-                            .clamp(0.0, num_lang as f32 - 1.0) as usize;
-                        NavSel::Lang(li)
-                    } else {
-                        let row     = if has_lang { band - 1 } else { band };
-                        let num_cols = ab[row].len();
-                        let col = (mapped_horiz * num_cols as f32)
-                            .floor()
-                            .clamp(0.0, num_cols as f32 - 1.0) as usize;
-                        NavSel::Key(row, col)
-                    }
-                };
-                #[cfg(debug_assertions)]
-                if new_sel != *ctx.sel.borrow() {
-                    match new_sel {
-                        NavSel::Lang(li) =>
-                            eprintln!(
-                                "[gamepad] abs_pos horiz={:.3} vert={:.3} -> lang={}",
-                                horiz, vert, li
-                            ),
-                        NavSel::Key(row, col) =>
-                            eprintln!(
-                                "[gamepad] abs_pos horiz={:.3} vert={:.3} -> row={} col={}",
-                                horiz, vert, row, col
-                            ),
-                    }
+                    self.narrator.play_with_fallback(
+                        &slug, &fallback,
+                        action_tone_hz(action, &self.audio_mode),
+                    );
                 }
-                let changed = {
-                    let mut ab = ctx.all_btns.borrow_mut();
-                    let mut lb = ctx.lang_btns.borrow_mut();
-                    let mut s  = ctx.sel.borrow_mut();
-                    nav_set(
-                        &mut ab, &mut lb,
-                        *ctx.layout_idx.borrow(),
-                        &mut s, &ctx.mod_state,
-                        new_sel,
-                        colors,
-                    )
+            }
+        }
+    }
+
+    /// Activate a "direct" key (Enter, Space, arrows, Backspace).
+    fn activate_direct_key(
+        &mut self,
+        pressed: bool,
+        action:  Action,
+        scancode: u16,
+        rumble:  bool,
+    ) {
+        if pressed {
+            let shifted_pre = self.mod_state.is_shifted();
+            let btn_pos = find_btn_by_action(&self.all_btns, action);
+            self.active_btn_pressed = btn_pos;
+
+            let result = execute_action(
+                action, scancode, self.layout_idx,
+                &mut self.text_buffer, &*self.hook,
+                &mut self.mod_state,
+                self.show_text_display,
+            );
+            self.active_nav_key = Some((scancode, result.key_str.clone()));
+
+            let jumped = self.maybe_center_after_activate(rumble);
+            if !jumped {
+                let slug = action_audio_slug(action, self.layout_idx, shifted_pre);
+                let fallback = if shifted_pre {
+                    action_audio_slug(action, self.layout_idx, false)
+                } else {
+                    String::new()
                 };
-                on_nav_changed(
-                    changed, rumble, &ctx.gp_cell, &ctx.sel,
-                    &ctx.all_btns, *ctx.layout_idx.borrow(),
-                    &ctx.narrator, &ctx.audio_mode,
-                    ctx.mod_state.borrow().is_shifted(),
+                self.narrator.play_with_fallback(
+                    &slug, &fallback,
+                    action_tone_hz(action, &self.audio_mode),
                 );
             }
+        } else {
+            self.active_btn_pressed = None;
+            if let Some((sc, ks)) = self.active_nav_key.take() {
+                self.hook.on_key_release(sc, &ks);
+            }
+        }
+    }
+
+    /// If `center_after_activate` is configured, move the navigation cursor to
+    /// the center key after an activation.  Returns `true` when the jump
+    /// occurred and was narrated.
+    fn maybe_center_after_activate(&mut self, rumble: bool) -> bool {
+        if !self.center_after_activate { return false; }
+        if let Some(center) = find_center_key(
+            &self.all_btns, self.layout_idx, &self.center_key,
+        ) {
+            let changed = nav_set(&mut self.sel, center);
+            on_nav_changed(
+                changed, rumble, &mut self.gp_cell,
+                self.sel, &self.all_btns, self.layout_idx,
+                &mut self.narrator, &self.audio_mode,
+                self.mod_state.is_shifted(),
+            );
+            changed
+        } else {
+            false
+        }
+    }
+
+    /// Handle a button click from the GUI.
+    fn handle_button_click(&mut self, row: usize, col: usize) {
+        // Move selection to the clicked button.
+        let _ = nav_set(&mut self.sel, NavSel::Key(row, col));
+
+        let shifted_pre = self.mod_state.is_shifted();
+        let action = self.all_btns[row][col].action;
+        let scancode = self.all_btns[row][col].scancode;
+
+        let result = execute_action(
+            action, scancode, self.layout_idx,
+            &mut self.text_buffer, &*self.hook,
+            &mut self.mod_state,
+            self.show_text_display,
+        );
+
+        // Immediately release non-modifier keys.
+        if !keyboards::is_modifier(action) {
+            self.hook.on_key_release(scancode, &result.key_str);
+        }
+
+        let slug = action_audio_slug(action, self.layout_idx, shifted_pre);
+        let fallback = if shifted_pre {
+            action_audio_slug(action, self.layout_idx, false)
+        } else {
+            String::new()
+        };
+        self.narrator.play_with_fallback(
+            &slug, &fallback,
+            action_tone_hz(action, &self.audio_mode),
+        );
+    }
+
+    /// Handle a language button click.
+    fn handle_lang_click(&mut self, li: usize) {
+        let layouts = keyboards::get_layouts();
+        if li >= layouts.len() { return; }
+
+        // Send the switch scancode to the hook.
+        if li < self.switch_scancodes.len() {
+            self.hook.on_lang_switch(&self.switch_scancodes[li]);
+        }
+
+        self.layout_idx = li;
+
+        // Narrate the language switch.
+        let slug = format!("lang_{}", layouts[li].name.to_lowercase());
+        self.narrator.play_with_fallback(
+            &slug, "",
+            display::LANG_BTN_TONE_HZ,
+        );
+    }
+
+    // =========================================================================
+    // Mouse helpers
+    // =========================================================================
+
+    fn mouse_state_for(&mut self, source: InputSource) -> &mut MouseMoveState {
+        match source {
+            InputSource::Keyboard => &mut self.mouse_state_kb,
+            InputSource::Gamepad  => &mut self.mouse_state_gp,
+            InputSource::Gpio     => &mut self.mouse_state_gpio,
+        }
+    }
+
+    fn update_mouse_buttons(&mut self, bit: u8, pressed: bool) -> u8 {
+        if pressed { self.mouse_buttons |= bit; } else { self.mouse_buttons &= !bit; }
+        self.mouse_buttons
+    }
+
+    fn do_mouse_auto_repeat(&mut self, source: InputSource) {
+        let mouse_cfg = self.mouse_cfg.clone();
+        let mouse_buttons = self.mouse_buttons;
+        let mouse = self.mouse_state_for(source);
+        if mouse.dx == 0 && mouse.dy == 0 { return; }
+        let now = Instant::now();
+        if let Some(next) = mouse.next {
+            if now >= next {
+                let elapsed_ms = mouse.start
+                    .map_or(0, |s| now.duration_since(s).as_millis() as u64);
+                let max_size = mouse_cfg.move_max_size.max(1) as u64;
+                let ramp_ms  = mouse_cfg.move_max_time.max(1);
+                let delta = ((elapsed_ms.min(ramp_ms) * max_size / ramp_ms) as i8).max(1);
+                let dx = if mouse.dx > 0 { delta } else if mouse.dx < 0 { -delta } else { 0i8 };
+                let dy = if mouse.dy > 0 { delta } else if mouse.dy < 0 { -delta } else { 0i8 };
+                self.hook.on_mouse_report(mouse_buttons, dx, dy);
+                let interval = Duration::from_millis(mouse_cfg.repeat_interval);
+                let mouse = self.mouse_state_for(source);
+                mouse.next = Some(now + interval);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Gamepad / GPIO polling
+    // =========================================================================
+
+    fn poll_gamepad(&mut self) {
+        let gp_cfg = match &self.gp_cfg {
+            Some(cfg) => cfg.clone(),
+            None => return,
+        };
+
+        // Try reconnect if disconnected.
+        if self.gp_cell.is_none() {
+            if let Some(gp) = Gamepad::open(&gp_cfg) {
+                eprintln!("[gamepad] reconnected");
+                self.gp_cell = Some(gp);
+                self.gp_connected = true;
+            }
+            return;
+        }
+
+        let mut evt_buf: Vec<UserInputEvent> = Vec::new();
+        let still_alive = self.gp_cell.as_mut().unwrap().poll(&mut evt_buf);
+
+        if !still_alive {
+            eprintln!("[gamepad] disconnected");
+            self.gp_cell = None;
+            self.gp_connected = false;
+            return;
+        }
+
+        self.process_input_events(&evt_buf, InputSource::Gamepad);
+    }
+
+    fn poll_gpio(&mut self) {
+        let gpio_cfg = match &self.gpio_cfg {
+            Some(cfg) => cfg.clone(),
+            None => return,
+        };
+
+        // Try open if not yet available.
+        if self.gpio_cell.is_none() {
+            if let Some(gpio) = GpioInput::open(&gpio_cfg) {
+                eprintln!("[gpio] opened");
+                self.gpio_cell = Some(gpio);
+                self.gpio_connected = true;
+            }
+            return;
+        }
+
+        let mut evt_buf: Vec<UserInputEvent> = Vec::new();
+        self.gpio_cell.as_mut().unwrap().poll(&mut evt_buf);
+
+        self.process_input_events(&evt_buf, InputSource::Gpio);
+    }
+
+    // =========================================================================
+    // BLE connection management
+    // =========================================================================
+
+    fn manage_ble_connection(&mut self) {
+        let conn = match self.ble_conn.as_mut() {
+            Some(c) => c,
+            None => return,
+        };
+
+        if !conn.is_connected() {
+            if conn.try_connect() {
+                self.ble_state = BleState::Connecting;
+            }
+            return;
+        }
+
+        match conn.check_status() {
+            Ok(Some(ref s)) if s.starts_with("STATUS:CONNECTED:") => {
+                self.ble_state = BleState::Connected;
+            }
+            Ok(Some(_)) | Ok(None) => {
+                self.ble_state = BleState::Connecting;
+            }
+            Err(()) => {
+                self.ble_state = BleState::Disconnected;
+            }
+        }
+    }
+
+    // =========================================================================
+    // Absolute position helper
+    // =========================================================================
+
+    fn compute_absolute_sel(&self, horiz: f32, vert: f32) -> NavSel {
+        let num_rows = self.all_btns.len();
+        let num_lang = self.lang_btns.len();
+        if num_rows == 0 { return NavSel::Key(0, 0); }
+        let has_lang = num_lang > 0;
+        let total_bands = if has_lang { 1 + num_rows } else { num_rows };
+
+        let (center_band, center_horiz_frac) =
+            match find_center_key(&self.all_btns, self.layout_idx, &self.center_key) {
+                Some(NavSel::Key(r, c)) => {
+                    let band = if has_lang { r + 1 } else { r };
+                    let frac = (c as f32 + 0.5) / self.all_btns[r].len() as f32;
+                    (band, frac)
+                }
+                _ => (total_bands / 2, 0.5f32),
+            };
+
+        let cv = (center_band as f32 + 0.5) / total_bands as f32;
+        let mapped_vert = if vert <= 0.5 {
+            vert * (cv / 0.5)
+        } else {
+            cv + (vert - 0.5) * ((1.0 - cv) / 0.5)
+        };
+        let band = (mapped_vert * total_bands as f32)
+            .floor()
+            .clamp(0.0, total_bands as f32 - 1.0) as usize;
+
+        let ch = center_horiz_frac;
+        let mapped_horiz = if horiz <= 0.5 {
+            horiz * (ch / 0.5)
+        } else {
+            ch + (horiz - 0.5) * ((1.0 - ch) / 0.5)
+        };
+
+        if has_lang && band == 0 {
+            let li = (mapped_horiz * num_lang as f32)
+                .floor()
+                .clamp(0.0, num_lang as f32 - 1.0) as usize;
+            NavSel::Lang(li)
+        } else {
+            let row = if has_lang { band - 1 } else { band };
+            let num_cols = self.all_btns[row].len();
+            let col = (mapped_horiz * num_cols as f32)
+                .floor()
+                .clamp(0.0, num_cols as f32 - 1.0) as usize;
+            NavSel::Key(row, col)
         }
     }
 }
 
-/// Send auto-repeat mouse-movement reports if a direction is still active.
-///
-/// Called once per timer tick (after [`process_input_events`]) to keep the
-/// pointer moving smoothly when a directional button is held.
-pub(crate) fn mouse_auto_repeat(ctx: &InputCtx, mouse: &mut MouseMoveState) {
-    if mouse.dx == 0 && mouse.dy == 0 { return; }
-    let now = Instant::now();
-    if let Some(next) = mouse.next {
-        if now >= next {
-            let elapsed_ms = mouse.start
-                .map_or(0, |s| now.duration_since(s).as_millis() as u64);
-            let max_size = ctx.mouse_cfg.move_max_size.max(1) as u64;
-            let ramp_ms  = ctx.mouse_cfg.move_max_time.max(1);
-            let delta = ((elapsed_ms.min(ramp_ms) * max_size / ramp_ms) as i8).max(1);
-            let dx = if mouse.dx > 0 { delta } else if mouse.dx < 0 { -delta } else { 0i8 };
-            let dy = if mouse.dy > 0 { delta } else if mouse.dy < 0 { -delta } else { 0i8 };
-            ctx.hook.on_mouse_report(*ctx.mouse_buttons.borrow(), dx, dy);
-            let interval = std::time::Duration::from_millis(ctx.mouse_cfg.repeat_interval);
-            mouse.next = Some(now + interval);
-        }
-    }
+// =============================================================================
+// Input source identifier
+// =============================================================================
+
+#[derive(Clone, Copy)]
+enum InputSource {
+    Keyboard,
+    Gamepad,
+    Gpio,
 }
 
-// ---------------------------------------------------------------------------
-// Private helpers used by process_input_events
-// ---------------------------------------------------------------------------
+// =============================================================================
+// Helper: convert directional action to mouse delta
+// =============================================================================
 
-/// Convert a directional `UserInputAction` to `(dx, dy)` mouse-movement deltas.
 #[inline]
 fn dir_to_mouse_delta(action: UserInputAction) -> (i8, i8) {
     match action {
         UserInputAction::Up    => ( 0i8, -1i8),
         UserInputAction::Down  => ( 0i8,  1i8),
         UserInputAction::Left  => (-1i8,  0i8),
-        _                      => ( 1i8,  0i8), // Right
+        _                      => ( 1i8,  0i8),
     }
 }
 
-/// Update the shared `mouse_buttons` bitmask and return the new value.
-///
-/// Sets the given `bit` on press and clears it on release, then returns the
-/// full bitmask so it can be forwarded to `on_mouse_report`.
-#[inline]
-fn update_mouse_buttons(ctx: &InputCtx, bit: u8, pressed: bool) -> u8 {
-    let mut mb = ctx.mouse_buttons.borrow_mut();
-    if pressed { *mb |= bit; } else { *mb &= !bit; }
-    *mb
-}
+// =============================================================================
+// Helper: build modifier-button descriptors from the grid
+// =============================================================================
 
-/// Activate a "direct" key (Enter, Space, arrows, Backspace): highlight it,
-/// execute the action on press, restore and release on release.
-fn activate_direct_key(
-    pressed:      bool,
-    action:       Action,
-    scancode:     u16,
-    ctx:          &mut InputCtx,
-    rumble:       bool,
-) {
-    if pressed {
-        let shifted_pre = ctx.mod_state.borrow().is_shifted();
-        let btn_pos = find_btn_by_action(&ctx.all_btns.borrow(), action);
-        if let Some((r, c)) = btn_pos {
-            ctx.all_btns.borrow_mut()[r][c].0.set_color(ctx.colors.nav_sel);
-            *ctx.active_btn_pressed.borrow_mut() = Some((r, c));
-        }
-        let key_str = execute_action(
-            action, scancode,
-            *ctx.layout_idx.borrow(),
-            &mut ctx.buf, &mut ctx.disp, &ctx.hook,
-            &ctx.mod_state, &ctx.mod_btns.borrow(), ctx.colors,
-            ctx.show_text_display,
-        );
-        *ctx.active_nav_key.borrow_mut() = Some((scancode, key_str));
-        let jumped = maybe_center_after_activate(ctx, rumble);
-        if !jumped {
-            let slug = action_audio_slug(action, *ctx.layout_idx.borrow(), shifted_pre);
-            let fallback = if shifted_pre { action_audio_slug(action, *ctx.layout_idx.borrow(), false) } else { String::new() };
-            ctx.narrator.borrow_mut().play_with_fallback(
-                &slug, &fallback,
-                action_tone_hz(action, &ctx.audio_mode),
-            );
-        }
-    } else {
-        if let Some((r, c)) = ctx.active_btn_pressed.borrow_mut().take() {
-            let restore = {
-                let ab = ctx.all_btns.borrow();
-                if *ctx.sel.borrow() == NavSel::Key(r, c) { ctx.colors.nav_sel }
-                else { ab[r][c].3 }
-            };
-            ctx.all_btns.borrow_mut()[r][c].0.set_color(restore);
-            app::redraw();
-        }
-        if let Some((sc, ks)) = ctx.active_nav_key.borrow_mut().take() {
-            ctx.hook.on_key_release(sc, &ks);
+fn build_mod_btns(all_btns: &[Vec<BtnData>], _colors: &Colors) -> Vec<ModBtn> {
+    let mut v = Vec::new();
+    for (r, row) in all_btns.iter().enumerate() {
+        for (c, btn) in row.iter().enumerate() {
+            if keyboards::is_modifier(btn.action) {
+                v.push(ModBtn {
+                    row: r,
+                    col: c,
+                    action: btn.action,
+                    base_color: btn.base_color,
+                });
+            }
         }
     }
-}
-
-/// If `center_after_activate` is configured, move the navigation cursor to the
-/// center key after an activation.  Returns `true` when the center jump
-/// occurred and the new position was narrated, `false` otherwise (the caller
-/// should then narrate the activated key itself).
-fn maybe_center_after_activate(ctx: &mut InputCtx, rumble: bool) -> bool {
-    if !ctx.center_after_activate { return false; }
-    if let Some(center) = {
-        let ab = ctx.all_btns.borrow();
-        find_center_key(&ab, *ctx.layout_idx.borrow(), &ctx.center_key)
-    } {
-        let colors  = ctx.colors;
-        let changed = {
-            let mut ab = ctx.all_btns.borrow_mut();
-            let mut lb = ctx.lang_btns.borrow_mut();
-            let mut s  = ctx.sel.borrow_mut();
-            nav_set(
-                &mut ab, &mut lb,
-                *ctx.layout_idx.borrow(),
-                &mut s, &ctx.mod_state,
-                center,
-                colors,
-            )
-        };
-        on_nav_changed(
-            changed, rumble, &ctx.gp_cell, &ctx.sel,
-            &ctx.all_btns, *ctx.layout_idx.borrow(),
-            &ctx.narrator, &ctx.audio_mode,
-            ctx.mod_state.borrow().is_shifted(),
-        );
-        changed
-    } else {
-        false
-    }
+    v
 }
 
 // =============================================================================
 // Main
 // =============================================================================
 
-fn main() {
-    let cfg = config::Config::load();
-
-    // Determine config directory for keymap file lookup.
-    let config_dir = std::env::var("SMART_KBD_CONFIG_PATH")
-        .unwrap_or_else(|_| ".".into());
-
-    // Load active layouts (from TOML files or built-in fallbacks).
-    let active_keymaps = cfg.ui.active_keymaps.clone();
-    let loaded_layouts = keyboards::load_active_layouts(&active_keymaps, &config_dir);
-    keyboards::set_layouts(loaded_layouts);
-    let layouts = keyboards::get_layouts();
-
-    debug_assert!(
-        layouts.iter().all(|l| l.keys.len() == REGULAR_KEY_COUNT),
-        "every LayoutDef must have exactly REGULAR_KEY_COUNT entries"
-    );
-
-    // Build switch_scancodes: per-layout key combination to send on language switch.
-    let switch_scancodes: Rc<Vec<Vec<u8>>> = Rc::new(
-        active_keymaps.iter().map(|name| {
-            match cfg.keymap.get(name) {
-                None     => keyboards::default_switch_scancode_for(name),
-                Some(kc) => kc.switch_scancode.clone(),
-            }
-        }).collect()
-    );
-
-    // Build the narrator early so it can be cloned into closures below.
-    let narrator = Rc::new(RefCell::new(Narrator::new(cfg.output.audio.clone())));
-    // Clone the audio mode so it can be captured independently by closures.
-    let audio_mode = cfg.output.audio.clone();
-
-    let a = app::App::default().with_scheme(app::Scheme::Gleam);
-
-    let mut ble_conn_opt: Option<std::rc::Rc<std::cell::RefCell<output::BleConnection>>> = None;
-    let hook: Rc<dyn KeyHook> = match cfg.output.mode {
-        config::OutputMode::Print => {
-            Rc::new(output::PrintKeyHook)
-        }
-        config::OutputMode::Ble => {
-            let ble_cfg = &cfg.output.ble;
-            let (ble_hook, ble_conn) = output::BleKeyHook::new(
-                ble_cfg.vid,
-                ble_cfg.pid,
-                ble_cfg.serial.clone(),
-                ble_cfg.key_release_delay,
-                ble_cfg.lang_switch_release_delay,
-            );
-            ble_conn_opt = Some(ble_conn);
-            Rc::new(ble_hook)
-        }
-    };
-
-    let mut ui = build_ui(BuildUiParams {
-        cfg: &cfg,
-        hook: hook.clone(),
-        narrator: narrator.clone(),
-        audio_mode: audio_mode.clone(),
-        switch_scancodes: switch_scancodes.clone(),
-        ble_conn_opt: ble_conn_opt.clone(),
-    });
-
-    let colors = ui.colors;
-
-    // Build the shared input-event context from the UI handles.  Both the
-    // gamepad and GPIO input sources will use this same context.
-    let shared_ctx = InputCtx {
-        all_btns:              ui.all_btns.clone(),
-        lang_btns:             ui.lang_btns.clone(),
-        layout_idx:            ui.layout_idx.clone(),
-        mod_state:             ui.mod_state.clone(),
-        mod_btns:              ui.mod_btns.clone(),
-        sel:                   ui.sel.clone(),
-        buf:                   ui.buf.clone(),
-        disp:                  ui.disp.clone(),
-        hook:                  Rc::clone(&hook),
-        active_nav_key:        ui.active_nav_key.clone(),
-        active_btn_pressed:    ui.active_btn_pressed.clone(),
-        gp_cell:               ui.gp_cell.clone(),
-        narrator:              narrator.clone(),
-        audio_mode:            audio_mode.clone(),
-        ble_conn_opt:          ble_conn_opt.clone(),
-        rollover:              cfg.navigate.rollover,
-        center_key:            cfg.navigate.center_key.clone(),
-        center_after_activate: cfg.navigate.center_after_activate,
-        preferred_cx:          ui.preferred_cx.clone(),
-        show_text_display:     ui.show_text_display,
-        mouse_mode:            ui.mouse_mode.clone(),
-        mouse_mode_ind:        ui.mouse_mode_ind.clone(),
-        mouse_cfg:             cfg.mouse.clone(),
-        mouse_buttons:         ui.mouse_buttons.clone(),
-        colors,
-    };
-
-    // --- Physical keyboard navigation ---
-    phys_keyboard::setup_keyboard_handler(
-        &mut ui.win,
-        config::NavKeys::from_config(&cfg.input.keyboard),
-        shared_ctx.clone(),
-    );
-
-    // --- Gamepad input (if enabled in config) ---
-    if cfg.input.gamepad.enabled {
-        let gp_cfg    = cfg.input.gamepad.clone();
-        let gp_rumble = cfg.input.gamepad.rumble;
-
-        // Open the gamepad now and store it in the shared gp_cell.
-        *ui.gp_cell.borrow_mut() = Gamepad::open(&cfg.input.gamepad);
-
-        // Update the initial gamepad icon state based on whether the device
-        // was found at startup.
-        if let Some(ref mut icon) = ui.gamepad_status {
-            if ui.gp_cell.borrow().is_some() {
-                icon.set_label_color(colors.conn_connected);
-            }
-            // If not connected the icon already shows red (set at creation).
-        }
-
-        let mut gamepad_status_t = ui.gamepad_status.clone();
-        let gp_cell_t            = ui.gp_cell.clone();
-
-        // Clone the shared context for capture in the closure.
-        let mut ctx_gp = shared_ctx.clone();
-
-        let mut gp_evt_buf:    Vec<UserInputEvent> = Vec::new();
-        let mut mouse_gp = MouseMoveState::new();
-
-        // Poll at ~60 Hz; this keeps input latency low without burning CPU
-        // the way an idle callback would.  When the gamepad is disconnected
-        // the timer slows to 1 Hz and retries opening the device.
-        app::add_timeout(0.016, move |handle| {
-            // Phase 1 - reconnect if currently disconnected.
-            if gp_cell_t.borrow().is_none() {
-                match Gamepad::open(&gp_cfg) {
-                    Some(gp) => {
-                        eprintln!("[gamepad] reconnected");
-                        *gp_cell_t.borrow_mut() = Some(gp);
-                        if let Some(ref mut icon) = gamepad_status_t {
-                            icon.set_label_color(colors.conn_connected);
-                            app::redraw();
-                        }
-                        // Fall through to poll the newly opened device.
-                    }
-                    None => {
-                        // Still no device; retry in 1 s.
-                        app::repeat_timeout(1.0, handle);
-                        return;
-                    }
-                }
-            }
-
-            // Phase 2 - poll for events; detect disconnection.
-            let still_alive = {
-                let mut opt = gp_cell_t.borrow_mut();
-                opt.as_mut().unwrap().poll(&mut gp_evt_buf)
-            };
-
-            if !still_alive {
-                eprintln!("[gamepad] disconnected");
-                *gp_cell_t.borrow_mut() = None;
-                if let Some(ref mut icon) = gamepad_status_t {
-                    icon.set_label_color(colors.conn_disconnected);
-                    app::redraw();
-                }
-                app::repeat_timeout(1.0, handle);
-                return;
-            }
-
-            // Phase 3 - process the events collected in Phase 2.
-            process_input_events(&gp_evt_buf, &mut ctx_gp, &mut mouse_gp, gp_rumble);
-
-            // Phase 4 - mouse-mode auto-repeat.
-            mouse_auto_repeat(&ctx_gp, &mut mouse_gp);
-
-            app::repeat_timeout(0.016, handle);
-        });
-    }
-
-    // --- GPIO input (if enabled in config) ---
-    if cfg.input.gpio.enabled {
-        let gpio_cfg = cfg.input.gpio.clone();
-
-        // Open the GPIO lines now and store the result in a shared cell.
-        let gpio_cell: Rc<RefCell<Option<GpioInput>>> =
-            Rc::new(RefCell::new(GpioInput::open(&cfg.input.gpio)));
-
-        // Update the initial GPIO icon colour.
-        if let Some(ref mut icon) = ui.gpio_status {
-            if gpio_cell.borrow().is_some() {
-                icon.set_label_color(colors.conn_connected);
-            }
-            // If not opened the icon already shows red (set at creation).
-        }
-
-        let mut gpio_status_t = ui.gpio_status.clone();
-        let gpio_cell_t       = gpio_cell.clone();
-
-        // Clone the shared context for capture in the closure.
-        let mut ctx_gpio = shared_ctx.clone();
-
-        let mut gpio_evt_buf:  Vec<UserInputEvent> = Vec::new();
-        let mut mouse_gpio = MouseMoveState::new();
-
-        // Poll at ~60 Hz.  When lines are not yet open, retry every 1 s.
-        app::add_timeout(0.016, move |handle| {
-            // Phase 1 - try to open if currently unavailable.
-            if gpio_cell_t.borrow().is_none() {
-                match GpioInput::open(&gpio_cfg) {
-                    Some(gpio) => {
-                        eprintln!("[gpio] opened");
-                        *gpio_cell_t.borrow_mut() = Some(gpio);
-                        if let Some(ref mut icon) = gpio_status_t {
-                            icon.set_label_color(colors.conn_connected);
-                            app::redraw();
-                        }
-                    }
-                    None => {
-                        app::repeat_timeout(1.0, handle);
-                        return;
-                    }
-                }
-            }
-
-            // Phase 2 - poll for events.
-            {
-                let mut opt = gpio_cell_t.borrow_mut();
-                opt.as_mut().unwrap().poll(&mut gpio_evt_buf);
-            }
-
-            // Phase 3 - process collected events.
-            process_input_events(&gpio_evt_buf, &mut ctx_gpio, &mut mouse_gpio, false);
-
-            // Phase 4 - mouse-mode auto-repeat.
-            mouse_auto_repeat(&ctx_gpio, &mut mouse_gpio);
-
-            app::repeat_timeout(0.016, handle);
-        });
-    }
-
-    a.run().unwrap();
+fn main() -> iced::Result {
+    iced::application(SmartKeyboard::new, SmartKeyboard::update, SmartKeyboard::view)
+        .title("Smart Keyboard")
+        .subscription(SmartKeyboard::subscription)
+        .window(iced::window::Settings {
+            decorations: false,
+            ..Default::default()
+        })
+        .run()
 }
