@@ -1,12 +1,12 @@
 [input.keyboard]
 # Raw scan codes (evdev scancodes from linux/input-event-codes.h).
-# Use the values printed by the [keyboard] debug output (decimal).
-navigate_up    = 103    # KEY_UP
-navigate_down  = 108    # KEY_DOWN
-navigate_left  = 105    # KEY_LEFT
-navigate_right = 106    # KEY_RIGHT
-activate       = 57     # KEY_SPACE
-menu           = 50     # KEY_M
+# Use the hex values printed by the [keyboard] debug output.
+navigate_up    = 0x67   # KEY_UP
+navigate_down  = 0x6c   # KEY_DOWN
+navigate_left  = 0x69   # KEY_LEFT
+navigate_right = 0x6a   # KEY_RIGHT
+activate       = 0x39   # KEY_SPACE
+menu           = 0x32   # KEY_M
 # activate_shift = null  # equivalent to activate when Shift is held; null/absent = disabled
 # activate_ctrl  = null  # equivalent to activate when Ctrl is held; null/absent = disabled
 # activate_alt   = null  # equivalent to activate when Alt is held; null/absent = disabled
@@ -29,12 +29,12 @@ device  = "auto"        # Auto-detect first connected gamepad
 # Gamepad inputs (button or axis); comment out or remove to disable.
 # A plain integer specifies a button ID; the string "a:N" specifies axis N
 # (positive values above axis_threshold trigger the action, like analog triggers).
-# navigate_up    = 0x00
-# navigate_down  = 0x01
-# navigate_left  = 0x02
-# navigate_right = 0x03
-# activate       = 0x05   # A/South button; comment out or remove to disable
-# menu           = 0x08   # Menu/Start button; comment out or remove to disable
+# navigate_up    = null   # button or axis for Up; null/absent = disabled. Example: 0x00
+# navigate_down  = null   # button or axis for Down; null/absent = disabled. Example: 0x01
+# navigate_left  = null   # button or axis for Left; null/absent = disabled. Example: 0x02
+# navigate_right = null   # button or axis for Right; null/absent = disabled. Example: 0x03
+# activate       = null   # button or axis for Activate; null/absent = disabled. Example: 0x05
+# menu           = null   # button or axis for Menu; null/absent = disabled. Example: 0x08
 # activate_shift = null   # equivalent to activate when Shift is held; null/absent = disabled
 # activate_ctrl  = null   # equivalent to activate when Ctrl is held; null/absent = disabled
 # activate_alt   = null   # equivalent to activate when Alt is held; null/absent = disabled

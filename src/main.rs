@@ -168,6 +168,9 @@ const SC_ARROW_DOWN: u32 = 108;
 const SC_LCTRL: u32 = 29;
 const SC_RCTRL: u32 = 97;
 const SC_S: u32 = 31;
+const SC_TAB: u32 = 15;
+const SC_LSHIFT: u32 = 42;
+const SC_RSHIFT: u32 = 54;
 
 // =============================================================================
 // Configuration editor state
@@ -471,8 +474,13 @@ impl SmartKeyboard {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::KeyPressed(sc) => {
-                if !self.pressed_keys.insert(sc) {
-                    // Already pressed (key repeat); ignore.
+                // Allow key-repeat in config editor navigation (held
+                // arrows / Tab should scroll through items continuously).
+                let is_repeat = !self.pressed_keys.insert(sc);
+                let in_config = self.config_editor.is_some();
+
+                if is_repeat && !in_config {
+                    // Outside config editor, suppress OS key-repeat.
                     return Task::none();
                 }
 
@@ -491,11 +499,25 @@ impl SmartKeyboard {
                     if ctrl_held && sc == SC_S {
                         return self.update(Message::ConfigSave);
                     }
+                    // Tab / Shift+Tab: leave editing and move to next/prev item.
+                    if sc == SC_TAB {
+                        let shift_held = self.pressed_keys.contains(&SC_LSHIFT)
+                            || self.pressed_keys.contains(&SC_RSHIFT);
+                        if let Some(ref mut ce) = self.config_editor {
+                            ce.editing = false;
+                            if shift_held {
+                                ce.sel = ce.sel.saturating_sub(1);
+                            } else if ce.sel < ce.pairs.len().saturating_sub(1) {
+                                ce.sel += 1;
+                            }
+                        }
+                        return self.config_scroll_to_sel();
+                    }
                     return Task::none();
                 }
 
                 // --- Config editor navigation (not editing) ---
-                if self.config_editor.is_some() {
+                if in_config {
                     return self.handle_config_key_press(sc);
                 }
 
@@ -1340,11 +1362,17 @@ impl SmartKeyboard {
             return self.update(Message::ConfigSave);
         }
 
+        // Tab / Shift+Tab -> move selection down / up.
+        let shift_held = self.pressed_keys.contains(&SC_LSHIFT)
+            || self.pressed_keys.contains(&SC_RSHIFT);
+        let tab_down = sc == SC_TAB && !shift_held;
+        let tab_up   = sc == SC_TAB && shift_held;
+
         if let Some(ref mut ce) = self.config_editor {
-            if is_up && ce.sel > 0 {
+            if (is_up || tab_up) && ce.sel > 0 {
                 ce.sel -= 1;
             }
-            if is_down && ce.sel < ce.pairs.len().saturating_sub(1) {
+            if (is_down || tab_down) && ce.sel < ce.pairs.len().saturating_sub(1) {
                 ce.sel += 1;
             }
             if is_activate {
@@ -1357,7 +1385,7 @@ impl SmartKeyboard {
                 return Task::none();
             }
             // Auto-scroll the list to keep the selected item visible.
-            if is_up || is_down {
+            if is_up || is_down || tab_down || tab_up {
                 return self.config_scroll_to_sel();
             }
         }

@@ -114,6 +114,37 @@ fn build_toml_text(existing: &str, pairs: &[(&str, String)]) -> String {
             }
         }
 
+        // Commented-out `# key = value` line that has an update: replace
+        // in place so the active line appears here (not duplicated later
+        // by flush_section!).
+        if trimmed.starts_with('#') {
+            let stripped = trimmed.trim_start_matches('#').trim();
+            if let Some((commented_key, _old)) = parse_kv_line(stripped) {
+                let dotted = if current_section.is_empty() {
+                    commented_key.to_string()
+                } else {
+                    format!("{}.{}", current_section, commented_key)
+                };
+                if let Some(new_val) = updates.get(dotted.as_str()) {
+                    written_keys.insert(
+                        updates.keys()
+                            .find(|k| **k == dotted.as_str())
+                            .copied()
+                            .unwrap_or("")
+                    );
+                    if new_val.is_empty() {
+                        // Still empty/null -> keep original commented line.
+                        out.push_str(line);
+                        out.push('\n');
+                    } else {
+                        let formatted = format_toml_value(&dotted, new_val);
+                        out.push_str(&format!("{} = {}\n", commented_key, formatted));
+                    }
+                    continue;
+                }
+            }
+        }
+
         out.push_str(line);
         out.push('\n');
     }
@@ -165,8 +196,11 @@ fn format_toml_value(key: &str, val: &str) -> String {
         return val.to_string();
     }
 
-    if key.starts_with("input.keyboard.") && val.starts_with("0x") {
-        return val.to_string();
+    // Keyboard scancodes: always format as hex (0xNN).
+    if key.starts_with("input.keyboard.") {
+        if let Some(n) = parse_int_relaxed(val) {
+            return format!("0x{:02x}", n);
+        }
     }
 
     if (key == "output.ble.vid" || key == "output.ble.pid") && val.starts_with("0x") {
@@ -271,6 +305,15 @@ pub fn load_config_pairs() -> Vec<(String, String)> {
         Err(_) => return Vec::new(),
     };
 
+    parse_config_pairs(&content)
+}
+
+/// Parse TOML content into a flat list of `(dotted.key, value)` pairs.
+///
+/// Both active (uncommented) and commented-out `# key = value` lines are
+/// included.  Active lines always override a previously-seen commented
+/// default for the same key.
+fn parse_config_pairs(content: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     let mut current_section = String::new();
     let mut seen = std::collections::HashSet::new();
@@ -299,6 +342,12 @@ pub fn load_config_pairs() -> Vec<(String, String)> {
             };
             if seen.insert(dotted.clone()) {
                 pairs.push((dotted, val));
+            } else {
+                // Key was already seen from a commented line earlier;
+                // the active (uncommented) value takes precedence.
+                if let Some(existing) = pairs.iter_mut().find(|(k, _)| *k == dotted) {
+                    existing.1 = val;
+                }
             }
             continue;
         }
@@ -486,17 +535,17 @@ device = \"auto\"
     fn empty_values_become_null_comments() {
         let existing = "\
 [input.keyboard]
-navigate_up = 103
-activate_shift = 42
+navigate_up = 0x67
+activate_shift = 0x2a
 ";
         let pairs: Vec<(&str, String)> = vec![
-            ("input.keyboard.navigate_up",     "103".into()),
+            ("input.keyboard.navigate_up",     "0x67".into()),
             ("input.keyboard.activate_shift",  "".into()),    // user cleared it
             ("input.keyboard.mouse_toggle",    "".into()),    // new empty key
         ];
         let result = build_toml_text(existing, &pairs);
 
-        assert!(result.contains("navigate_up = 103"),
+        assert!(result.contains("navigate_up = 0x67"),
             "navigate_up missing:\n{}", result);
         assert!(result.contains("# activate_shift = null"),
             "activate_shift should be commented out:\n{}", result);
@@ -559,5 +608,122 @@ enabled = true
                 "Saved config failed to parse: {}\n\nSaved text:\n{}",
                 e, result),
         }
+    }
+
+    /// When a commented-out key gets a non-empty value, `build_toml_text`
+    /// must uncomment it in place so the active line does not appear after
+    /// the old comment -- which would cause `parse_config_pairs` to see the
+    /// stale commented value first.
+    #[test]
+    fn commented_key_uncommented_in_place() {
+        let existing = "\
+[input.keyboard]
+navigate_up = 0x67
+# activate_shift = null  # equivalent to activate when Shift is held
+# mouse_toggle = null   # toggle mouse-pointer mode
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("input.keyboard.navigate_up",     "0x67".into()),
+            ("input.keyboard.activate_shift",  "0x2a".into()),   // was null, now set
+            ("input.keyboard.mouse_toggle",    "".into()),     // still empty
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        // activate_shift must appear as an active (uncommented) line.
+        assert!(result.contains("activate_shift = 0x2a"),
+            "activate_shift should be uncommented with value 0x2a:\n{}", result);
+        // There must be NO commented activate_shift = null left.
+        assert!(!result.contains("# activate_shift"),
+            "old commented activate_shift should be gone:\n{}", result);
+
+        // mouse_toggle is still empty -> stays commented.
+        assert!(result.contains("# mouse_toggle = null"),
+            "mouse_toggle should stay commented:\n{}", result);
+
+        // No duplicate keys: activate_shift should appear exactly once.
+        let count = result.lines()
+            .filter(|l| {
+                let t = l.trim();
+                t.starts_with("activate_shift")
+            })
+            .count();
+        assert_eq!(count, 1,
+            "activate_shift should appear exactly once:\n{}", result);
+    }
+
+    /// parse_config_pairs must let active (uncommented) lines override values
+    /// that were already seen from a commented line earlier in the file.
+    #[test]
+    fn active_line_overrides_earlier_comment() {
+        // Simulate the state after a previous save where a commented line
+        // precedes its active replacement (the bug scenario).
+        let content = "\
+[input.keyboard]
+# activate_shift = null  # description
+activate_shift = 0x2a
+navigate_up = 0x67
+";
+        let pairs = parse_config_pairs(content);
+
+        let val = pairs.iter()
+            .find(|(k, _)| k == "input.keyboard.activate_shift")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("0x2a"),
+            "Active line should override commented value; pairs: {:?}", pairs);
+    }
+
+    /// Full round-trip: load -> change a commented value -> save -> reload.
+    /// The reloaded value must reflect the change, not the old comment.
+    #[test]
+    fn round_trip_comment_to_active() {
+        let original = "\
+[input.keyboard]
+navigate_up = 0x67
+# activate_shift = null  # equivalent to activate when Shift is held
+";
+        // Step 1: parse pairs from the original text.
+        let mut pairs = parse_config_pairs(original);
+
+        // Step 2: user changes activate_shift from empty to "42" (decimal).
+        if let Some(p) = pairs.iter_mut().find(|(k, _)| k == "input.keyboard.activate_shift") {
+            p.1 = "42".to_string();
+        }
+
+        // Step 3: save.
+        let save_pairs: Vec<(&str, String)> = pairs.iter()
+            .map(|(k, v)| (k.as_str(), v.clone()))
+            .collect();
+        let saved = build_toml_text(original, &save_pairs);
+
+        // Step 4: reload and check.  format_toml_value converts keyboard
+        // scancodes to hex, so "42" becomes "0x2a".
+        let reloaded = parse_config_pairs(&saved);
+
+        let val = reloaded.iter()
+            .find(|(k, _)| k == "input.keyboard.activate_shift")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(val, Some("0x2a"),
+            "After round-trip, activate_shift should be 0x2a.\n\
+             Saved text:\n{}\nReloaded pairs: {:?}", saved, reloaded);
+    }
+
+    /// Keyboard scancode values entered as decimal are saved as hex.
+    #[test]
+    fn keyboard_scancodes_saved_as_hex() {
+        let existing = "\
+[input.keyboard]
+navigate_up = 103
+menu = 50
+";
+        let pairs: Vec<(&str, String)> = vec![
+            ("input.keyboard.navigate_up",  "103".into()),
+            ("input.keyboard.menu",         "50".into()),
+        ];
+        let result = build_toml_text(existing, &pairs);
+
+        assert!(result.contains("navigate_up = 0x67"),
+            "navigate_up should be 0x67 (hex for 103):\n{}", result);
+        assert!(result.contains("menu = 0x32"),
+            "menu should be 0x32 (hex for 50):\n{}", result);
     }
 }
