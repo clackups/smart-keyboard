@@ -557,6 +557,7 @@ impl SmartKeyboard {
                 let btn = button(
                     text(label).size(lbl_size).color(label_color)
                         .align_x(iced::alignment::Horizontal::Center)
+                        .align_y(iced::alignment::Vertical::Center)
                 )
                 .width(Length::FillPortion(1))
                 .height(Length::Fixed(h))
@@ -832,6 +833,7 @@ impl SmartKeyboard {
                                 .size(big_lbl_size)
                                 .color(label_color)
                                 .align_x(iced::alignment::Horizontal::Center)
+                                .align_y(iced::alignment::Vertical::Center)
                                 .width(Length::Fill)
                                 .into()
                         }
@@ -845,15 +847,11 @@ impl SmartKeyboard {
                         // control labels use a smaller size so words like
                         // "Shift" or "Enter" fit inside the button.
                         let lbl = keyboards::special_label(other).to_string();
-                        let sz = if lbl.chars().count() <= 2 {
-                            big_lbl_size
-                        } else {
-                            ctrl_lbl_size
-                        };
                         text(lbl)
-                            .size(sz)
+                            .size(ctrl_lbl_size)
                             .color(label_color)
                             .align_x(iced::alignment::Horizontal::Center)
+                            .align_y(iced::alignment::Vertical::Center)
                             .width(Length::Fill)
                             .into()
                     }

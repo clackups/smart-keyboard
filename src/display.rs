@@ -911,7 +911,7 @@ pub fn compute_layout(sw: i32, sh: i32, show_text_display: bool) -> LayoutMetric
     let lang_btn_h = if layouts.len() <= 1 {
         0
     } else {
-        ((sh as f32 / 12.0) as i32).max(10)
+        ((sh as f32 / 14.0) as i32).max(10)
     };
 
     let status_h = (sh / 24).max(18).min(32);
