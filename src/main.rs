@@ -165,6 +165,7 @@ enum Message {
     LangClicked(usize),
     MenuOpen,
     MenuClose,
+    GotScreenSize(f32, f32),
 }
 
 // =============================================================================
@@ -296,10 +297,11 @@ impl SmartKeyboard {
 
         let colors = Colors::from_config(&cfg.ui.colors);
 
-        // Use a reasonable default screen size for layout computation.
-        // iced will handle the actual window sizing.
+        // Use a reasonable default screen size for initial layout computation.
+        // The layout is recomputed once the actual window size is obtained
+        // via the GotScreenSize startup task.
         let (sw, sh) = (800i32, 480i32);
-        let metrics = display::compute_layout(sw, sh, &cfg);
+        let metrics = display::compute_layout(sw, sh, cfg.ui.show_text_display);
 
         let all_btns = display::build_btn_grid(&metrics, &colors);
         let lang_btns = display::build_lang_btns(&metrics);
@@ -377,7 +379,12 @@ impl SmartKeyboard {
             showing_menu: false,
         };
 
-        (app, Task::none())
+        // Query the actual window size so the layout matches the real screen.
+        let size_task = iced::window::oldest().and_then(|id| {
+            iced::window::size(id)
+        }).map(|sz| Message::GotScreenSize(sz.width, sz.height));
+
+        (app, size_task)
     }
 
     // =========================================================================
@@ -474,6 +481,17 @@ impl SmartKeyboard {
 
             Message::MenuClose => {
                 self.showing_menu = false;
+            }
+
+            Message::GotScreenSize(w, h) => {
+                let sw = w as i32;
+                let sh = h as i32;
+                if sw != self.metrics.sw || sh != self.metrics.sh {
+                    self.metrics = display::compute_layout(sw, sh, self.show_text_display);
+                    self.all_btns = display::build_btn_grid(&self.metrics, &self.colors);
+                    self.lang_btns = display::build_lang_btns(&self.metrics);
+                    self.mod_btns = build_mod_btns(&self.all_btns, &self.colors);
+                }
             }
         }
 

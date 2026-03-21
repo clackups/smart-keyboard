@@ -894,7 +894,7 @@ pub struct LayoutMetrics {
 }
 
 /// Compute layout positions and sizes from screen dimensions and configuration.
-pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
+pub fn compute_layout(sw: i32, sh: i32, show_text_display: bool) -> LayoutMetrics {
     let layouts = keyboards::get_layouts();
 
     let pad = 3i32;
@@ -902,7 +902,7 @@ pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
 
     let avail_w = sw - 2 * pad;
 
-    let display_h = if cfg.ui.show_text_display {
+    let display_h = if show_text_display {
         ((sh as f32 / 12.0) as i32).max(10)
     } else {
         0
