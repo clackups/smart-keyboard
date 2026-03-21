@@ -751,6 +751,7 @@ impl SmartKeyboard {
         let metrics = &self.metrics;
         let lbl_size = metrics.lbl_size as f32;
         let big_lbl_size = metrics.big_lbl_size as f32;
+        let ctrl_lbl_size = metrics.ctrl_lbl_size as f32;
         let layouts = keyboards::get_layouts();
 
         let mut grid = column![].spacing(metrics.gap as f32);
@@ -839,10 +840,18 @@ impl SmartKeyboard {
                         Space::new().into()
                     }
                     other => {
-                        // Modifier / function / arrow key: single line, big label
+                        // Modifier / function / arrow key.
+                        // Single-char labels (arrows) stay big; multi-char
+                        // control labels use a smaller size so words like
+                        // "Shift" or "Enter" fit inside the button.
                         let lbl = keyboards::special_label(other).to_string();
+                        let sz = if lbl.chars().count() <= 2 {
+                            big_lbl_size
+                        } else {
+                            ctrl_lbl_size
+                        };
                         text(lbl)
-                            .size(big_lbl_size)
+                            .size(sz)
                             .color(label_color)
                             .align_x(iced::alignment::Horizontal::Center)
                             .width(Length::Fill)
