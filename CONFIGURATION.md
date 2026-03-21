@@ -18,19 +18,18 @@ If the file is missing, built-in defaults are used silently.
 ### `[input.keyboard]`
 
 Controls which physical keyboard keys are used to navigate the on-screen
-keyboard and activate (type) the selected key.  Values are FLTK key codes,
-as reported by `event_key().bits()` (and printed by the `[keyboard]` debug
-output in a debug build).  On Linux these are X11 KeySym values; for
-printable characters they equal the lowercase ASCII code.
+keyboard and activate (type) the selected key.  Values are raw scan codes
+(evdev scancodes from `linux/input-event-codes.h`).  The application uses the
+`physical_key` field from iced keyboard events to match these scancodes.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `navigate_up` | `0xff52` (`Key::Up`) | Move selection one row up |
-| `navigate_down` | `0xff54` (`Key::Down`) | Move selection one row down |
-| `navigate_left` | `0xff51` (`Key::Left`) | Move selection one column left |
-| `navigate_right` | `0xff53` (`Key::Right`) | Move selection one column right |
-| `activate` | `0x20` (Space) | Type the currently selected key |
-| `menu` | `0x6d` (`'m'`) | Open the application pop-up menu |
+| `navigate_up` | `103` (`KEY_UP`) | Move selection one row up |
+| `navigate_down` | `108` (`KEY_DOWN`) | Move selection one row down |
+| `navigate_left` | `105` (`KEY_LEFT`) | Move selection one column left |
+| `navigate_right` | `106` (`KEY_RIGHT`) | Move selection one column right |
+| `activate` | `57` (`KEY_SPACE`) | Type the currently selected key |
+| `menu` | `50` (`KEY_M`) | Open the application pop-up menu |
 | `activate_shift` | *(disabled)* | Equivalent to `activate` when Shift is held. The current selection is typed as if Shift were pressed. Remove or set to `null` to disable. |
 | `activate_ctrl` | *(disabled)* | Equivalent to `activate` when Ctrl is held. Remove or set to `null` to disable. |
 | `activate_alt` | *(disabled)* | Equivalent to `activate` when Alt is held. Remove or set to `null` to disable. |
@@ -49,12 +48,12 @@ printable characters they equal the lowercase ASCII code.
 
 ```toml
 [input.keyboard]
-navigate_up    = 0xff52   # Key::Up
-navigate_down  = 0xff54   # Key::Down
-navigate_left  = 0xff51   # Key::Left
-navigate_right = 0xff53   # Key::Right
-activate       = 0x20     # Space
-menu           = 0x6d     # 'm'
+navigate_up    = 103    # KEY_UP
+navigate_down  = 108    # KEY_DOWN
+navigate_left  = 105    # KEY_LEFT
+navigate_right = 106    # KEY_RIGHT
+activate       = 57     # KEY_SPACE
+menu           = 50     # KEY_M
 # activate_shift       = null
 # activate_ctrl        = null
 # activate_alt         = null

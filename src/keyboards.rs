@@ -17,6 +17,11 @@ pub enum KW {
     Space,  // space bar: fills the remaining width of the bottom row
 }
 
+/// Total column count for the ortholinear grid (widest row = 17).
+pub const GRID_COLS: u16 = 17;
+/// Column span for the space bar within the 17-column grid.
+pub const SPACE_COLS: u16 = 6;
+
 // =============================================================================
 // Physical key actions
 // =============================================================================
@@ -148,6 +153,7 @@ pub fn is_modifier(action: Action) -> bool {
 }
 
 /// Returns true if this modifier is sticky (auto-releases after next regular key).
+#[allow(dead_code)]
 pub fn is_sticky(action: Action) -> bool {
     matches!(
         action,

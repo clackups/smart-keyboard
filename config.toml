@@ -1,13 +1,12 @@
 [input.keyboard]
-# FLTK key codes, as printed by the [keyboard] debug output (hexadecimal).
-# On Linux these are X11 KeySym values; for printable characters they equal
-# the lowercase ASCII code (e.g. 'c' = 0x63, 'm' = 0x6d, space = 0x20).
-navigate_up    = 0xff52   # Key::Up
-navigate_down  = 0xff54   # Key::Down
-navigate_left  = 0xff51   # Key::Left
-navigate_right = 0xff53   # Key::Right
-activate       = 0x20     # Space
-menu           = 0x6d     # 'm'
+# Raw scan codes (evdev scancodes from linux/input-event-codes.h).
+# Use the values printed by the [keyboard] debug output (decimal).
+navigate_up    = 103    # KEY_UP
+navigate_down  = 108    # KEY_DOWN
+navigate_left  = 105    # KEY_LEFT
+navigate_right = 106    # KEY_RIGHT
+activate       = 57     # KEY_SPACE
+menu           = 50     # KEY_M
 # activate_shift = null  # equivalent to activate when Shift is held; null/absent = disabled
 # activate_ctrl  = null  # equivalent to activate when Ctrl is held; null/absent = disabled
 # activate_alt   = null  # equivalent to activate when Alt is held; null/absent = disabled

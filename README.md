@@ -12,7 +12,7 @@ simulates a Bluetooth keyboard toward the main computer.
 The user's input can include a mouse, a keyboard, a game controller,
 or button switches attached to GPIO pins on the device.
 
-The application is implemented in Rust, using FLTK library, and it's
+The application is implemented in Rust, using the [iced](https://iced.rs) library, and it's
 designed to use any available Wayland
 compositor. [Cage](https://github.com/cage-kiosk/cage) is the
 recommended compositor, although Weston, Sway and others can also be
