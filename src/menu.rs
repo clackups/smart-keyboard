@@ -443,6 +443,54 @@ fn toml_display_value(s: &str) -> String {
 }
 
 // =============================================================================
+// Field metadata for the configuration editor
+// =============================================================================
+
+/// Return the list of allowed values for a config key, if the field is
+/// an enumerated type.  Returns `None` for free-form fields.
+pub fn field_options(key: &str) -> Option<&'static [&'static str]> {
+    // Strip section prefix for matching.
+    let field = match key.rfind('.') {
+        Some(pos) => &key[pos + 1..],
+        None => key,
+    };
+
+    // Boolean fields.
+    match field {
+        "enabled" | "rollover" | "center_after_activate"
+        | "show_text_display" | "absolute_axes" | "rumble" => {
+            return Some(&["true", "false"]);
+        }
+        _ => {}
+    }
+
+    // Enum fields that depend on the full dotted key.
+    match key {
+        "output.mode" => Some(&["print", "ble"]),
+        "output.audio" => Some(&["none", "narrate", "tone", "tone_hint"]),
+        _ => None,
+    }
+    .or_else(|| {
+        // GPIO-specific enums (match by field suffix under input.gpio).
+        if key.starts_with("input.gpio.") {
+            match field {
+                "gpio_signal" => Some(&["high", "low"] as &[&str]),
+                "gpio_pull" => Some(&["up", "down", "null"]),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    })
+}
+
+/// Return `true` when `key` is a colour field that should show a swatch /
+/// colour-picker in the config editor.
+pub fn is_color_field(key: &str) -> bool {
+    key.starts_with("ui.colors.")
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
