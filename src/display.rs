@@ -879,6 +879,7 @@ pub struct LayoutMetrics {
     pub pad: i32,
     pub lbl_size: i32,
     pub big_lbl_size: i32,
+    pub ctrl_lbl_size: i32,
     pub disp_size: i32,
     pub btn_size: i32,
     pub status_h: i32,
@@ -894,7 +895,7 @@ pub struct LayoutMetrics {
 }
 
 /// Compute layout positions and sizes from screen dimensions and configuration.
-pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
+pub fn compute_layout(sw: i32, sh: i32, show_text_display: bool) -> LayoutMetrics {
     let layouts = keyboards::get_layouts();
 
     let pad = 3i32;
@@ -902,7 +903,7 @@ pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
 
     let avail_w = sw - 2 * pad;
 
-    let display_h = if cfg.ui.show_text_display {
+    let display_h = if show_text_display {
         ((sh as f32 / 12.0) as i32).max(10)
     } else {
         0
@@ -929,10 +930,12 @@ pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
     let key_h = key_h.min(key_w);
 
     // Font sizes: scale to fill the button surface efficiently.
-    // big_lbl_size — single-row labels (letters, modifiers, arrows)
-    // lbl_size     — two-row labels (number / punctuation with shifted variant)
-    let big_lbl_size = (key_h * 2 / 3).max(12);
-    let lbl_size     = (key_h * 2 / 5).max(10);
+    // big_lbl_size  — single-character labels (letters, arrows)
+    // ctrl_lbl_size — multi-character control labels (Shift, Enter, Bksp …)
+    // lbl_size      — two-row labels (number / punctuation with shifted variant)
+    let big_lbl_size  = (key_h * 3 / 4).max(12);
+    let ctrl_lbl_size = (key_w / 3).max(10);
+    let lbl_size      = (key_h / 3).max(10);
     let disp_size    = (display_h * 2 / 5).max(12).min(28);
     let btn_size     = lbl_size;
 
@@ -950,7 +953,7 @@ pub fn compute_layout(sw: i32, sh: i32, cfg: &config::Config) -> LayoutMetrics {
         key_w, key_h, space_w,
         pad_left, pad_top, kbd_y,
         gap, pad,
-        lbl_size, big_lbl_size, disp_size, btn_size,
+        lbl_size, big_lbl_size, ctrl_lbl_size, disp_size, btn_size,
         status_h, status_lbl_size,
         ind_w, ind_h, ind_gap, ind_pad,
         display_h, lang_btn_h, lang_w,

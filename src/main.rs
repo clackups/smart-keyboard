@@ -165,6 +165,7 @@ enum Message {
     LangClicked(usize),
     MenuOpen,
     MenuClose,
+    GotScreenSize(f32, f32),
 }
 
 // =============================================================================
@@ -296,10 +297,11 @@ impl SmartKeyboard {
 
         let colors = Colors::from_config(&cfg.ui.colors);
 
-        // Use a reasonable default screen size for layout computation.
-        // iced will handle the actual window sizing.
+        // Use a reasonable default screen size for initial layout computation.
+        // The layout is recomputed once the actual window size is obtained
+        // via the GotScreenSize startup task.
         let (sw, sh) = (800i32, 480i32);
-        let metrics = display::compute_layout(sw, sh, &cfg);
+        let metrics = display::compute_layout(sw, sh, cfg.ui.show_text_display);
 
         let all_btns = display::build_btn_grid(&metrics, &colors);
         let lang_btns = display::build_lang_btns(&metrics);
@@ -377,7 +379,12 @@ impl SmartKeyboard {
             showing_menu: false,
         };
 
-        (app, Task::none())
+        // Query the actual window size so the layout matches the real screen.
+        let size_task = iced::window::oldest().and_then(|id| {
+            iced::window::size(id)
+        }).map(|sz| Message::GotScreenSize(sz.width, sz.height));
+
+        (app, size_task)
     }
 
     // =========================================================================
@@ -474,6 +481,17 @@ impl SmartKeyboard {
 
             Message::MenuClose => {
                 self.showing_menu = false;
+            }
+
+            Message::GotScreenSize(w, h) => {
+                let sw = w as i32;
+                let sh = h as i32;
+                if sw != self.metrics.sw || sh != self.metrics.sh {
+                    self.metrics = display::compute_layout(sw, sh, self.show_text_display);
+                    self.all_btns = display::build_btn_grid(&self.metrics, &self.colors);
+                    self.lang_btns = display::build_lang_btns(&self.metrics);
+                    self.mod_btns = build_mod_btns(&self.all_btns, &self.colors);
+                }
             }
         }
 
@@ -733,6 +751,7 @@ impl SmartKeyboard {
         let metrics = &self.metrics;
         let lbl_size = metrics.lbl_size as f32;
         let big_lbl_size = metrics.big_lbl_size as f32;
+        let ctrl_lbl_size = metrics.ctrl_lbl_size as f32;
         let layouts = keyboards::get_layouts();
 
         let mut grid = column![].spacing(metrics.gap as f32);
@@ -821,10 +840,18 @@ impl SmartKeyboard {
                         Space::new().into()
                     }
                     other => {
-                        // Modifier / function / arrow key: single line, big label
+                        // Modifier / function / arrow key.
+                        // Single-char labels (arrows) stay big; multi-char
+                        // control labels use a smaller size so words like
+                        // "Shift" or "Enter" fit inside the button.
                         let lbl = keyboards::special_label(other).to_string();
+                        let sz = if lbl.chars().count() <= 2 {
+                            big_lbl_size
+                        } else {
+                            ctrl_lbl_size
+                        };
                         text(lbl)
-                            .size(big_lbl_size)
+                            .size(sz)
                             .color(label_color)
                             .align_x(iced::alignment::Horizontal::Center)
                             .width(Length::Fill)
@@ -834,7 +861,7 @@ impl SmartKeyboard {
 
                 let btn = button(btn_content)
                 .width(Length::FillPortion(portion))
-                .height(Length::Fill)
+                .height(Length::Fixed(metrics.key_h as f32))
                 .on_press(Message::ButtonClicked(ri, ci))
                 .style(move |_theme: &iced::Theme, _status| button::Style {
                     background: Some(iced::Background::Color(bg)),
