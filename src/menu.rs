@@ -193,6 +193,64 @@ pub fn restart_application() {
 }
 
 // =============================================================================
+// Config pair loading for the configuration editor
+// =============================================================================
+
+/// Read config.toml and return a flat list of `(dotted.key, value)` pairs.
+///
+/// Only uncommented, active settings are returned.  The order follows the
+/// order in which sections and keys appear in the TOML file.
+pub fn load_config_pairs() -> Vec<(String, String)> {
+    let dir = std::env::var("SMART_KBD_CONFIG_PATH").unwrap_or_else(|_| ".".into());
+    let path = std::path::Path::new(&dir).join("config.toml");
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+
+    let table: toml::map::Map<String, toml::Value> = match content.parse() {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut pairs = Vec::new();
+    flatten_toml("", &toml::Value::Table(table), &mut pairs);
+    pairs
+}
+
+fn flatten_toml(prefix: &str, val: &toml::Value, out: &mut Vec<(String, String)>) {
+    if let toml::Value::Table(table) = val {
+        for (k, v) in table {
+            let key = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{}.{}", prefix, k)
+            };
+            if v.is_table() {
+                flatten_toml(&key, v, out);
+            } else {
+                out.push((key, toml_value_to_display(v)));
+            }
+        }
+    }
+}
+
+fn toml_value_to_display(val: &toml::Value) -> String {
+    match val {
+        toml::Value::String(s) => s.clone(),
+        toml::Value::Integer(i) => format!("{}", i),
+        toml::Value::Float(f) => format!("{}", f),
+        toml::Value::Boolean(b) => format!("{}", b),
+        toml::Value::Array(arr) => {
+            let items: Vec<String> = arr.iter().map(toml_value_to_display).collect();
+            items.join(", ")
+        }
+        _ => format!("{}", val),
+    }
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 

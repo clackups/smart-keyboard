@@ -14,10 +14,11 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use iced::widget::{button, column, container, row, text, Space};
+use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
 use iced::{Color, Element, Length, Subscription, Task};
 use iced::keyboard;
 use iced::event;
+use iced::widget;
 
 use keyboards::{Action, REGULAR_KEY_COUNT};
 use gamepad::Gamepad;
@@ -151,6 +152,32 @@ enum BleState {
 }
 
 // =============================================================================
+// Menu constants
+// =============================================================================
+
+const MENU_ITEM_CONFIGURATION: usize = 0;
+const MENU_ITEM_DISCONNECT_BLE: usize = 1;
+const MENU_ITEM_EXIT: usize = 2;
+const MENU_ITEM_COUNT: usize = 3;
+
+// Well-known scancodes for menu navigation (fallbacks).
+const SC_ENTER: u32 = 28;
+const SC_ESC: u32 = 1;
+
+// =============================================================================
+// Configuration editor state
+// =============================================================================
+
+struct ConfigEditorState {
+    /// Flattened (dotted.key, value) pairs loaded from config.toml.
+    pairs: Vec<(String, String)>,
+    /// Currently selected row in the list (for keyboard navigation).
+    sel: usize,
+    /// Whether a text_input widget is being edited.
+    editing: bool,
+}
+
+// =============================================================================
 // Message enum
 // =============================================================================
 
@@ -165,6 +192,13 @@ enum Message {
     LangClicked(usize),
     MenuOpen,
     MenuClose,
+    MenuDisconnectBle,
+    MenuExitApp,
+    MenuOpenConfig,
+    ConfigValueChanged(usize, String),
+    ConfigSave,
+    ConfigCancel,
+    ConfigFieldSubmit,
     GotScreenSize(f32, f32),
 }
 
@@ -237,6 +271,8 @@ struct SmartKeyboard {
 
     // Menu
     showing_menu: bool,
+    menu_sel: usize,
+    config_editor: Option<ConfigEditorState>,
 }
 
 // SAFETY: All iced update/view/subscription callbacks run on the main GUI
@@ -377,6 +413,8 @@ impl SmartKeyboard {
             gpio_connected,
             gp_rumble,
             showing_menu: false,
+            menu_sel: 0,
+            config_editor: None,
         };
 
         // Query the actual window size so the layout matches the real screen.
@@ -432,6 +470,29 @@ impl SmartKeyboard {
                     // Already pressed (key repeat); ignore.
                     return Task::none();
                 }
+
+                // --- Config editor: when editing a text field, let iced ---
+                // --- handle all keyboard input natively.               ---
+                if self.config_editor.as_ref().map_or(false, |c| c.editing) {
+                    // Escape cancels editing (unfocuses the field).
+                    if sc == SC_ESC {
+                        if let Some(ref mut ce) = self.config_editor {
+                            ce.editing = false;
+                        }
+                    }
+                    return Task::none();
+                }
+
+                // --- Config editor navigation (not editing) ---
+                if self.config_editor.is_some() {
+                    return self.handle_config_key_press(sc);
+                }
+
+                // --- Main menu navigation ---
+                if self.showing_menu {
+                    return self.handle_menu_key_press(sc);
+                }
+
                 let events =
                     phys_keyboard::translate_key_event(sc, true, &self.nav_keys);
                 self.process_input_events(&events, InputSource::Keyboard);
@@ -439,6 +500,12 @@ impl SmartKeyboard {
 
             Message::KeyReleased(sc) => {
                 self.pressed_keys.remove(&sc);
+
+                // Suppress release processing while menu/config is active.
+                if self.showing_menu || self.config_editor.is_some() {
+                    return Task::none();
+                }
+
                 let events =
                     phys_keyboard::translate_key_event(sc, false, &self.nav_keys);
                 self.process_input_events(&events, InputSource::Keyboard);
@@ -453,10 +520,12 @@ impl SmartKeyboard {
                 if self.gpio_cfg.is_some() {
                     self.poll_gpio();
                 }
-                // Mouse auto-repeat for all sources
-                self.do_mouse_auto_repeat(InputSource::Keyboard);
-                self.do_mouse_auto_repeat(InputSource::Gamepad);
-                self.do_mouse_auto_repeat(InputSource::Gpio);
+                // Mouse auto-repeat for all sources (only when not in menu)
+                if !self.showing_menu && self.config_editor.is_none() {
+                    self.do_mouse_auto_repeat(InputSource::Keyboard);
+                    self.do_mouse_auto_repeat(InputSource::Gamepad);
+                    self.do_mouse_auto_repeat(InputSource::Gpio);
+                }
             }
 
             Message::BleTick => {
@@ -477,10 +546,68 @@ impl SmartKeyboard {
                     self.hook.on_key_release(sc, &ks);
                 }
                 self.showing_menu = true;
+                self.menu_sel = 0;
             }
 
             Message::MenuClose => {
                 self.showing_menu = false;
+                self.config_editor = None;
+            }
+
+            Message::MenuDisconnectBle => {
+                if let Some(ref rc) = self.ble_conn {
+                    rc.borrow_mut().send_disconnect();
+                    self.ble_state = BleState::Disconnected;
+                }
+                self.showing_menu = false;
+            }
+
+            Message::MenuExitApp => {
+                std::process::exit(0);
+            }
+
+            Message::MenuOpenConfig => {
+                let pairs = menu::load_config_pairs();
+                self.config_editor = Some(ConfigEditorState {
+                    pairs,
+                    sel: 0,
+                    editing: false,
+                });
+            }
+
+            Message::ConfigValueChanged(idx, val) => {
+                if let Some(ref mut ce) = self.config_editor {
+                    if idx < ce.pairs.len() {
+                        ce.pairs[idx].1 = val;
+                    }
+                }
+            }
+
+            Message::ConfigFieldSubmit => {
+                if let Some(ref mut ce) = self.config_editor {
+                    ce.editing = false;
+                }
+            }
+
+            Message::ConfigSave => {
+                if let Some(ref ce) = self.config_editor {
+                    let pairs: Vec<(&str, String)> = ce.pairs.iter()
+                        .map(|(k, v)| (k.as_str(), v.clone()))
+                        .collect();
+                    match menu::build_toml_and_save(&pairs) {
+                        Ok(()) => {
+                            eprintln!("[menu] config saved, restarting…");
+                            menu::restart_application();
+                        }
+                        Err(e) => {
+                            eprintln!("[menu] failed to save config: {}", e);
+                        }
+                    }
+                }
+            }
+
+            Message::ConfigCancel => {
+                self.config_editor = None;
             }
 
             Message::GotScreenSize(w, h) => {
@@ -503,6 +630,9 @@ impl SmartKeyboard {
     // =========================================================================
 
     fn view(&self) -> Element<'_, Message> {
+        if self.config_editor.is_some() {
+            return self.view_config_editor();
+        }
         if self.showing_menu {
             return self.view_menu();
         }
@@ -898,6 +1028,54 @@ impl SmartKeyboard {
             .size(28)
             .color(Color::WHITE);
 
+        let items: [(& str, Message, bool); MENU_ITEM_COUNT] = [
+            ("Configuration",    Message::MenuOpenConfig,     true),
+            ("Disconnect BLE",   Message::MenuDisconnectBle,  self.ble_can_disconnect()),
+            ("Exit Application", Message::MenuExitApp,        true),
+        ];
+
+        let mut menu_col = column![title].spacing(12)
+            .align_x(iced::alignment::Horizontal::Center);
+
+        for (i, (label, msg, enabled)) in items.into_iter().enumerate() {
+            let is_selected = i == self.menu_sel;
+            let bg = if is_selected {
+                colors.nav_sel
+            } else {
+                Color::from_rgb(0.24, 0.24, 0.26)
+            };
+            let label_color = if !enabled {
+                Color::from_rgb(0.35, 0.35, 0.35)
+            } else if is_selected {
+                Color::BLACK
+            } else {
+                Color::WHITE
+            };
+
+            let btn = button(
+                text(label)
+                    .size(20)
+                    .color(label_color)
+                    .align_x(iced::alignment::Horizontal::Center)
+            )
+            .width(Length::Fixed(300.0))
+            .height(Length::Fixed(50.0))
+            .style(move |_theme: &iced::Theme, _status| button::Style {
+                background: Some(iced::Background::Color(bg)),
+                text_color: label_color,
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                shadow: iced::Shadow::default(),
+                snap: true,
+            });
+
+            let btn = if enabled { btn.on_press(msg) } else { btn };
+            menu_col = menu_col.push(btn);
+        }
+
+        // "Close" at the bottom.
         let close_btn = button(
             text("Close")
                 .size(20)
@@ -908,49 +1086,18 @@ impl SmartKeyboard {
         .height(Length::Fixed(50.0))
         .on_press(Message::MenuClose)
         .style(|_theme: &iced::Theme, _status| button::Style {
-            background: Some(iced::Background::Color(Color::from_rgb(0.24, 0.24, 0.26))),
+            background: Some(iced::Background::Color(Color::from_rgb(0.18, 0.18, 0.20))),
             text_color: Color::WHITE,
             border: iced::Border {
                 radius: 4.0.into(),
                 ..Default::default()
             },
             shadow: iced::Shadow::default(),
-                    snap: true,
+            snap: true,
         });
 
-        let ble_label = if self.ble_conn.is_some() {
-            "Disconnect BLE"
-        } else {
-            "Disconnect BLE (N/A)"
-        };
-
-        let ble_btn = button(
-            text(ble_label)
-                .size(20)
-                .color(if self.ble_conn.is_some() {
-                    Color::WHITE
-                } else {
-                    Color::from_rgb(0.35, 0.35, 0.35)
-                })
-                .align_x(iced::alignment::Horizontal::Center)
-        )
-        .width(Length::Fixed(300.0))
-        .height(Length::Fixed(50.0))
-        .on_press(Message::MenuClose)
-        .style(|_theme: &iced::Theme, _status| button::Style {
-            background: Some(iced::Background::Color(Color::from_rgb(0.24, 0.24, 0.26))),
-            text_color: Color::WHITE,
-            border: iced::Border {
-                radius: 4.0.into(),
-                ..Default::default()
-            },
-            shadow: iced::Shadow::default(),
-                    snap: true,
-        });
-
-        let menu_col = column![title, ble_btn, close_btn]
-            .spacing(12)
-            .align_x(iced::alignment::Horizontal::Center);
+        menu_col = menu_col.push(Space::new().height(Length::Fixed(8.0)));
+        menu_col = menu_col.push(close_btn);
 
         container(menu_col)
             .width(Length::Fill)
@@ -964,11 +1111,274 @@ impl SmartKeyboard {
             .into()
     }
 
+    fn view_config_editor(&self) -> Element<'_, Message> {
+        let colors = self.colors;
+        let ce = self.config_editor.as_ref().unwrap();
+
+        let title = text("Configuration")
+            .size(26)
+            .color(Color::WHITE);
+
+        // Build scrollable list of config items.
+        let mut list_col = column![].spacing(4).width(Length::Fill);
+        let mut current_section = String::new();
+
+        for (i, (key, val)) in ce.pairs.iter().enumerate() {
+            // Section header when the section prefix changes.
+            let section = match key.rfind('.') {
+                Some(pos) => &key[..pos],
+                None => "",
+            };
+            if section != current_section {
+                current_section = section.to_string();
+                if !current_section.is_empty() {
+                    let header = text(format!("[{}]", current_section))
+                        .size(14)
+                        .color(Color::from_rgb(0.6, 0.6, 0.65));
+                    list_col = list_col.push(
+                        container(header).padding(4)
+                    );
+                }
+            }
+
+            let field_name = match key.rfind('.') {
+                Some(pos) => &key[pos + 1..],
+                None => key.as_str(),
+            };
+
+            let is_selected = i == ce.sel;
+            let row_bg = if is_selected {
+                Color::from_rgb(0.22, 0.22, 0.28)
+            } else {
+                Color::from_rgb(0.15, 0.15, 0.17)
+            };
+
+            let label = text(field_name)
+                .size(14)
+                .color(Color::from_rgb(0.75, 0.75, 0.8))
+                .width(Length::FillPortion(2));
+
+            let field_id = widget::Id::from(format!("cfg-{}", i));
+            let input = text_input("", val)
+                .id(field_id)
+                .size(14)
+                .on_input(move |v| Message::ConfigValueChanged(i, v))
+                .on_submit(Message::ConfigFieldSubmit)
+                .width(Length::FillPortion(3));
+
+            let r = container(
+                row![label, input].spacing(8).align_y(iced::alignment::Vertical::Center)
+            )
+            .padding([4, 8])
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(row_bg)),
+                border: iced::Border {
+                    radius: 2.0.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+
+            list_col = list_col.push(r);
+        }
+
+        let scroll = scrollable(list_col)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        // Bottom buttons.
+        let save_btn = button(
+            text("Save & Restart").size(18).color(Color::WHITE)
+                .align_x(iced::alignment::Horizontal::Center)
+        )
+        .width(Length::Fixed(200.0))
+        .height(Length::Fixed(44.0))
+        .on_press(Message::ConfigSave)
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: Some(iced::Background::Color(Color::from_rgb(0.2, 0.5, 0.3))),
+            text_color: Color::WHITE,
+            border: iced::Border { radius: 4.0.into(), ..Default::default() },
+            shadow: iced::Shadow::default(),
+            snap: true,
+        });
+
+        let cancel_btn = button(
+            text("Cancel").size(18).color(Color::WHITE)
+                .align_x(iced::alignment::Horizontal::Center)
+        )
+        .width(Length::Fixed(200.0))
+        .height(Length::Fixed(44.0))
+        .on_press(Message::ConfigCancel)
+        .style(|_theme: &iced::Theme, _status| button::Style {
+            background: Some(iced::Background::Color(Color::from_rgb(0.3, 0.18, 0.18))),
+            text_color: Color::WHITE,
+            border: iced::Border { radius: 4.0.into(), ..Default::default() },
+            shadow: iced::Shadow::default(),
+            snap: true,
+        });
+
+        let btn_row = row![save_btn, Space::new().width(Length::Fixed(20.0)), cancel_btn]
+            .align_y(iced::alignment::Vertical::Center);
+
+        let main_col = column![title, scroll, btn_row]
+            .spacing(8)
+            .padding(12)
+            .align_x(iced::alignment::Horizontal::Center)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        container(main_col)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &iced::Theme| container::Style {
+                background: Some(iced::Background::Color(colors.win_bg)),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    // =========================================================================
+    // Menu / config keyboard navigation
+    // =========================================================================
+
+    /// Returns `true` when "Disconnect BLE" should be selectable.
+    fn ble_can_disconnect(&self) -> bool {
+        self.ble_conn.is_some() && self.ble_state == BleState::Connected
+    }
+
+    /// Handle a physical key-press while the main menu is showing.
+    fn handle_menu_key_press(&mut self, sc: u32) -> Task<Message> {
+        let is_up   = sc == self.nav_keys.up   || sc == 103;
+        let is_down = sc == self.nav_keys.down  || sc == 108;
+        let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
+        let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
+
+        if is_up && self.menu_sel > 0 {
+            self.menu_sel -= 1;
+        }
+        if is_down && self.menu_sel < MENU_ITEM_COUNT - 1 {
+            self.menu_sel += 1;
+        }
+        if is_activate {
+            return self.activate_menu_item();
+        }
+        if is_close {
+            self.showing_menu = false;
+        }
+        Task::none()
+    }
+
+    /// Activate the currently highlighted menu item.
+    fn activate_menu_item(&mut self) -> Task<Message> {
+        match self.menu_sel {
+            MENU_ITEM_CONFIGURATION => {
+                self.update(Message::MenuOpenConfig)
+            }
+            MENU_ITEM_DISCONNECT_BLE => {
+                if self.ble_can_disconnect() {
+                    self.update(Message::MenuDisconnectBle)
+                } else {
+                    Task::none()
+                }
+            }
+            MENU_ITEM_EXIT => {
+                self.update(Message::MenuExitApp)
+            }
+            _ => Task::none(),
+        }
+    }
+
+    /// Handle a physical key-press while the config editor is showing
+    /// (but not editing a text field).
+    fn handle_config_key_press(&mut self, sc: u32) -> Task<Message> {
+        let is_up   = sc == self.nav_keys.up   || sc == 103;
+        let is_down = sc == self.nav_keys.down  || sc == 108;
+        let is_activate = sc == self.nav_keys.activate || sc == SC_ENTER;
+        let is_close = sc == self.nav_keys.menu || sc == SC_ESC;
+
+        if let Some(ref mut ce) = self.config_editor {
+            if is_up && ce.sel > 0 {
+                ce.sel -= 1;
+            }
+            if is_down && ce.sel < ce.pairs.len().saturating_sub(1) {
+                ce.sel += 1;
+            }
+            if is_activate {
+                ce.editing = true;
+                let id = widget::Id::from(format!("cfg-{}", ce.sel));
+                return widget::operation::focus(id);
+            }
+            if is_close {
+                self.config_editor = None;
+                return Task::none();
+            }
+        }
+        Task::none()
+    }
+
+    // =========================================================================
+    // Input event processing for overlays (menu / config editor)
+    // =========================================================================
+
+    /// Handle gamepad/GPIO events while the main menu or config editor is
+    /// showing.  Translates directional + activate + menu actions to
+    /// menu/config navigation.
+    fn process_overlay_input_events(&mut self, events: &[UserInputEvent]) {
+        for evt in events {
+            if !evt.pressed { continue; }
+
+            if self.config_editor.is_some() {
+                match evt.action {
+                    UserInputAction::Up => {
+                        if let Some(ref mut ce) = self.config_editor {
+                            ce.sel = ce.sel.saturating_sub(1);
+                        }
+                    }
+                    UserInputAction::Down => {
+                        if let Some(ref mut ce) = self.config_editor {
+                            let max = ce.pairs.len().saturating_sub(1);
+                            if ce.sel < max { ce.sel += 1; }
+                        }
+                    }
+                    UserInputAction::Menu => {
+                        self.config_editor = None;
+                    }
+                    _ => {}
+                }
+            } else {
+                // Main menu
+                match evt.action {
+                    UserInputAction::Up => {
+                        self.menu_sel = self.menu_sel.saturating_sub(1);
+                    }
+                    UserInputAction::Down => {
+                        if self.menu_sel < MENU_ITEM_COUNT - 1 {
+                            self.menu_sel += 1;
+                        }
+                    }
+                    UserInputAction::Activate => {
+                        let _ = self.activate_menu_item();
+                    }
+                    UserInputAction::Menu => {
+                        self.showing_menu = false;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     // =========================================================================
     // Input event processing (replaces old process_input_events + InputCtx)
     // =========================================================================
 
     fn process_input_events(&mut self, events: &[UserInputEvent], source: InputSource) {
+        // Redirect gamepad/GPIO events when the menu or config editor is open.
+        if self.showing_menu || self.config_editor.is_some() {
+            self.process_overlay_input_events(events);
+            return;
+        }
+
         let rumble = matches!(source, InputSource::Gamepad) && self.gp_rumble;
 
         for evt in events {
