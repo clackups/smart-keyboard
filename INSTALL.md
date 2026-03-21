@@ -8,11 +8,7 @@ systems.
 
 ```sh
 sudo apt install -y \
-    cage \
-    git cmake g++ \
-    libwayland-dev wayland-protocols \
-    libxkbcommon-dev libcairo2-dev libpango1.0-dev libudev-dev \
-    libxfixes-dev libxcursor-dev libxinerama-dev libdbus-1-dev
+    cage git g++ pkg-config libudev-dev
 
 # Optional packages to enable audio output
 sudo apt install -y \
