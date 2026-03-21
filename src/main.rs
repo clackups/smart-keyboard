@@ -1090,10 +1090,15 @@ impl SmartKeyboard {
             };
 
             let btn = button(
-                text(label)
-                    .size(20)
-                    .color(label_color)
-                    .align_x(iced::alignment::Horizontal::Center)
+                container(
+                    text(label)
+                        .size(20)
+                        .color(label_color)
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Center)
+                .align_y(iced::alignment::Vertical::Center)
             )
             .width(Length::Fixed(300.0))
             .height(Length::Fixed(50.0))
@@ -1114,10 +1119,15 @@ impl SmartKeyboard {
 
         // "Close" at the bottom.
         let close_btn = button(
-            text("Close")
-                .size(20)
-                .color(Color::WHITE)
-                .align_x(iced::alignment::Horizontal::Center)
+            container(
+                text("Close")
+                    .size(20)
+                    .color(Color::WHITE)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
         )
         .width(Length::Fixed(300.0))
         .height(Length::Fixed(50.0))
@@ -1238,8 +1248,13 @@ impl SmartKeyboard {
 
         // Bottom buttons.
         let save_btn = button(
-            text("Save & Restart").size(18).color(Color::WHITE)
-                .align_x(iced::alignment::Horizontal::Center)
+            container(
+                text("Save & Restart").size(18).color(Color::WHITE)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
         )
         .width(Length::Fixed(200.0))
         .height(Length::Fixed(44.0))
@@ -1253,8 +1268,13 @@ impl SmartKeyboard {
         });
 
         let cancel_btn = button(
-            text("Cancel").size(18).color(Color::WHITE)
-                .align_x(iced::alignment::Horizontal::Center)
+            container(
+                text("Cancel").size(18).color(Color::WHITE)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
         )
         .width(Length::Fixed(200.0))
         .height(Length::Fixed(44.0))
