@@ -183,6 +183,8 @@ struct ConfigEditorState {
     sel: usize,
     /// Whether a text_input widget is being edited.
     editing: bool,
+    /// Per-field validation error messages (empty string = valid).
+    errors: Vec<String>,
 }
 
 // =============================================================================
@@ -605,17 +607,24 @@ impl SmartKeyboard {
 
             Message::MenuOpenConfig => {
                 let pairs = menu::load_config_pairs();
+                let errors = pairs.iter()
+                    .map(|(k, v)| menu::validate_field(k, v).unwrap_or_default())
+                    .collect();
                 self.config_editor = Some(ConfigEditorState {
                     pairs,
                     sel: 0,
                     editing: false,
+                    errors,
                 });
             }
 
             Message::ConfigValueChanged(idx, val) => {
                 if let Some(ref mut ce) = self.config_editor {
                     if idx < ce.pairs.len() {
+                        let key = &ce.pairs[idx].0;
+                        let err = menu::validate_field(key, &val).unwrap_or_default();
                         ce.pairs[idx].1 = val;
+                        ce.errors[idx] = err;
                     }
                 }
             }
@@ -1060,9 +1069,14 @@ impl SmartKeyboard {
 
     fn view_menu(&self) -> Element<'_, Message> {
         let colors = self.colors;
+        // Dynamic button height: ~6.5% of screen height, clamped to 36..80.
+        let btn_h = (self.metrics.sh as f32 * 0.065).clamp(36.0, 80.0);
+        let btn_font = (btn_h * 0.42).clamp(14.0, 24.0);
+        let title_font = (btn_h * 0.56).clamp(18.0, 32.0);
+        let btn_w = (self.metrics.sw as f32 * 0.45).clamp(200.0, 400.0);
 
         let title = text("Menu")
-            .size(28)
+            .size(title_font)
             .color(Color::WHITE);
 
         let items: [(&str, Message, bool); MENU_ITEM_COUNT] = [
@@ -1092,7 +1106,7 @@ impl SmartKeyboard {
             let btn = button(
                 container(
                     text(label)
-                        .size(20)
+                        .size(btn_font)
                         .color(label_color)
                 )
                 .width(Length::Fill)
@@ -1100,8 +1114,8 @@ impl SmartKeyboard {
                 .align_x(iced::alignment::Horizontal::Center)
                 .align_y(iced::alignment::Vertical::Center)
             )
-            .width(Length::Fixed(300.0))
-            .height(Length::Fixed(50.0))
+            .width(Length::Fixed(btn_w))
+            .height(Length::Fixed(btn_h))
             .style(move |_theme: &iced::Theme, _status| button::Style {
                 background: Some(iced::Background::Color(bg)),
                 text_color: label_color,
@@ -1121,7 +1135,7 @@ impl SmartKeyboard {
         let close_btn = button(
             container(
                 text("Close")
-                    .size(20)
+                    .size(btn_font)
                     .color(Color::WHITE)
             )
             .width(Length::Fill)
@@ -1129,8 +1143,8 @@ impl SmartKeyboard {
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center)
         )
-        .width(Length::Fixed(300.0))
-        .height(Length::Fixed(50.0))
+        .width(Length::Fixed(btn_w))
+        .height(Length::Fixed(btn_h))
         .on_press(Message::MenuClose)
         .style(|_theme: &iced::Theme, _status| button::Style {
             background: Some(iced::Background::Color(Color::from_rgb(0.18, 0.18, 0.20))),
@@ -1162,8 +1176,15 @@ impl SmartKeyboard {
         let colors = self.colors;
         let ce = self.config_editor.as_ref().unwrap();
 
+        // Dynamic sizing based on screen height.
+        let row_h = (self.metrics.sh as f32 * 0.045).clamp(28.0, 52.0);
+        let font_sz = (row_h * 0.42).clamp(11.0, 18.0);
+        let title_font = (row_h * 0.72).clamp(18.0, 30.0);
+        let btn_h = (self.metrics.sh as f32 * 0.06).clamp(32.0, 56.0);
+        let btn_font = (btn_h * 0.42).clamp(13.0, 22.0);
+
         let title = text("Configuration")
-            .size(26)
+            .size(title_font)
             .color(Color::WHITE);
 
         // Build scrollable list of config items.
@@ -1180,7 +1201,7 @@ impl SmartKeyboard {
                 current_section = section.to_string();
                 if !current_section.is_empty() {
                     let header = text(format!("[{}]", current_section))
-                        .size(14)
+                        .size(font_sz)
                         .color(Color::from_rgb(0.85, 0.85, 0.95));
                     list_col = list_col.push(
                         container(header)
@@ -1213,30 +1234,100 @@ impl SmartKeyboard {
             };
 
             let label = text(field_name)
-                .size(14)
+                .size(font_sz)
                 .color(Color::from_rgb(0.75, 0.75, 0.8))
                 .width(Length::FillPortion(2));
 
-            let field_id = widget::Id::from(format!("cfg-{}", i));
-            let input = text_input("", val)
-                .id(field_id)
-                .size(14)
-                .on_input(move |v| Message::ConfigValueChanged(i, v))
-                .on_submit(Message::ConfigFieldSubmit)
-                .width(Length::FillPortion(3));
+            // Determine which widget to show for this field.
+            let value_widget: Element<'_, Message> =
+            if let Some(opts) = menu::field_options(key) {
+                // --- Dropdown (pick_list) for enumerated fields ---
+                let options: Vec<String> = opts.iter().map(|s| s.to_string()).collect();
+                let selected: Option<String> = if val.is_empty() {
+                    None
+                } else {
+                    Some(val.clone())
+                };
+                pick_list(options, selected, move |v| Message::ConfigValueChanged(i, v))
+                    .text_size(font_sz)
+                    .placeholder("(default)")
+                    .width(Length::FillPortion(3))
+                    .into()
+            } else if menu::is_color_field(key) {
+                // --- Color field: swatch + text input ---
+                let swatch_color = menu::parse_hex_color(val)
+                    .map(|(r, g, b)| Color::from_rgb(r, g, b))
+                    .unwrap_or(Color::from_rgb(0.3, 0.3, 0.3));
 
-            let r = container(
-                row![label, input].spacing(8).align_y(iced::alignment::Vertical::Center)
-            )
-            .padding([4, 8])
-            .style(move |_theme: &iced::Theme| container::Style {
-                background: Some(iced::Background::Color(row_bg)),
-                border: iced::Border {
-                    radius: 2.0.into(),
+                let swatch = container(Space::new())
+                    .width(Length::Fixed(row_h))
+                    .height(Length::Fixed(row_h * 0.7))
+                    .style(move |_theme: &iced::Theme| container::Style {
+                        background: Some(iced::Background::Color(swatch_color)),
+                        border: iced::Border {
+                            radius: 2.0.into(),
+                            width: 1.0,
+                            color: Color::from_rgb(0.5, 0.5, 0.5),
+                        },
+                        ..Default::default()
+                    });
+
+                let field_id = widget::Id::from(format!("cfg-{}", i));
+                let input = text_input("", val)
+                    .id(field_id)
+                    .size(font_sz)
+                    .on_input(move |v| Message::ConfigValueChanged(i, v))
+                    .on_submit(Message::ConfigFieldSubmit)
+                    .width(Length::Fill);
+
+                row![swatch, input]
+                    .spacing(4)
+                    .align_y(iced::alignment::Vertical::Center)
+                    .width(Length::FillPortion(3))
+                    .into()
+            } else {
+                // --- Regular text input ---
+                let field_id = widget::Id::from(format!("cfg-{}", i));
+                text_input("", val)
+                    .id(field_id)
+                    .size(font_sz)
+                    .on_input(move |v| Message::ConfigValueChanged(i, v))
+                    .on_submit(Message::ConfigFieldSubmit)
+                    .width(Length::FillPortion(3))
+                    .into()
+            };
+
+            // Build the row content.
+            let mut row_col = column![]
+                .spacing(2)
+                .width(Length::Fill);
+
+            row_col = row_col.push(
+                row![label, value_widget]
+                    .spacing(8)
+                    .align_y(iced::alignment::Vertical::Center)
+            );
+
+            // Validation error (if any).
+            let err = ce.errors.get(i).map(|s| s.as_str()).unwrap_or("");
+            if !err.is_empty() {
+                row_col = row_col.push(
+                    text(err)
+                        .size(font_sz * 0.85)
+                        .color(Color::from_rgb(1.0, 0.35, 0.35))
+                );
+            }
+
+            let r = container(row_col)
+                .padding([4, 8])
+                .style(move |_theme: &iced::Theme| container::Style {
+                    background: Some(iced::Background::Color(row_bg)),
+                    border: iced::Border {
+                        radius: 2.0.into(),
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
-                ..Default::default()
-            });
+                });
 
             list_col = list_col.push(r);
         }
@@ -1249,7 +1340,7 @@ impl SmartKeyboard {
         // Bottom buttons.
         let save_btn = button(
             container(
-                text("Save & Restart").size(18).color(Color::WHITE)
+                text("Save & Restart").size(btn_font).color(Color::WHITE)
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -1257,7 +1348,7 @@ impl SmartKeyboard {
             .align_y(iced::alignment::Vertical::Center)
         )
         .width(Length::Fixed(200.0))
-        .height(Length::Fixed(44.0))
+        .height(Length::Fixed(btn_h))
         .on_press(Message::ConfigSave)
         .style(|_theme: &iced::Theme, _status| button::Style {
             background: Some(iced::Background::Color(Color::from_rgb(0.2, 0.5, 0.3))),
@@ -1269,7 +1360,7 @@ impl SmartKeyboard {
 
         let cancel_btn = button(
             container(
-                text("Cancel").size(18).color(Color::WHITE)
+                text("Cancel").size(btn_font).color(Color::WHITE)
             )
             .width(Length::Fill)
             .height(Length::Fill)
@@ -1277,7 +1368,7 @@ impl SmartKeyboard {
             .align_y(iced::alignment::Vertical::Center)
         )
         .width(Length::Fixed(200.0))
-        .height(Length::Fixed(44.0))
+        .height(Length::Fixed(btn_h))
         .on_press(Message::ConfigCancel)
         .style(|_theme: &iced::Theme, _status| button::Style {
             background: Some(iced::Background::Color(Color::from_rgb(0.3, 0.18, 0.18))),
@@ -1343,10 +1434,14 @@ impl SmartKeyboard {
         match self.menu_sel {
             MENU_ITEM_CONFIGURATION => {
                 let pairs = menu::load_config_pairs();
+                let errors = pairs.iter()
+                    .map(|(k, v)| menu::validate_field(k, v).unwrap_or_default())
+                    .collect();
                 self.config_editor = Some(ConfigEditorState {
                     pairs,
                     sel: 0,
                     editing: false,
+                    errors,
                 });
                 Task::none()
             }

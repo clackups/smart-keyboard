@@ -466,8 +466,8 @@ pub fn field_options(key: &str) -> Option<&'static [&'static str]> {
 
     // Enum fields that depend on the full dotted key.
     match key {
-        "output.mode" => Some(&["print", "ble"]),
-        "output.audio" => Some(&["none", "narrate", "tone", "tone_hint"]),
+        "output.mode" => Some(&["print", "ble"] as &[&str]),
+        "output.audio" => Some(&["none", "narrate", "tone", "tone_hint"] as &[&str]),
         _ => None,
     }
     .or_else(|| {
@@ -475,7 +475,7 @@ pub fn field_options(key: &str) -> Option<&'static [&'static str]> {
         if key.starts_with("input.gpio.") {
             match field {
                 "gpio_signal" => Some(&["high", "low"] as &[&str]),
-                "gpio_pull" => Some(&["up", "down", "null"]),
+                "gpio_pull" => Some(&["up", "down", "null"] as &[&str]),
                 _ => None,
             }
         } else {
@@ -488,6 +488,172 @@ pub fn field_options(key: &str) -> Option<&'static [&'static str]> {
 /// colour-picker in the config editor.
 pub fn is_color_field(key: &str) -> bool {
     key.starts_with("ui.colors.")
+}
+
+/// Parse a `#RRGGBB` hex colour string into (r, g, b) floats in 0.0..1.0.
+/// Returns `None` when the string is not a valid 6-digit hex colour.
+pub fn parse_hex_color(s: &str) -> Option<(f32, f32, f32)> {
+    let s = s.trim();
+    let hex = s.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()? as f32 / 255.0;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()? as f32 / 255.0;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()? as f32 / 255.0;
+    Some((r, g, b))
+}
+
+/// Validate a config value for a given key.  Returns `None` when the value
+/// is acceptable, or `Some(error_message)` when it is not.
+///
+/// Empty values are always accepted (they become `# key = null` on save).
+pub fn validate_field(key: &str, val: &str) -> Option<String> {
+    let val = val.trim();
+    if val.is_empty() {
+        return None; // empty -> commented out / default
+    }
+
+    // Fields with a fixed list of options.
+    if let Some(opts) = field_options(key) {
+        if !opts.contains(&val) {
+            return Some(format!(
+                "expected one of: {}",
+                opts.join(", "),
+            ));
+        }
+        return None;
+    }
+
+    // Colour fields: must be #RRGGBB.
+    if is_color_field(key) {
+        if parse_hex_color(val).is_none() {
+            return Some("expected #RRGGBB hex colour".into());
+        }
+        return None;
+    }
+
+    let field = match key.rfind('.') {
+        Some(pos) => &key[pos + 1..],
+        None => key,
+    };
+
+    // Integer scancode / numeric fields under input.keyboard.
+    if key.starts_with("input.keyboard.") && field != "device" {
+        if parse_int_relaxed(val).is_none() {
+            return Some("expected an integer (decimal or 0x hex)".into());
+        }
+        return None;
+    }
+
+    // Numeric fields (integer only).
+    let int_fields = [
+        "axis_threshold", "rumble_duration_ms", "rumble_magnitude",
+        "repeat_delay_ms", "repeat_interval_ms",
+        "move_max_size", "repeat_interval", "move_max_time",
+        "key_release_delay", "lang_switch_release_delay",
+    ];
+    if int_fields.contains(&field) {
+        if parse_int_relaxed(val).is_none() {
+            return Some("expected an integer".into());
+        }
+        return None;
+    }
+
+    // VID / PID: hex integer.
+    if field == "vid" || field == "pid" {
+        if parse_int_relaxed(val).is_none() {
+            return Some("expected a hex integer (e.g. 0x1209)".into());
+        }
+        return None;
+    }
+
+    // Array fields: switch_scancode.
+    if field == "switch_scancode" {
+        // Comma-separated integers.
+        for item in val.split(',') {
+            let item = item.trim();
+            if !item.is_empty() && parse_int_relaxed(item).is_none() {
+                return Some(format!("'{}' is not a valid integer", item));
+            }
+        }
+        return None;
+    }
+
+    // active_keymaps: comma-separated identifiers.
+    if field == "active_keymaps" {
+        for item in val.split(',') {
+            let item = item.trim();
+            if !item.is_empty() && !item.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Some(format!("'{}' is not a valid keymap name", item));
+            }
+        }
+        return None;
+    }
+
+    // axis_navigate_horizontal / axis_navigate_vertical: "index, dir" or integer.
+    if field == "axis_navigate_horizontal" || field == "axis_navigate_vertical" {
+        let parts: Vec<&str> = val.split(',').map(|s| s.trim()).collect();
+        if parts.len() == 1 {
+            if parse_int_relaxed(parts[0]).is_none() {
+                return Some("expected an integer or 'index, normal|inverted'".into());
+            }
+        } else if parts.len() == 2 {
+            if parse_int_relaxed(parts[0]).is_none() {
+                return Some("first element must be an integer axis index".into());
+            }
+            if parts[1] != "normal" && parts[1] != "inverted" {
+                return Some("second element must be 'normal' or 'inverted'".into());
+            }
+        } else {
+            return Some("expected 'index' or 'index, normal|inverted'".into());
+        }
+        return None;
+    }
+
+    // Gamepad button-or-axis fields: integer or "a:N".
+    if key.starts_with("input.gamepad.") {
+        let nav_act_fields = [
+            "navigate_up", "navigate_down", "navigate_left", "navigate_right",
+            "activate", "menu", "activate_shift", "activate_ctrl",
+            "activate_alt", "activate_altgr", "activate_enter", "activate_space",
+            "activate_arrow_left", "activate_arrow_right",
+            "activate_arrow_up", "activate_arrow_down",
+            "activate_bksp", "navigate_center", "mouse_toggle",
+        ];
+        if nav_act_fields.contains(&field) {
+            // Accept plain integer or "a:N" axis specifier.
+            if parse_int_relaxed(val).is_some() {
+                return None;
+            }
+            if let Some(rest) = val.strip_prefix("a:") {
+                if parse_int_relaxed(rest).is_some() {
+                    return None;
+                }
+            }
+            return Some("expected integer button ID or \"a:N\" axis".into());
+        }
+    }
+
+    // GPIO line numbers.
+    if key.starts_with("input.gpio.") {
+        let gpio_nav = [
+            "navigate_up", "navigate_down", "navigate_left", "navigate_right",
+            "activate", "menu", "activate_shift", "activate_ctrl",
+            "activate_alt", "activate_altgr", "activate_enter", "activate_space",
+            "activate_arrow_left", "activate_arrow_right",
+            "activate_arrow_up", "activate_arrow_down",
+            "activate_bksp", "navigate_center", "mouse_toggle",
+        ];
+        if gpio_nav.contains(&field) {
+            if parse_int_relaxed(val).is_none() {
+                return Some("expected an integer GPIO line number".into());
+            }
+            return None;
+        }
+    }
+
+    None // no validation rule -> accept anything
 }
 
 // =============================================================================
@@ -773,5 +939,77 @@ menu = 50
             "navigate_up should be 0x67 (hex for 103):\n{}", result);
         assert!(result.contains("menu = 0x32"),
             "menu should be 0x32 (hex for 50):\n{}", result);
+    }
+
+    // -----------------------------------------------------------------
+    // Validation / field-metadata tests
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn field_options_returns_correct_lists() {
+        assert_eq!(field_options("output.mode"), Some(&["print", "ble"] as &[&str]));
+        assert_eq!(field_options("output.audio"),
+            Some(&["none", "narrate", "tone", "tone_hint"] as &[&str]));
+        assert_eq!(field_options("input.gpio.gpio_signal"),
+            Some(&["high", "low"] as &[&str]));
+        assert_eq!(field_options("input.gpio.gpio_pull"),
+            Some(&["up", "down", "null"] as &[&str]));
+        // Boolean fields
+        assert_eq!(field_options("input.gamepad.enabled"),
+            Some(&["true", "false"] as &[&str]));
+        assert_eq!(field_options("navigate.rollover"),
+            Some(&["true", "false"] as &[&str]));
+        // Non-enum field
+        assert_eq!(field_options("input.keyboard.navigate_up"), None);
+    }
+
+    #[test]
+    fn is_color_field_recognises_colours() {
+        assert!(is_color_field("ui.colors.key_normal"));
+        assert!(is_color_field("ui.colors.nav_sel"));
+        assert!(!is_color_field("ui.show_text_display"));
+        assert!(!is_color_field("output.mode"));
+    }
+
+    #[test]
+    fn parse_hex_color_valid() {
+        assert_eq!(parse_hex_color("#ff0000"), Some((1.0, 0.0, 0.0)));
+        assert_eq!(parse_hex_color("#00ff00"), Some((0.0, 1.0, 0.0)));
+        assert_eq!(parse_hex_color("#000000"), Some((0.0, 0.0, 0.0)));
+        assert!(parse_hex_color("#fff").is_none());
+        assert!(parse_hex_color("red").is_none());
+        assert!(parse_hex_color("").is_none());
+    }
+
+    #[test]
+    fn validate_field_enum_values() {
+        assert!(validate_field("output.mode", "print").is_none());
+        assert!(validate_field("output.mode", "ble").is_none());
+        assert!(validate_field("output.mode", "usb").is_some());
+        assert!(validate_field("output.mode", "").is_none()); // empty is always ok
+    }
+
+    #[test]
+    fn validate_field_colour() {
+        assert!(validate_field("ui.colors.nav_sel", "#ffc800").is_none());
+        assert!(validate_field("ui.colors.nav_sel", "red").is_some());
+        assert!(validate_field("ui.colors.nav_sel", "#fff").is_some());
+        assert!(validate_field("ui.colors.nav_sel", "").is_none());
+    }
+
+    #[test]
+    fn validate_field_integers() {
+        assert!(validate_field("input.keyboard.navigate_up", "0x67").is_none());
+        assert!(validate_field("input.keyboard.navigate_up", "103").is_none());
+        assert!(validate_field("input.keyboard.navigate_up", "abc").is_some());
+        assert!(validate_field("input.gamepad.axis_threshold", "16384").is_none());
+        assert!(validate_field("input.gamepad.axis_threshold", "xyz").is_some());
+    }
+
+    #[test]
+    fn validate_field_gamepad_button_or_axis() {
+        assert!(validate_field("input.gamepad.activate", "5").is_none());
+        assert!(validate_field("input.gamepad.activate", "a:2").is_none());
+        assert!(validate_field("input.gamepad.activate", "foo").is_some());
     }
 }
