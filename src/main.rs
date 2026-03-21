@@ -1396,6 +1396,9 @@ impl SmartKeyboard {
     /// selected item is visible.
     fn config_scroll_to_sel(&self) -> Task<Message> {
         if let Some(ref ce) = self.config_editor {
+            if ce.pairs.is_empty() {
+                return Task::none();
+            }
             let last = ce.pairs.len().saturating_sub(1).max(1);
             let frac = ce.sel as f32 / last as f32;
             return widget::operation::snap_to(
