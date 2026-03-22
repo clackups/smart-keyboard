@@ -208,6 +208,7 @@ enum Message {
     MenuExitApp,
     MenuOpenConfig,
     ConfigValueChanged(usize, String),
+    ConfigFieldClicked(usize),
     ConfigSave,
     ConfigCancel,
     ConfigFieldSubmit,
@@ -630,6 +631,20 @@ impl SmartKeyboard {
                         let err = menu::validate_field(key, &val).unwrap_or_default();
                         ce.pairs[idx].1 = val;
                         ce.errors[idx] = err;
+                    }
+                }
+            }
+
+            Message::ConfigFieldClicked(idx) => {
+                if let Some(ref mut ce) = self.config_editor {
+                    if idx < ce.pairs.len() {
+                        ce.sel = idx;
+                        // Enter editing mode for text/colour fields (not
+                        // dropdowns — those cycle on click via pick_list).
+                        let is_dropdown = menu::field_options(&ce.pairs[idx].0).is_some();
+                        if !is_dropdown {
+                            ce.editing = true;
+                        }
                     }
                 }
             }
@@ -1334,7 +1349,9 @@ impl SmartKeyboard {
                     ..Default::default()
                 });
 
-            list_col = list_col.push(r);
+            list_col = list_col.push(
+                mouse_area(r).on_press(Message::ConfigFieldClicked(i))
+            );
         }
 
         let scroll = scrollable(list_col)

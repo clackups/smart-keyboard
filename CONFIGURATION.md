@@ -358,10 +358,54 @@ and the menu does not appear.
 
 | Item | Description | Enabled when |
 |------|-------------|--------------|
+| **Configuration** | Opens the built-in configuration editor (see below). | Always |
 | **Disconnect BLE** | Sends the `Z` disconnect command to the BLE dongle, dropping the active BLE link to the remote host. | BLE output mode is active (`[output] mode = "ble"`) **and** the dongle is currently connected. |
+| **Exit Application** | Terminates the application. | Always |
 
-More items can be added in the future by appending `MenuItemDef` entries to
-the `menu_item_defs` vector in `src/main.rs`.
+---
+
+### Configuration editor
+
+Selecting **Configuration** from the pop-up menu opens a full-screen editor
+that lists every setting from `config.toml`.  You can scroll through the list,
+change values, and save — the application will write `config.toml` and restart
+itself automatically.
+
+#### Navigation
+
+| Input | Action |
+|-------|--------|
+| **Up / Down arrows** (or configured nav keys, gamepad D-pad / stick) | Move the highlighted selection up or down. |
+| **Tab** | Move the selection to the next item (exits text editing if active). |
+| **Shift + Tab** | Move the selection to the previous item. |
+| **Enter** (or the configured activate key) | On a text field: enter editing mode and focus the field. On a dropdown: cycle to the next option. |
+| **Left / Right arrows** (or configured nav keys) | On a dropdown field: cycle through available options. |
+| **Escape** (or the configured menu key) | Close the editor without saving. While editing a text field: exit editing mode. |
+| **Ctrl + S** | Save changes and restart the application. |
+| **Mouse click** | Click any row to select it and, for text fields, enter editing mode. Click a dropdown to change its value. |
+
+#### Field types
+
+The editor automatically selects the appropriate widget for each setting:
+
+- **Dropdown** — for boolean fields (`true` / `false`) and enumerated fields
+  (`output.mode`, `output.audio`, `input.gpio.gpio_signal`,
+  `input.gpio.gpio_pull`).  Use Enter, Left / Right arrows, or click to cycle
+  through the available options.
+- **Colour swatch + text field** — for all `[ui.colors]` fields.  A coloured
+  rectangle previews the current value next to the text input.
+- **Text field** — for all other settings (numbers, strings, arrays).
+
+#### Validation
+
+Values are validated in real time.  If a field contains an invalid value, a red
+error message is shown below the row.  Validation rules include:
+
+- Colour fields must be a 6-digit hex string in `#RRGGBB` format.
+- Numeric fields (scan codes, thresholds, delays, etc.) must be valid integers
+  (decimal or `0x`-prefixed hexadecimal).
+- Gamepad button-or-axis fields accept a plain integer or the string `"a:N"`.
+- Enum/boolean fields are restricted to the dropdown options.
 
 ---
 
